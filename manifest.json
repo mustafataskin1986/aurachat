@@ -1,6 +1,6 @@
 {
-  "name": "Aura-Lite",
-  "short_name": "Aura-Lite",
+  "name": "Aura-Chat",
+  "short_name": "AuraChat",
   "start_url": "/",
   "display": "standalone",
   "display_override": ["standalone"],
