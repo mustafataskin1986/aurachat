@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AuraChat - Canlı Mesajlaşma</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome İkonları -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         ::-webkit-scrollbar { width: 6px; }
@@ -14,13 +16,58 @@
 </head>
 <body class="bg-[#050b14] h-[100dvh] w-screen overflow-hidden font-sans flex items-center justify-center p-0 md:p-4">
 
+    <!-- TEK KATMANLI GİRİŞ EKRANI (OVERLAY) -->
+    <div id="login-overlay" class="fixed inset-0 z-50 bg-[#0b141a] flex items-center justify-center p-4 hidden">
+        <div class="bg-[#111b21] border border-gray-800 rounded-2xl p-6 md:p-8 w-full max-w-md shadow-2xl text-center">
+            <div class="w-16 h-16 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center justify-center text-white text-2xl font-bold mx-auto mb-4 shadow-lg">
+                <i class="fa-solid fa-comments"></i>
+            </div>
+            <h2 class="text-white text-xl font-bold mb-1">AuraChat'e Hoş Geldin</h2>
+            <p class="text-gray-400 text-sm mb-6">Devam etmek için adını yaz ve profil resmini seç kanka.</p>
+
+            <form id="login-form" class="space-y-5 text-left">
+                <!-- Profil Resmi Yükleme Alanı -->
+                <div class="flex flex-col items-center">
+                    <label for="profile-image-input" class="cursor-pointer group relative">
+                        <div id="profile-preview" class="w-20 h-20 bg-[#202c33] border-2 border-dashed border-gray-600 rounded-full flex items-center justify-center text-gray-400 overflow-hidden group-hover:border-emerald-500 transition shadow-inner">
+                            <i class="fa-solid fa-camera text-xl"></i>
+                        </div>
+                        <div class="absolute bottom-0 right-0 bg-emerald-600 text-white w-6 h-6 rounded-full flex items-center text-xs justify-center shadow">
+                            <i class="fa-solid fa-plus"></i>
+                        </div>
+                    </label>
+                    <input type="file" id="profile-image-input" accept="image/*" class="hidden">
+                    <span class="text-xs text-gray-400 mt-2">Profil Fotoğrafı Ekle (İsteğe Bağlı)</span>
+                </div>
+
+                <!-- Ad Soyad Inputu (Autocomplete Engellendi) -->
+                <div>
+                    <label class="block text-xs font-medium text-gray-300 mb-1.5">Adın veya Rumuzun</label>
+                    <input type="text" id="username-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Örn: Mert Yılmaz" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+                </div>
+
+                <!-- Giriş Yap Butonu -->
+                <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
+                    <span>Sohbete Başla</span>
+                    <i class="fa-solid fa-arrow-right text-sm"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Ana Konteyner -->
     <div class="bg-[#111b21] w-full max-w-6xl h-full md:h-[92vh] flex shadow-2xl rounded-none md:rounded-2xl overflow-hidden border border-gray-800/80 relative">
         
+        <!-- SOL TARAF: Sohbet Listesi ve Alt Bar -->
         <div id="sidebar" class="w-full md:w-[36%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute md:relative z-20 transition-all duration-300">
+            <!-- Üst Profil Barı -->
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center text-white font-semibold shadow">AC</div>
-                    <span class="text-gray-100 font-semibold tracking-wide">AuraChat</span>
+                    <!-- Dinamik Profil Alanı (Giriş yapsan da buraya yansıyacak) -->
+                    <div id="user-profile-container" class="cursor-pointer">
+                        <div class="w-10 h-10 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center text-white font-semibold shadow justify-center">AC</div>
+                    </div>
+                    <span id="user-name-span" class="text-gray-100 font-semibold tracking-wide text-sm">AuraChat</span>
                 </div>
                 <div class="flex space-x-4 text-gray-400 text-lg">
                     <i class="fa-solid fa-circle-notch cursor-pointer hover:text-white transition" title="Durum"></i>
@@ -29,6 +76,7 @@
                 </div>
             </div>
 
+            <!-- Arama Kutusu -->
             <div class="p-2.5 bg-[#111b21] flex-shrink-0">
                 <div class="bg-[#202c33] flex items-center px-3 py-2 rounded-xl border border-transparent focus-within:border-emerald-500/50 transition">
                     <i class="fa-solid fa-magnifying-glass text-gray-400 text-sm mr-3"></i>
@@ -36,10 +84,33 @@
                 </div>
             </div>
 
+            <!-- Kişi Listesi -->
             <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40"></div>
+
+            <!-- Alt Navigasyon Barı -->
+            <div class="bg-[#202c33] border-t border-gray-800 py-2.5 px-6 flex justify-between items-center text-gray-400 flex-shrink-0">
+                <div class="flex flex-col items-center cursor-pointer text-emerald-500 transition">
+                    <i class="fa-solid fa-comment-dots text-lg"></i>
+                    <span class="text-[10px] mt-0.5 font-medium">Sohbetler</span>
+                </div>
+                <div class="flex flex-col items-center cursor-pointer hover:text-white transition">
+                    <i class="fa-solid fa-circle-notch text-lg"></i>
+                    <span class="text-[10px] mt-0.5">Durum</span>
+                </div>
+                <div class="flex flex-col items-center cursor-pointer hover:text-white transition">
+                    <i class="fa-solid fa-users text-lg"></i>
+                    <span class="text-[10px] mt-0.5">Topluluk</span>
+                </div>
+                <div class="flex flex-col items-center cursor-pointer hover:text-white transition">
+                    <i class="fa-solid fa-gear text-lg"></i>
+                    <span class="text-[10px] mt-0.5">Ayarlar</span>
+                </div>
+            </div>
         </div>
 
+        <!-- SAĞ TARAF: Mesajlaşma Ekranı -->
         <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-0 h-full z-10 hidden md:flex">
+            <!-- Aktif Sohbet Üst Barı -->
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
                     <button id="back-btn" class="md:hidden text-gray-300 text-lg mr-1 hover:text-white p-1">
@@ -58,9 +129,10 @@
                 </div>
             </div>
 
-            <div id="message-container" class="flex-1 min-h-0 p-4 md:p-6 overflow-y-auto space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat opacity-95">
-                </div>
+            <!-- Mesajların Akış Alanı -->
+            <div id="message-container" class="flex-1 min-h-0 p-4 md:p-6 overflow-y-auto space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat opacity-95"></div>
 
+            <!-- Mesaj Yazma Paneli -->
             <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0">
                 <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
@@ -73,6 +145,10 @@
 
     </div>
 
+    <!-- SCRIPT BAĞLANTILARI -->
+    <!-- Giriş ve Kimlik Yönetimi Scripti -->
+    <script src="js/giris.js"></script>
+
     <script>
         const contacts = [
             { id: 1, name: "Kanka 1", avatarBg: "bg-emerald-600", initials: "K1" },
@@ -84,7 +160,10 @@
         let activeContactId = 1;
 
         let chatData = JSON.parse(localStorage.getItem('aurachat_messages')) || {
-            1: [{ sender: 'other', text: 'Selam kanka! Şifre/kart önerileri artık engellendi 🚀', time: '11:22' }],
+            1: [
+                { sender: 'other', text: 'Selam kanka! Giriş katmanı ve profil resmi özelliği eklendi 🚀', time: '10:15' },
+                { sender: 'me', text: 'Süper oldu, artık kullanıcıyı tamamen hatcırıyor.', time: '10:16' }
+            ],
             2: [{ sender: 'other', text: 'Yarın projeyi test edelim mi?', time: 'Dün' }],
             3: [{ sender: 'other', text: 'Yeni güncelleme yayında 🚀', time: 'Pazartesi' }],
             4: [{ sender: 'other', text: 'Dosyaları gönderdim.', time: '09:45' }]
@@ -145,7 +224,6 @@
             sidebar.classList.remove('hidden');
         }
 
-        // Android Geri Tuşu Yönetimi
         window.addEventListener('popstate', (event) => {
             if (window.innerWidth < 768) {
                 if (event.state && event.state.chatOpen) {
@@ -157,41 +235,10 @@
             }
         });
 
-        // İki Yönlü Jest (Sağa/Sola Kaydırma)
-        let touchStartX = 0;
-        let touchEndX = 0;
-
-        chatArea.addEventListener('touchstart', (e) => {
-            touchStartX = e.changedTouches[0].screenX;
-        }, { passive: true });
-
-        chatArea.addEventListener('touchend', (e) => {
-            touchEndX = e.changedTouches[0].screenX;
-            if (touchEndX - touchStartX > 70 && window.innerWidth < 768) {
-                if (window.history.state && window.history.state.chatOpen) {
-                    history.back();
-                } else {
-                    closeChat();
-                }
-            }
-        }, { passive: true });
-
-        sidebar.addEventListener('touchstart', (e) => {
-            touchStartX = e.changedTouches[0].screenX;
-        }, { passive: true });
-
-        sidebar.addEventListener('touchend', (e) => {
-            touchEndX = e.changedTouches[0].screenX;
-            if (touchStartX - touchEndX > 70 && window.innerWidth < 768) {
-                history.forward();
-            }
-        }, { passive: true });
-
         function updateActiveChat() {
             const currentContact = contacts.find(c => c.id === activeContactId);
             activeName.textContent = currentContact.name;
             activeAvatar.textContent = currentContact.initials;
-            activeAvatar.className = `w-10 h-10 ${currentContact.avatarBg} rounded-full flex items-center text-white font-semibold justify-center shadow`;
 
             messageContainer.innerHTML = '';
             const messages = chatData[activeContactId] || [];
