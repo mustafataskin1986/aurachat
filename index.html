@@ -78,9 +78,9 @@
                 </div>
             </div>
 
-            <!-- Tek Odalı Ortak Sohbet Listesi -->
+            <!-- Tek Odalı Ortak Sohbet Listesi (Tıklanabilir hale getirildi) -->
             <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40">
-                <div class="flex items-center px-4 py-3 bg-[#202c33]/90 cursor-pointer transition border-b border-gray-800/30">
+                <div id="room-btn" class="flex items-center px-4 py-3 bg-[#202c33]/90 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30">
                     <div class="w-12 h-12 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
                         <i class="fa-solid fa-globe"></i>
                     </div>
@@ -114,6 +114,10 @@
         <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-0 h-full z-10">
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
+                    <!-- Mobilde listeye geri dönme tuşu -->
+                    <button id="back-btn" class="md:hidden text-gray-400 mr-1 hover:text-white transition">
+                        <i class="fa-solid fa-arrow-left text-lg"></i>
+                    </button>
                     <div class="w-10 h-10 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center shadow">
                         <i class="fa-solid fa-globe text-sm"></i>
                     </div>
@@ -175,6 +179,25 @@
         const userNameSpan = document.getElementById('user-name-span');
         const lastMsgText = document.getElementById('last-msg-text');
         const lastMsgTime = document.getElementById('last-msg-time');
+        
+        // Mobil geçiş butonları
+        const roomBtn = document.getElementById('room-btn');
+        const backBtn = document.getElementById('back-btn');
+        const sidebar = document.getElementById('sidebar');
+
+        // Odaya tıklanınca mobilde sohbet ekranını aç
+        roomBtn.addEventListener('click', () => {
+            if (window.innerWidth < 768) {
+                sidebar.classList.add('-translate-x-full');
+            }
+        });
+
+        // Geri tuşuna basınca mobilde tekrar listeye dön
+        backBtn.addEventListener('click', () => {
+            if (window.innerWidth < 768) {
+                sidebar.classList.remove('-translate-x-full');
+            }
+        });
 
         let base64Image = '';
         let currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
