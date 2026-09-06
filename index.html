@@ -32,7 +32,7 @@
             <div class="p-2.5 bg-[#111b21] flex-shrink-0">
                 <div class="bg-[#202c33] flex items-center px-3 py-2 rounded-xl border border-transparent focus-within:border-emerald-500/50 transition">
                     <i class="fa-solid fa-magnifying-glass text-gray-400 text-sm mr-3"></i>
-                    <input type="text" placeholder="Sohbet ara veya yeni başlat" class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400">
+                    <input type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Sohbet ara veya yeni başlat" class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400">
                 </div>
             </div>
 
@@ -64,7 +64,7 @@
             <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0">
                 <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
-                <input type="text" id="message-input" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
+                <input type="text" id="message-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
                 <button id="send-btn" class="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-500 transition shadow flex-shrink-0">
                     <i class="fa-solid fa-paper-plane text-sm"></i>
                 </button>
@@ -84,7 +84,7 @@
         let activeContactId = 1;
 
         let chatData = JSON.parse(localStorage.getItem('aurachat_messages')) || {
-            1: [{ sender: 'other', text: 'Selam kanka! AuraChat yerel yedekleme aktif 🚀', time: '11:22' }],
+            1: [{ sender: 'other', text: 'Selam kanka! Şifre/kart önerileri artık engellendi 🚀', time: '11:22' }],
             2: [{ sender: 'other', text: 'Yarın projeyi test edelim mi?', time: 'Dün' }],
             3: [{ sender: 'other', text: 'Yeni güncelleme yayında 🚀', time: 'Pazartesi' }],
             4: [{ sender: 'other', text: 'Dosyaları gönderdim.', time: '09:45' }]
@@ -145,7 +145,7 @@
             sidebar.classList.remove('hidden');
         }
 
-        // Android Geri Tuşu ve Geçmiş Yönetimi
+        // Android Geri Tuşu Yönetimi
         window.addEventListener('popstate', (event) => {
             if (window.innerWidth < 768) {
                 if (event.state && event.state.chatOpen) {
@@ -157,13 +157,10 @@
             }
         });
 
-        // ==========================================
-        // 📱 İKİ YÖNLÜ JEST (Sağa Kaydır = Geri / Sola Kaydır = İleri)
-        // ==========================================
+        // İki Yönlü Jest (Sağa/Sola Kaydırma)
         let touchStartX = 0;
         let touchEndX = 0;
 
-        // Mesaj ekranındayken sağa çekince geri git
         chatArea.addEventListener('touchstart', (e) => {
             touchStartX = e.changedTouches[0].screenX;
         }, { passive: true });
@@ -179,14 +176,12 @@
             }
         }, { passive: true });
 
-        // Kişi listesindeyken sola çekince ileri git (history.forward)
         sidebar.addEventListener('touchstart', (e) => {
             touchStartX = e.changedTouches[0].screenX;
         }, { passive: true });
 
         sidebar.addEventListener('touchend', (e) => {
             touchEndX = e.changedTouches[0].screenX;
-            // Eğer sağdan sola doğru kaydırıldıysa (İleri hamlesi)
             if (touchStartX - touchEndX > 70 && window.innerWidth < 768) {
                 history.forward();
             }
