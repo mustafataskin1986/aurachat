@@ -15,6 +15,7 @@
         ::-webkit-scrollbar-track { background: #0b141a; }
         ::-webkit-scrollbar-thumb { background: #202c33; border-radius: 4px; }
     </style>
+
 </head>
 <body class="bg-[#050b14] h-[100dvh] w-screen overflow-hidden font-sans flex items-center justify-center p-0 md:p-4">
 
@@ -594,5 +595,16 @@
             return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
     </script>
+
+<script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('Service Worker başarıyla kaydedildi! 👍', reg.scope))
+          .catch(err => console.log('Service Worker kayıt hatası: ❌', err));
+      });
+    }
+</script>
+
 </body>
 </html>
