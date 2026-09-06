@@ -16,17 +16,16 @@
 </head>
 <body class="bg-[#050b14] h-[100dvh] w-screen overflow-hidden font-sans flex items-center justify-center p-0 md:p-4">
 
-    <!-- TEK KATMANLI GİRİŞ EKRANI (OVERLAY) -->
+    <!-- GİRİŞ EKRANI (OVERLAY) -->
     <div id="login-overlay" class="fixed inset-0 z-50 bg-[#0b141a] flex items-center justify-center p-4 hidden">
         <div class="bg-[#111b21] border border-gray-800 rounded-2xl p-6 md:p-8 w-full max-w-md shadow-2xl text-center">
             <div class="w-16 h-16 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center justify-center text-white text-2xl font-bold mx-auto mb-4 shadow-lg">
                 <i class="fa-solid fa-comments"></i>
             </div>
             <h2 class="text-white text-xl font-bold mb-1">AuraChat'e Hoş Geldin</h2>
-            <p class="text-gray-400 text-sm mb-6">Devam etmek için adını yaz ve profil resmini seç kanka.</p>
+            <p class="text-gray-400 text-sm mb-6">Canlı sohbete katılmak için adını yaz ve profil resmini seç kanka.</p>
 
             <form id="login-form" class="space-y-5 text-left">
-                <!-- Profil Resmi Yükleme Alanı -->
                 <div class="flex flex-col items-center">
                     <label for="profile-image-input" class="cursor-pointer group relative">
                         <div id="profile-preview" class="w-20 h-20 bg-[#202c33] border-2 border-dashed border-gray-600 rounded-full flex items-center justify-center text-gray-400 overflow-hidden group-hover:border-emerald-500 transition shadow-inner">
@@ -37,16 +36,14 @@
                         </div>
                     </label>
                     <input type="file" id="profile-image-input" accept="image/*" class="hidden">
-                    <span class="text-xs text-gray-400 mt-2">Profil Fotoğrafı Ekle (İsteğe Bağlı)</span>
+                    <span class="text-xs text-gray-400 mt-2">Profil Fotoğrafı Ekle</span>
                 </div>
 
-                <!-- Ad Soyad Inputu (Autocomplete Engellendi) -->
                 <div>
                     <label class="block text-xs font-medium text-gray-300 mb-1.5">Adın veya Rumuzun</label>
-                    <input type="text" id="username-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Örn: Mert Yılmaz" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+                    <input type="text" id="username-input" autocomplete="off" placeholder="Örn: Mustafa" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
                 </div>
 
-                <!-- Giriş Yap Butonu -->
                 <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
                     <span>Sohbete Başla</span>
                     <i class="fa-solid fa-arrow-right text-sm"></i>
@@ -58,36 +55,45 @@
     <!-- Ana Konteyner -->
     <div class="bg-[#111b21] w-full max-w-6xl h-full md:h-[92vh] flex shadow-2xl rounded-none md:rounded-2xl overflow-hidden border border-gray-800/80 relative">
         
-        <!-- SOL TARAF: Sohbet Listesi ve Alt Bar -->
+        <!-- SOL TARAF: Sohbet Listesi -->
         <div id="sidebar" class="w-full md:w-[36%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute md:relative z-20 transition-all duration-300">
-            <!-- Üst Profil Barı -->
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
-                    <!-- Dinamik Profil Alanı (Giriş yapsan da buraya yansıyacak) -->
                     <div id="user-profile-container" class="cursor-pointer">
                         <div class="w-10 h-10 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center text-white font-semibold shadow justify-center">AC</div>
                     </div>
                     <span id="user-name-span" class="text-gray-100 font-semibold tracking-wide text-sm">AuraChat</span>
                 </div>
                 <div class="flex space-x-4 text-gray-400 text-lg">
-                    <i class="fa-solid fa-circle-notch cursor-pointer hover:text-white transition" title="Durum"></i>
-                    <i class="fa-solid fa-comment-alt cursor-pointer hover:text-white transition" title="Yeni Sohbet"></i>
-                    <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition" title="Menü"></i>
+                    <i class="fa-solid fa-circle-notch cursor-pointer hover:text-white transition"></i>
+                    <i class="fa-solid fa-comment-alt cursor-pointer hover:text-white transition"></i>
+                    <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition"></i>
                 </div>
             </div>
 
-            <!-- Arama Kutusu -->
             <div class="p-2.5 bg-[#111b21] flex-shrink-0">
                 <div class="bg-[#202c33] flex items-center px-3 py-2 rounded-xl border border-transparent focus-within:border-emerald-500/50 transition">
                     <i class="fa-solid fa-magnifying-glass text-gray-400 text-sm mr-3"></i>
-                    <input type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Sohbet ara veya yeni başlat" class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400">
+                    <input type="text" placeholder="Genel Sohbet Odası" disabled class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400">
                 </div>
             </div>
 
-            <!-- Kişi Listesi -->
-            <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40"></div>
+            <!-- Tek Odalı Ortak Sohbet Listesi -->
+            <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40">
+                <div class="flex items-center px-4 py-3 bg-[#202c33]/90 cursor-pointer transition border-b border-gray-800/30">
+                    <div class="w-12 h-12 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
+                        <i class="fa-solid fa-globe"></i>
+                    </div>
+                    <div class="flex-1 overflow-hidden">
+                        <div class="flex justify-between items-baseline">
+                            <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
+                            <span id="last-msg-time" class="text-[11px] text-gray-400">Canlı</span>
+                        </div>
+                        <p id="last-msg-text" class="text-xs text-emerald-400 truncate mt-0.5">Herkes burada mesajlaşıyor!</p>
+                    </div>
+                </div>
+            </div>
 
-            <!-- Alt Navigasyon Barı -->
             <div class="bg-[#202c33] border-t border-gray-800 py-2.5 px-6 flex justify-between items-center text-gray-400 flex-shrink-0">
                 <div class="flex flex-col items-center cursor-pointer text-emerald-500 transition">
                     <i class="fa-solid fa-comment-dots text-lg"></i>
@@ -101,30 +107,24 @@
                     <i class="fa-solid fa-users text-lg"></i>
                     <span class="text-[10px] mt-0.5">Topluluk</span>
                 </div>
-                <div class="flex flex-col items-center cursor-pointer hover:text-white transition">
-                    <i class="fa-solid fa-gear text-lg"></i>
-                    <span class="text-[10px] mt-0.5">Ayarlar</span>
-                </div>
             </div>
         </div>
 
         <!-- SAĞ TARAF: Mesajlaşma Ekranı -->
-        <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-0 h-full z-10 hidden md:flex">
-            <!-- Aktif Sohbet Üst Barı -->
+        <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-0 h-full z-10">
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
-                    <button id="back-btn" class="md:hidden text-gray-300 text-lg mr-1 hover:text-white p-1">
-                        <i class="fa-solid fa-arrow-left"></i>
-                    </button>
-                    <div id="active-avatar" class="w-10 h-10 bg-emerald-600 rounded-full flex items-center text-white font-semibold justify-center shadow">K1</div>
+                    <div class="w-10 h-10 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center shadow">
+                        <i class="fa-solid fa-globe text-sm"></i>
+                    </div>
                     <div>
-                        <h4 id="active-name" class="text-white font-medium text-sm md:text-base">Kanka 1</h4>
-                        <span id="active-status" class="text-[11px] text-emerald-400 font-medium">çevrimiçi</span>
+                        <h4 class="text-white font-medium text-sm md:text-base">Genel Kanka Odası 🌍</h4>
+                        <span class="text-[11px] text-emerald-400 font-medium">Çevrimiçi (Anlık Senkronize)</span>
                     </div>
                 </div>
                 <div class="flex space-x-5 text-gray-400 text-lg">
-                    <i class="fa-solid fa-video cursor-pointer hover:text-white transition" title="Görüntülü Arama"></i>
-                    <i class="fa-solid fa-paperclip cursor-pointer hover:text-white transition" title="Dosya Ekle"></i>
+                    <i class="fa-solid fa-video cursor-pointer hover:text-white transition"></i>
+                    <i class="fa-solid fa-paperclip cursor-pointer hover:text-white transition"></i>
                     <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition"></i>
                 </div>
             </div>
@@ -136,7 +136,7 @@
             <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0">
                 <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
-                <input type="text" id="message-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
+                <input type="text" id="message-input" autocomplete="off" placeholder="Genel odaya mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
                 <button id="send-btn" class="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-500 transition shadow flex-shrink-0">
                     <i class="fa-solid fa-paper-plane text-sm"></i>
                 </button>
@@ -145,145 +145,164 @@
 
     </div>
 
-    <!-- SCRIPT BAĞLANTILARI -->
-    <!-- Giriş ve Kimlik Yönetimi Scripti -->
-    <script src="js/giris.js"></script>
+    <!-- FIREBASE VE SOHBET MANTIĞI -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    <script>
-        const contacts = [
-            { id: 1, name: "Kanka 1", avatarBg: "bg-emerald-600", initials: "K1" },
-            { id: 2, name: "Ahmet Yılmaz", avatarBg: "bg-cyan-600", initials: "AY" },
-            { id: 3, name: "Yazılım Grubu", avatarBg: "bg-purple-600", initials: "YG" },
-            { id: 4, name: "Zeynep Demir", avatarBg: "bg-pink-600", initials: "ZD" }
-        ];
-
-        let activeContactId = 1;
-
-        let chatData = JSON.parse(localStorage.getItem('aurachat_messages')) || {
-            1: [
-                { sender: 'other', text: 'Selam kanka! Giriş katmanı ve profil resmi özelliği eklendi 🚀', time: '10:15' },
-                { sender: 'me', text: 'Süper oldu, artık kullanıcıyı tamamen hatcırıyor.', time: '10:16' }
-            ],
-            2: [{ sender: 'other', text: 'Yarın projeyi test edelim mi?', time: 'Dün' }],
-            3: [{ sender: 'other', text: 'Yeni güncelleme yayında 🚀', time: 'Pazartesi' }],
-            4: [{ sender: 'other', text: 'Dosyaları gönderdim.', time: '09:45' }]
+        // Senin Firebase Konfigürasyonun
+        const firebaseConfig = {
+            apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
+            authDomain: "aurachat-99f69.firebaseapp.com",
+            projectId: "aurachat-99f69",
+            storageBucket: "aurachat-99f69.firebasestorage.app",
+            messagingSenderId: "447747395966",
+            appId: "1:447747395966:web:7db71f9f912a188d17632f"
         };
 
-        const contactListEl = document.getElementById('contact-list');
-        const sidebar = document.getElementById('sidebar');
-        const chatArea = document.getElementById('chat-area');
-        const activeName = document.getElementById('active-name');
-        const activeAvatar = document.getElementById('active-avatar');
-        const backBtn = document.getElementById('back-btn');
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const loginOverlay = document.getElementById('login-overlay');
+        const loginForm = document.getElementById('login-form');
+        const usernameInput = document.getElementById('username-input');
+        const profileImageInput = document.getElementById('profile-image-input');
+        const profilePreview = document.getElementById('profile-preview');
         const messageContainer = document.getElementById('message-container');
         const messageInput = document.getElementById('message-input');
         const sendBtn = document.getElementById('send-btn');
+        const userProfileContainer = document.getElementById('user-profile-container');
+        const userNameSpan = document.getElementById('user-name-span');
+        const lastMsgText = document.getElementById('last-msg-text');
+        const lastMsgTime = document.getElementById('last-msg-time');
 
-        function renderContacts() {
-            contactListEl.innerHTML = '';
-            contacts.forEach(contact => {
-                const messages = chatData[contact.id] || [];
-                const lastMsg = messages.length > 0 ? messages[messages.length - 1].text : "Henüz mesaj yok";
-                const lastTime = messages.length > 0 ? messages[messages.length - 1].time : "";
+        let base64Image = '';
+        let currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
 
-                const div = document.createElement('div');
-                div.className = `flex items-center px-4 py-3 hover:bg-[#202c33]/70 cursor-pointer transition border-b border-gray-800/30 ${activeContactId === contact.id ? 'bg-[#202c33]/90' : ''}`;
-                div.innerHTML = `
-                    <div class="w-12 h-12 ${contact.avatarBg} rounded-full flex items-center text-white font-semibold justify-center mr-3 shadow flex-shrink-0">${contact.initials}</div>
-                    <div class="flex-1 overflow-hidden">
-                        <div class="flex justify-between items-baseline">
-                            <h4 class="text-white font-medium text-sm">${contact.name}</h4>
-                            <span class="text-[11px] text-gray-400">${lastTime}</span>
-                        </div>
-                        <p class="text-xs text-gray-400 truncate mt-0.5">${lastMsg}</p>
-                    </div>
-                `;
-                div.addEventListener('click', () => {
-                    openChat(contact.id);
-                });
-                contactListEl.appendChild(div);
-            });
+        if (currentUser) {
+            loginOverlay.classList.add('hidden');
+            updateUserInterface(currentUser);
+            initChat();
+        } else {
+            loginOverlay.classList.remove('hidden');
         }
 
-        function openChat(contactId, pushHistory = true) {
-            activeContactId = contactId;
-            updateActiveChat();
-            renderContacts();
-
-            if (window.innerWidth < 768) {
-                sidebar.classList.add('hidden');
-                chatArea.classList.remove('hidden');
-                if (pushHistory) {
-                    history.pushState({ chatOpen: true, contactId: contactId }, "", "");
-                }
-            }
-        }
-
-        function closeChat() {
-            chatArea.classList.add('hidden');
-            sidebar.classList.remove('hidden');
-        }
-
-        window.addEventListener('popstate', (event) => {
-            if (window.innerWidth < 768) {
-                if (event.state && event.state.chatOpen) {
-                    sidebar.classList.add('hidden');
-                    chatArea.classList.remove('hidden');
-                } else {
-                    closeChat();
-                }
+        profileImageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(uploadEvent) {
+                    base64Image = uploadEvent.target.result;
+                    profilePreview.innerHTML = `<img src="${base64Image}" class="w-full h-full object-cover rounded-full">`;
+                };
+                reader.readAsDataURL(file);
             }
         });
 
-        function updateActiveChat() {
-            const currentContact = contacts.find(c => c.id === activeContactId);
-            activeName.textContent = currentContact.name;
-            activeAvatar.textContent = currentContact.initials;
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = usernameInput.value.trim();
+            if (!username) return;
 
-            messageContainer.innerHTML = '';
-            const messages = chatData[activeContactId] || [];
+            currentUser = {
+                name: username,
+                avatar: base64Image || ''
+            };
 
-            messages.forEach(msg => {
-                const msgDiv = document.createElement('div');
-                if (msg.sender === 'me') {
-                    msgDiv.className = "flex justify-end";
-                    msgDiv.innerHTML = `
-                        <div class="bg-[#005c4b] text-white px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
-                            <p>${msg.text}</p>
-                            <span class="text-[10px] text-emerald-200 float-right ml-3 mt-1">${msg.time}</span>
-                        </div>
-                    `;
+            localStorage.setItem('aurachat_user', JSON.stringify(currentUser));
+            loginOverlay.classList.add('hidden');
+            updateUserInterface(currentUser);
+            initChat();
+        });
+
+        function updateUserInterface(user) {
+            if (userProfileContainer) {
+                if (user.avatar) {
+                    userProfileContainer.innerHTML = `<img src="${user.avatar}" class="w-10 h-10 rounded-full object-cover shadow border border-emerald-500/50">`;
                 } else {
-                    msgDiv.className = "flex justify-start";
-                    msgDiv.innerHTML = `
-                        <div class="bg-[#202c33] text-gray-100 px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
-                            <p>${msg.text}</p>
-                            <span class="text-[10px] text-gray-400 float-right ml-3 mt-1">${msg.time}</span>
-                        </div>
-                    `;
+                    const initials = user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                    userProfileContainer.innerHTML = `<div class="w-10 h-10 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center justify-center text-white font-semibold shadow">${initials}</div>`;
                 }
-                messageContainer.appendChild(msgDiv);
-            });
-            messageContainer.scrollTop = messageContainer.scrollHeight;
+            }
+            if (userNameSpan) {
+                userNameSpan.textContent = user.name;
+            }
         }
 
-        function sendMessage() {
-            const text = messageInput.value.trim();
-            if (!text) return;
+        function initChat() {
+            const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
 
-            const now = new Date();
-            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+            onSnapshot(q, (snapshot) => {
+                messageContainer.innerHTML = '';
+                let lastMessage = null;
 
-            if (!chatData[activeContactId]) {
-                chatData[activeContactId] = [];
+                snapshot.forEach((doc) => {
+                    const msg = doc.data();
+                    lastMessage = msg;
+                    renderMessage(msg);
+                });
+
+                if (lastMessage) {
+                    lastMsgText.textContent = `${lastMessage.senderName}: ${lastMessage.text}`;
+                    if (lastMessage.createdAt) {
+                        const date = lastMessage.createdAt.toDate();
+                        lastMsgTime.textContent = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+                    }
+                }
+                messageContainer.scrollTop = messageContainer.scrollHeight;
+            });
+        }
+
+        function renderMessage(msg) {
+            const isMe = currentUser && msg.senderName === currentUser.name;
+            const msgDiv = document.createElement('div');
+            
+            const timeStr = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi';
+
+            if (isMe) {
+                msgDiv.className = "flex justify-end";
+                msgDiv.innerHTML = `
+                    <div class="bg-[#005c4b] text-white px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
+                        <p class="text-[11px] text-emerald-200 font-semibold mb-0.5">Sen</p>
+                        <p>${escapeHtml(msg.text)}</p>
+                        <span class="text-[10px] text-emerald-200 float-right ml-3 mt-1">${timeStr}</span>
+                    </div>
+                `;
+            } else {
+                msgDiv.className = "flex justify-start items-end space-x-2";
+                let avatarHtml = `<div class="w-8 h-8 bg-cyan-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow flex-shrink-0">${msg.senderName.substring(0,2).toUpperCase()}</div>`;
+                if (msg.senderAvatar) {
+                    avatarHtml = `<img src="${msg.senderAvatar}" class="w-8 h-8 rounded-full object-cover shadow flex-shrink-0">`;
+                }
+
+                msgDiv.innerHTML = `
+                    ${avatarHtml}
+                    <div class="bg-[#202c33] text-gray-100 px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
+                        <p class="text-[11px] text-emerald-400 font-semibold mb-0.5">${escapeHtml(msg.senderName)}</p>
+                        <p>${escapeHtml(msg.text)}</p>
+                        <span class="text-[10px] text-gray-400 float-right ml-3 mt-1">${timeStr}</span>
+                    </div>
+                `;
             }
+            messageContainer.appendChild(msgDiv);
+        }
 
-            chatData[activeContactId].push({ sender: 'me', text: text, time: timeStr });
-            localStorage.setItem('aurachat_messages', JSON.stringify(chatData));
+        async function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text || !currentUser) return;
 
-            messageInput.value = '';
-            updateActiveChat();
-            renderContacts();
+            try {
+                await addDoc(collection(db, "messages"), {
+                    text: text,
+                    senderName: currentUser.name,
+                    senderAvatar: currentUser.avatar || '',
+                    createdAt: serverTimestamp()
+                });
+                messageInput.value = '';
+            } catch (e) {
+                console.error("Mesaj gönderilemedi: ", e);
+                alert("Mesaj gönderilirken hata oluştu!");
+            }
         }
 
         sendBtn.addEventListener('click', sendMessage);
@@ -291,17 +310,8 @@
             if (e.key === 'Enter') sendMessage();
         });
 
-        backBtn.addEventListener('click', () => {
-            if (window.history.state && window.history.state.chatOpen) {
-                history.back();
-            } else {
-                closeChat();
-            }
-        });
-
-        renderContacts();
-        if (window.innerWidth >= 768) {
-            updateActiveChat();
+        function escapeHtml(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
     </script>
 </body>
