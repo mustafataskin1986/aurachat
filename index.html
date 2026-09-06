@@ -9,7 +9,6 @@
     <!-- FontAwesome İkonları -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Özel Kaydırma Çubuğu */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0b141a; }
         ::-webkit-scrollbar-thumb { background: #202c33; border-radius: 4px; }
@@ -20,12 +19,12 @@
     <!-- Ana Konteyner -->
     <div class="bg-[#111b21] w-full max-w-6xl h-full md:h-[92vh] flex shadow-2xl rounded-none md:rounded-2xl overflow-hidden border border-gray-800/80 relative">
         
-        <!-- SOL TARAF: Sohbet Listesi / Açılır Menü -->
+        <!-- SOL TARAF: Sohbet Listesi -->
         <div id="sidebar" class="w-full md:w-[36%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute md:relative z-20 transition-all duration-300">
             <!-- Üst Profil Barı -->
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800">
                 <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center text-white justify-semibold shadow">AT</div>
+                    <div class="w-10 h-10 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center text-white font-semibold shadow">AC</div>
                     <span class="text-gray-100 font-semibold tracking-wide">AuraChat</span>
                 </div>
                 <div class="flex space-x-4 text-gray-400 text-lg">
@@ -43,10 +42,8 @@
                 </div>
             </div>
 
-            <!-- Kişi Listesi (Dinamik) -->
-            <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40">
-                <!-- JavaScript ile doldurulacak veya statik tıklanabilir öğeler -->
-            </div>
+            <!-- Kişi Listesi -->
+            <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40"></div>
         </div>
 
         <!-- SAĞ TARAF: Mesajlaşma Ekranı -->
@@ -54,11 +51,10 @@
             <!-- Aktif Sohbet Üst Barı -->
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800">
                 <div class="flex items-center space-x-3">
-                    <!-- Mobilde Listeye Geri Dönme Tuşu -->
                     <button id="back-btn" class="md:hidden text-gray-300 text-lg mr-1 hover:text-white">
                         <i class="fa-solid fa-arrow-left"></i>
                     </button>
-                    <div id="active-avatar" class="w-10 h-10 bg-emerald-600 rounded-full flex items-center text-white font-semibold justify-semibold shadow">K1</div>
+                    <div id="active-avatar" class="w-10 h-10 bg-emerald-600 rounded-full flex items-center text-white font-semibold justify-center shadow">K1</div>
                     <div>
                         <h4 id="active-name" class="text-white font-medium text-sm md:text-base">Kanka 1</h4>
                         <span id="active-status" class="text-[11px] text-emerald-400 font-medium">çevrimiçi</span>
@@ -72,21 +68,8 @@
             </div>
 
             <!-- Mesajların Akış Alanı -->
-            <div class="flex-1 p-4 md:p-6 overflow-y-auto space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat opacity-95">
-                <!-- Gelen Mesaj Örneği -->
-                <div class="flex justify-start">
-                    <div class="bg-[#202c33] text-gray-100 px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
-                        <p>Selam kanka! AuraChat altyapısı kuruluyor mu?</p>
-                        <span class="text-[10px] text-gray-400 float-right ml-3 mt-1">11:20</span>
-                    </div>
-                </div>
-                <!-- Giden Mesaj Örneği -->
-                <div class="flex justify-end">
-                    <div class="bg-[#005c4b] text-white px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
-                        <p>Aynen kanka, Vercel ve GitHub üzerinden tertemiz ilerliyoruz!</p>
-                        <span class="text-[10px] text-emerald-200 float-right ml-3 mt-1">11:21</span>
-                    </div>
-                </div>
+            <div id="message-container" class="flex-1 p-4 md:p-6 overflow-y-auto space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat opacity-95">
+                <!-- Mesajlar dinamik yüklenecek -->
             </div>
 
             <!-- Mesaj Yazma Paneli -->
@@ -102,15 +85,24 @@
 
     </div>
 
-    <!-- JavaScript Etkileşim Kodları -->
     <script>
-        // Örnek Kişiler Listesi
+        // Kişiler Verisi
         const contacts = [
-            { id: 1, name: "Kanka 1", lastMessage: "Vercel ve GitHub üzerinden...", time: "11:21", avatarBg: "bg-emerald-600", initials: "K1" },
-            { id: 2, name: "Ahmet Yılmaz", lastMessage: "Yarın projeyi test edelim mi?", time: "Dün", avatarBg: "bg-cyan-600", initials: "AY" },
-            { id: 3, name: "Yazılım Grubu", lastMessage: "Yeni güncelleme yayında 🚀", time: "Pazartesi", avatarBg: "bg-purple-600", initials: "YG" },
-            { id: 4, name: "Zeynep Demir", lastMessage: "Dosyaları gönderdim.", time: "09:45", avatarBg: "bg-pink-600", initials: "ZD" }
+            { id: 1, name: "Kanka 1", avatarBg: "bg-emerald-600", initials: "K1" },
+            { id: 2, name: "Ahmet Yılmaz", avatarBg: "bg-cyan-600", initials: "AY" },
+            { id: 3, name: "Yazılım Grubu", avatarBg: "bg-purple-600", initials: "YG" },
+            { id: 4, name: "Zeynep Demir", avatarBg: "bg-pink-600", initials: "ZD" }
         ];
+
+        let activeContactId = 1;
+
+        // Yerel hafızadan (localStorage) mesajları çek veya boş başlat
+        let chatData = JSON.parse(localStorage.getItem('aurachat_messages')) || {
+            1: [{ sender: 'other', text: 'Selam kanka! AuraChat yerel yedekleme sistemi aktif 🚀', time: '11:22' }],
+            2: [{ sender: 'other', text: 'Yarın projeyi test edelim mi?', time: 'Dün' }],
+            3: [{ sender: 'other', text: 'Yeni güncelleme yayında 🚀', time: 'Pazartesi' }],
+            4: [{ sender: 'other', text: 'Dosyaları gönderdim.', time: '09:45' }]
+        };
 
         const contactListEl = document.getElementById('contact-list');
         const sidebar = document.getElementById('sidebar');
@@ -118,30 +110,34 @@
         const activeName = document.getElementById('active-name');
         const activeAvatar = document.getElementById('active-avatar');
         const backBtn = document.getElementById('back-btn');
+        const messageContainer = document.getElementById('message-container');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
 
-        // Kişi listesini HTML'e basma
+        // Kişileri listele
         function renderContacts() {
             contactListEl.innerHTML = '';
             contacts.forEach(contact => {
+                const messages = chatData[contact.id] || [];
+                const lastMsg = messages.length > 0 ? messages[messages.length - 1].text : "Henüz mesaj yok";
+                const lastTime = messages.length > 0 ? messages[messages.length - 1].time : "";
+
                 const div = document.createElement('div');
-                div.className = "flex items-center px-4 py-3 hover:bg-[#202c33]/70 cursor-pointer transition border-b border-gray-800/30";
+                div.className = `flex items-center px-4 py-3 hover:bg-[#202c33]/70 cursor-pointer transition border-b border-gray-800/30 ${activeContactId === contact.id ? 'bg-[#202c33]/90' : ''}`;
                 div.innerHTML = `
                     <div class="w-12 h-12 ${contact.avatarBg} rounded-full flex items-center text-white font-semibold justify-center mr-3 shadow">${contact.initials}</div>
                     <div class="flex-1 overflow-hidden">
                         <div class="flex justify-between items-baseline">
                             <h4 class="text-white font-medium text-sm">${contact.name}</h4>
-                            <span class="text-[11px] text-gray-400">${contact.time}</span>
+                            <span class="text-[11px] text-gray-400">${lastTime}</span>
                         </div>
-                        <p class="text-xs text-gray-400 truncate mt-0.5">${contact.lastMessage}</p>
+                        <p class="text-xs text-gray-400 truncate mt-0.5">${lastMsg}</p>
                     </div>
                 `;
-                // Kişiye tıklandığında sohbeti aç
                 div.addEventListener('click', () => {
-                    activeName.textContent = contact.name;
-                    activeAvatar.textContent = contact.initials;
-                    activeAvatar.className = `w-10 h-10 ${contact.avatarBg} rounded-full flex items-center text-white font-semibold justify-center shadow`;
-                    
-                    // Mobilde sohbet penceresini göster, menüyü gizle
+                    activeContactId = contact.id;
+                    updateActiveChat();
+                    renderContacts();
                     if (window.innerWidth < 768) {
                         sidebar.classList.add('hidden');
                         chatArea.classList.remove('hidden');
@@ -151,14 +147,76 @@
             });
         }
 
-        // Mobilde geri tuşuna basınca kişi listesine dön
+        // Aktif sohbet ekranını güncelle ve mesajları çiz
+        function updateActiveChat() {
+            const currentContact = contacts.find(c => c.id === activeContactId);
+            activeName.textContent = currentContact.name;
+            activeAvatar.textContent = currentContact.initials;
+            activeAvatar.className = `w-10 h-10 ${currentContact.avatarBg} rounded-full flex items-center text-white font-semibold justify-center shadow`;
+
+            messageContainer.innerHTML = '';
+            const messages = chatData[activeContactId] || [];
+
+            messages.forEach(msg => {
+                const msgDiv = document.createElement('div');
+                if (msg.sender === 'me') {
+                    msgDiv.className = "flex justify-end";
+                    msgDiv.innerHTML = `
+                        <div class="bg-[#005c4b] text-white px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
+                            <p>${msg.text}</p>
+                            <span class="text-[10px] text-emerald-200 float-right ml-3 mt-1">${msg.time}</span>
+                        </div>
+                    `;
+                } else {
+                    msgDiv.className = "flex justify-start";
+                    msgDiv.innerHTML = `
+                        <div class="bg-[#202c33] text-gray-100 px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
+                            <p>${msg.text}</p>
+                            <span class="text-[10px] text-gray-400 float-right ml-3 mt-1">${msg.time}</span>
+                        </div>
+                    `;
+                }
+                messageContainer.appendChild(msgDiv);
+            });
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+
+        // Mesaj gönderme fonksiyonu
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+
+            if (!chatData[activeContactId]) {
+                chatData[activeContactId] = [];
+            }
+
+            // Mesajı ekle
+            chatData[activeContactId].push({ sender: 'me', text: text, time: timeStr });
+
+            // Yerel hafızaya (localStorage) kaydet (Telefonunda yedeklenmiş olur)
+            localStorage.setItem('aurachat_messages', JSON.stringify(chatData));
+
+            messageInput.value = '';
+            updateActiveChat();
+            renderContacts();
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
         backBtn.addEventListener('click', () => {
             chatArea.classList.add('hidden');
             sidebar.classList.remove('hidden');
         });
 
-        // Sayfa yüklendiğinde çalıştır
+        // İlk açılış
         renderContacts();
+        updateActiveChat();
     </script>
 </body>
 </html>
