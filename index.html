@@ -56,7 +56,7 @@
     <div class="bg-[#111b21] w-full max-w-6xl h-full md:h-[92vh] flex shadow-2xl rounded-none md:rounded-2xl overflow-hidden border border-gray-800/80 relative">
         
         <!-- SOL TARAF: Sohbet ve Kişi Listesi -->
-        <div id="sidebar" class="w-full md:w-[38%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute md:relative z-20 transition-all duration-300">
+        <div id="sidebar" class="w-full md:w-[38%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute md:relative inset-y-0 left-0 z-20 transition-transform duration-300">
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
                     <div id="user-profile-container" class="cursor-pointer">
@@ -79,7 +79,7 @@
                 </div>
             </div>
 
-            <!-- Liste (Genel Oda + Kayıtlı Kullanıcılar Dinamik Dolacak) -->
+            <!-- Liste (Genel Oda + Diğer Kayıtlı Kullanıcılar) -->
             <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40"></div>
 
             <div class="bg-[#202c33] border-t border-gray-800 py-2.5 px-6 flex justify-between items-center text-gray-400 flex-shrink-0">
@@ -99,14 +99,14 @@
         </div>
 
         <!-- SAĞ TARAF: Aktif Mesajlaşma Ekranı -->
-        <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-0 h-full z-10 -translate-x-full md:translate-x-0 transition-transform duration-300">
+        <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-y-0 right-0 z-30 translate-x-full md:translate-x-0 transition-transform duration-300 h-full">
             <!-- Sohbet Üst Barı -->
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
-                    <button id="back-btn" class="md:hidden text-gray-400 mr-1 hover:text-white transition">
-                        <i class="fa-solid fa-arrow-left text-lg"></i>
+                    <button id="back-btn" class="md:hidden text-gray-400 mr-1 hover:text-white transition text-lg px-1 py-0.5">
+                        <i class="fa-solid fa-arrow-left"></i>
                     </button>
-                    <div id="active-chat-avatar" class="w-10 h-10 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center shadow">
+                    <div id="active-chat-avatar" class="w-10 h-10 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0">
                         <i class="fa-solid fa-globe text-sm"></i>
                     </div>
                     <div>
@@ -252,7 +252,7 @@
             loadMessages('global');
         }
 
-        // Güvenli DOM element üretimi (Mükerrer ve tıklama hatasını çözer)
+        // Kişi Listesini Doldurma ve Kendi Adını Filtreleme
         function loadContacts() {
             onSnapshot(collection(db, "users"), (snapshot) => {
                 contactList.innerHTML = '';
@@ -275,15 +275,17 @@
                 contactList.appendChild(globalDiv);
 
                 const seenNames = new Set();
-                if (currentUser) seenNames.add(currentUser.name);
+                const myNameClean = currentUser ? currentUser.name.trim().toLowerCase() : '';
 
-                // 2. Diğer Kullanıcılar
+                // 2. Diğer Kullanıcılar (Kendi adını kesinlikle hariç tut)
                 snapshot.forEach((docSnap) => {
                     const user = docSnap.data();
                     if (!user || !user.name) return;
-                    if (currentUser && user.name === currentUser.name) return;
-                    if (seenNames.has(user.name)) return; // Mükerrer isimleri engelle
-                    seenNames.add(user.name);
+                    
+                    const targetNameClean = user.name.trim().toLowerCase();
+                    if (targetNameClean === myNameClean) return; // Kendini listede gösterme!
+                    if (seenNames.has(targetNameClean)) return;  // Mükerrer isimleri engelle
+                    seenNames.add(targetNameClean);
 
                     const chatId = [currentUser.name, user.name].sort().join('_');
 
@@ -333,13 +335,21 @@
                 activeChatStatus.textContent = "Özel Sohbet";
             }
 
-            // Mobilde sohbet ekranını aç
-            chatArea.classList.remove('-translate-x-full');
+            // MOBİL EKRAN GEÇİŞİ: Mobilde sidebar'ı gizle, sohbet alanını öne getir
+            if (window.innerWidth < 768) {
+                sidebar.classList.add('-translate-x-full');
+                chatArea.classList.remove('translate-x-full');
+            }
+
             loadMessages(chatId);
         }
 
+        // Mobilde Geri Tuşu: Sohbeti kapatıp listeye dön
         backBtn.addEventListener('click', () => {
-            chatArea.classList.add('-translate-x-full');
+            if (window.innerWidth < 768) {
+                sidebar.classList.remove('-translate-x-full');
+                chatArea.classList.add('translate-x-full');
+            }
         });
 
         function loadMessages(chatId) {
