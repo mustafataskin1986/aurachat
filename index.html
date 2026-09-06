@@ -145,7 +145,7 @@
     <!-- FIREBASE VE WHATSAPP MANTIĞI -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc, getDoc, getDocs, updateDoc, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
@@ -206,7 +206,6 @@
             }
         });
 
-        // ŞİFRELİ GİRİŞ VE KAYIT MANTIĞI
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const username = usernameInput.value.trim();
@@ -220,18 +219,15 @@
 
             if (userSnap.exists()) {
                 const userData = userSnap.data();
-                // Şifre kontrolü
                 if (userData.password && userData.password !== password) {
                     alert("Şifre hatalı kanka! Bu isim başka bir şifreyle kayıtlı.");
                     return;
                 }
-                // Eğer yeni fotoğraf seçmediyse eskisini koru
                 if (!finalAvatar && userData.avatar) {
                     finalAvatar = userData.avatar;
                 }
             }
 
-            // Kullanıcıyı veritabanına kaydet / güncelle
             await setDoc(userRef, {
                 name: username,
                 password: password,
@@ -272,7 +268,7 @@
             loadMessages('global');
         }
 
-        // Kişi Listesini Doldurma ve Kendi Adını Filtreleme
+        // Kişi Listesini Doldurma ve Son Mesaj / Okunmamış Sayacı Entegrasyonu
         function loadContacts() {
             onSnapshot(collection(db, "users"), (snapshot) => {
                 contactList.innerHTML = '';
@@ -285,14 +281,30 @@
                         <i class="fa-solid fa-globe"></i>
                     </div>
                     <div class="flex-1 overflow-hidden">
-                        <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
-                        <p class="text-xs text-emerald-400 truncate mt-0.5">Ortak sohbet alanı</p>
+                        <div class="flex justify-between items-baseline">
+                            <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
+                            <span class="text-[11px] text-gray-400 global-time"></span>
+                        </div>
+                        <p class="text-xs text-gray-400 truncate mt-0.5 global-preview">Ortak sohbet alanı</p>
                     </div>
                 `;
                 globalDiv.addEventListener('click', () => {
                     selectChat('global', 'Genel Kanka Odası 🌍', 'global');
                 });
                 contactList.appendChild(globalDiv);
+
+                // Genel oda için son mesaj dinleyicisi
+                const globalTimeSpan = globalDiv.querySelector('.global-time');
+                const globalPreview = globalDiv.querySelector('.global-preview');
+                onSnapshot(query(collection(db, "chats", "global", "messages"), orderBy("createdAt", "desc")), (msgSnap) => {
+                    if (!msgSnap.empty) {
+                        const lastMsg = msgSnap.docs[0].data();
+                        globalPreview.textContent = lastMsg.text;
+                        if (lastMsg.createdAt) {
+                            globalTimeSpan.textContent = lastMsg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        }
+                    }
+                });
 
                 const seenNames = new Set();
                 const myNameClean = currentUser ? currentUser.name.trim().toLowerCase() : '';
@@ -303,8 +315,8 @@
                     if (!user || !user.name) return;
                     
                     const targetNameClean = user.name.trim().toLowerCase();
-                    if (targetNameClean === myNameClean) return; // Kendini listede gösterme
-                    if (seenNames.has(targetNameClean)) return;  // Mükerrer engelle
+                    if (targetNameClean === myNameClean) return;
+                    if (seenNames.has(targetNameClean)) return;
                     seenNames.add(targetNameClean);
 
                     const chatId = [currentUser.name, user.name].sort().join('_');
@@ -322,19 +334,78 @@
                         <div class="flex-1 overflow-hidden ml-3">
                             <div class="flex justify-between items-baseline">
                                 <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
-                                <span class="text-[10px] text-emerald-400">Çevrimiçi</span>
+                                <span class="text-[11px] text-gray-400 time-span"></span>
                             </div>
-                            <p class="text-xs text-gray-400 truncate mt-0.5">Özel mesaj göndermek için tıkla</p>
+                            <div class="flex justify-between items-center mt-0.5">
+                                <p class="text-xs text-gray-400 truncate msg-preview">Henüz mesaj yok</p>
+                                <div class="unread-badge hidden bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2"></div>
+                            </div>
                         </div>
                     `;
 
+                    // Her özel sohbetin mesajlarını dinleyerek son mesajı ve okunmamış sayısını güncelle
+                    const timeSpan = userDiv.querySelector('.time-span');
+                    const msgPreview = userDiv.querySelector('.msg-preview');
+                    const unreadBadge = userDiv.querySelector('.unread-badge');
+
+                    onSnapshot(query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc")), (msgSnapshot) => {
+                        let lastText = "Henüz mesaj yok";
+                        let lastTime = "";
+                        let unreadCount = 0;
+
+                        if (!msgSnapshot.empty) {
+                            const latestMsg = msgSnapshot.docs[0].data();
+                            lastText = latestMsg.text;
+                            if (latestMsg.createdAt) {
+                                lastTime = latestMsg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                            }
+                        }
+
+                        // Karşı taraftan gelen ve okunmamış mesajları say
+                        msgSnapshot.forEach((mDoc) => {
+                            const mData = mDoc.data();
+                            if (mData.senderName !== currentUser.name && mData.read === false) {
+                                unreadCount++;
+                            }
+                        });
+
+                        msgPreview.textContent = lastText;
+                        timeSpan.textContent = lastTime;
+
+                        if (unreadCount > 0) {
+                            unreadBadge.textContent = unreadCount;
+                            unreadBadge.classList.remove('hidden');
+                        } else {
+                            unreadBadge.classList.add('hidden');
+                        }
+                    });
+
                     userDiv.addEventListener('click', () => {
                         selectChat(chatId, user.name, user.avatar || '');
+                        markMessagesAsRead(chatId);
                     });
 
                     contactList.appendChild(userDiv);
                 });
             });
+        }
+
+        // Sohbet açıldığında okunmamış mesajları okundu olarak işaretle
+        async function markMessagesAsRead(chatId) {
+            if (chatId === 'global') return;
+            try {
+                const snapshot = await getDocs(collection(db, "chats", chatId, "messages"));
+                snapshot.forEach(async (docSnap) => {
+                    const msg = docSnap.data();
+                    if (msg.senderName !== currentUser.name && msg.read === false) {
+                        await updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), {
+                            read: true
+                        });
+                    }
+                });
+            } catch (e) {
+                console.error("Okundu işaretlenirken hata:", e);
+            }
         }
 
         function selectChat(chatId, name, avatar) {
@@ -354,7 +425,6 @@
                 activeChatStatus.textContent = "Özel Sohbet";
             }
 
-            // Mobilde sidebar gizle, sohbet alanını aç
             if (window.innerWidth < 768) {
                 sidebar.classList.add('-translate-x-full');
                 chatArea.classList.remove('translate-x-full');
@@ -432,7 +502,8 @@
                     text: text,
                     senderName: currentUser.name,
                     senderAvatar: currentUser.avatar || '',
-                    createdAt: serverTimestamp()
+                    createdAt: serverTimestamp(),
+                    read: false
                 });
                 messageInput.value = '';
             } catch (e) {
