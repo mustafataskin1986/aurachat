@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AuraChat - Canlı Mesajlaşma</title>
+    <title>AuraChat - WhatsApp Web</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome İkonları -->
@@ -23,7 +23,7 @@
                 <i class="fa-solid fa-comments"></i>
             </div>
             <h2 class="text-white text-xl font-bold mb-1">AuraChat'e Hoş Geldin</h2>
-            <p class="text-gray-400 text-sm mb-6">Canlı sohbete katılmak için adını yaz ve profil resmini seç kanka.</p>
+            <p class="text-gray-400 text-sm mb-6">Kişileri görmek ve mesajlaşmak için adını yaz kanka.</p>
 
             <form id="login-form" class="space-y-5 text-left">
                 <div class="flex flex-col items-center">
@@ -41,7 +41,7 @@
 
                 <div>
                     <label class="block text-xs font-medium text-gray-300 mb-1.5">Adın veya Rumuzun</label>
-                    <input type="text" id="username-input" autocomplete="off" placeholder="Örn: Mustafa" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+                    <input type="text" id="username-input" autocomplete="off" placeholder="Örn: Hasan veya Mustafa" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
                 </div>
 
                 <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
@@ -55,8 +55,8 @@
     <!-- Ana Konteyner -->
     <div class="bg-[#111b21] w-full max-w-6xl h-full md:h-[92vh] flex shadow-2xl rounded-none md:rounded-2xl overflow-hidden border border-gray-800/80 relative">
         
-        <!-- SOL TARAF: Sohbet Listesi -->
-        <div id="sidebar" class="w-full md:w-[36%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute md:relative z-20 transition-all duration-300">
+        <!-- SOL TARAF: Sohbet ve Kişi Listesi -->
+        <div id="sidebar" class="w-full md:w-[38%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute md:relative z-20 transition-all duration-300">
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
                     <div id="user-profile-container" class="cursor-pointer">
@@ -67,31 +67,33 @@
                 <div class="flex space-x-4 text-gray-400 text-lg">
                     <i class="fa-solid fa-circle-notch cursor-pointer hover:text-white transition"></i>
                     <i class="fa-solid fa-comment-alt cursor-pointer hover:text-white transition"></i>
-                    <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition"></i>
+                    <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition" id="logout-btn" title="Çıkış Yap"></i>
                 </div>
             </div>
 
+            <!-- Arama Kutusu -->
             <div class="p-2.5 bg-[#111b21] flex-shrink-0">
                 <div class="bg-[#202c33] flex items-center px-3 py-2 rounded-xl border border-transparent focus-within:border-emerald-500/50 transition">
                     <i class="fa-solid fa-magnifying-glass text-gray-400 text-sm mr-3"></i>
-                    <input type="text" placeholder="Genel Sohbet Odası" disabled class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400">
+                    <input type="text" id="search-contact" placeholder="Kişilerde veya odalarda ara..." class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400">
                 </div>
             </div>
 
-            <!-- Tek Odalı Ortak Sohbet Listesi (Tıklanabilir hale getirildi) -->
+            <!-- Liste (Genel Oda + Kayıtlı Kullanıcılar) -->
             <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40">
-                <div id="room-btn" class="flex items-center px-4 py-3 bg-[#202c33]/90 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30">
+                <!-- Genel Oda Sabit -->
+                <div onclick="selectChat('global', 'Genel Kanka Odası 🌍', 'global')" class="flex items-center px-4 py-3 bg-[#202c33]/60 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30">
                     <div class="w-12 h-12 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
                         <i class="fa-solid fa-globe"></i>
                     </div>
                     <div class="flex-1 overflow-hidden">
                         <div class="flex justify-between items-baseline">
                             <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
-                            <span id="last-msg-time" class="text-[11px] text-gray-400">Canlı</span>
                         </div>
-                        <p id="last-msg-text" class="text-xs text-emerald-400 truncate mt-0.5">Herkes burada mesajlaşıyor!</p>
+                        <p class="text-xs text-emerald-400 truncate mt-0.5">Herkesin buluştuğu ortak alan</p>
                     </div>
                 </div>
+                <!-- Diğer Kullanıcılar Buraya Dinamik Gelecek -->
             </div>
 
             <div class="bg-[#202c33] border-t border-gray-800 py-2.5 px-6 flex justify-between items-center text-gray-400 flex-shrink-0">
@@ -105,25 +107,25 @@
                 </div>
                 <div class="flex flex-col items-center cursor-pointer hover:text-white transition">
                     <i class="fa-solid fa-users text-lg"></i>
-                    <span class="text-[10px] mt-0.5">Topluluk</span>
+                    <span class="text-[10px] mt-0.5">Kişiler</span>
                 </div>
             </div>
         </div>
 
-        <!-- SAĞ TARAF: Mesajlaşma Ekranı -->
-        <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-0 h-full z-10">
+        <!-- SAĞ TARAF: Aktif Mesajlaşma Ekranı -->
+        <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-0 h-full z-10 -translate-x-full md:translate-x-0 transition-transform duration-300">
+            <!-- Sohbet Üst Barı -->
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
-                    <!-- Mobilde listeye geri dönme tuşu -->
                     <button id="back-btn" class="md:hidden text-gray-400 mr-1 hover:text-white transition">
                         <i class="fa-solid fa-arrow-left text-lg"></i>
                     </button>
-                    <div class="w-10 h-10 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center shadow">
+                    <div id="active-chat-avatar" class="w-10 h-10 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center shadow">
                         <i class="fa-solid fa-globe text-sm"></i>
                     </div>
                     <div>
-                        <h4 class="text-white font-medium text-sm md:text-base">Genel Kanka Odası 🌍</h4>
-                        <span class="text-[11px] text-emerald-400 font-medium">Çevrimiçi (Anlık Senkronize)</span>
+                        <h4 id="active-chat-name" class="text-white font-medium text-sm md:text-base">Genel Kanka Odası 🌍</h4>
+                        <span id="active-chat-status" class="text-[11px] text-emerald-400 font-medium">Çevrimiçi</span>
                     </div>
                 </div>
                 <div class="flex space-x-5 text-gray-400 text-lg">
@@ -140,7 +142,7 @@
             <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0">
                 <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
-                <input type="text" id="message-input" autocomplete="off" placeholder="Genel odaya mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
+                <input type="text" id="message-input" autocomplete="off" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
                 <button id="send-btn" class="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-500 transition shadow flex-shrink-0">
                     <i class="fa-solid fa-paper-plane text-sm"></i>
                 </button>
@@ -149,12 +151,11 @@
 
     </div>
 
-    <!-- FIREBASE VE SOHBET MANTIĞI -->
+    <!-- FIREBASE VE WHATSAPP MANTIĞI -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // Senin Firebase Konfigürasyonun
         const firebaseConfig = {
             apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
             authDomain: "aurachat-99f69.firebaseapp.com",
@@ -177,37 +178,43 @@
         const sendBtn = document.getElementById('send-btn');
         const userProfileContainer = document.getElementById('user-profile-container');
         const userNameSpan = document.getElementById('user-name-span');
-        const lastMsgText = document.getElementById('last-msg-text');
-        const lastMsgTime = document.getElementById('last-msg-time');
-        
-        // Mobil geçiş butonları
-        const roomBtn = document.getElementById('room-btn');
-        const backBtn = document.getElementById('back-btn');
+        const contactList = document.getElementById('contact-list');
         const sidebar = document.getElementById('sidebar');
-
-        // Odaya tıklanınca mobilde sohbet ekranını aç
-        roomBtn.addEventListener('click', () => {
-            if (window.innerWidth < 768) {
-                sidebar.classList.add('-translate-x-full');
-            }
-        });
-
-        // Geri tuşuna basınca mobilde tekrar listeye dön
-        backBtn.addEventListener('click', () => {
-            if (window.innerWidth < 768) {
-                sidebar.classList.remove('-translate-x-full');
-            }
-        });
+        const chatArea = document.getElementById('chat-area');
+        const backBtn = document.getElementById('back-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const activeChatName = document.getElementById('active-chat-name');
+        const activeChatAvatar = document.getElementById('active-chat-avatar');
+        const activeChatStatus = document.getElementById('active-chat-status');
+        const searchContact = document.getElementById('search-contact');
 
         let base64Image = '';
         let currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
+        let currentChatId = 'global';
+        let currentChatName = 'Genel Kanka Odası 🌍';
+        let unsubscribeMessages = null;
+        let typingTimeout = null;
 
+        // Kullanıcı Giriş Kontrolü
         if (currentUser) {
             loginOverlay.classList.add('hidden');
             updateUserInterface(currentUser);
-            initChat();
+            registerUserToFirestore(currentUser);
+            initApp();
         } else {
             loginOverlay.classList.remove('hidden');
+        }
+
+        async function registerUserToFirestore(user) {
+            try {
+                await setDoc(doc(db, "users", user.name), {
+                    name: user.name,
+                    avatar: user.avatar || '',
+                    lastSeen: serverTimestamp()
+                });
+            } catch (e) {
+                console.error("Kullanıcı kaydedilemedi:", e);
+            }
         }
 
         profileImageInput.addEventListener('change', (e) => {
@@ -222,7 +229,7 @@
             }
         });
 
-        loginForm.addEventListener('submit', (e) => {
+        loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const username = usernameInput.value.trim();
             if (!username) return;
@@ -235,7 +242,13 @@
             localStorage.setItem('aurachat_user', JSON.stringify(currentUser));
             loginOverlay.classList.add('hidden');
             updateUserInterface(currentUser);
-            initChat();
+            await registerUserToFirestore(currentUser);
+            initApp();
+        });
+
+        logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('aurachat_user');
+            location.reload();
         });
 
         function updateUserInterface(user) {
@@ -243,43 +256,113 @@
                 if (user.avatar) {
                     userProfileContainer.innerHTML = `<img src="${user.avatar}" class="w-10 h-10 rounded-full object-cover shadow border border-emerald-500/50">`;
                 } else {
-                    const initials = user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                    const initials = user.name.substring(0, 2).toUpperCase();
                     userProfileContainer.innerHTML = `<div class="w-10 h-10 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center justify-center text-white font-semibold shadow">${initials}</div>`;
                 }
             }
-            if (userNameSpan) {
-                userNameSpan.textContent = user.name;
-            }
+            if (userNameSpan) userNameSpan.textContent = user.name;
         }
 
-        function initChat() {
-            const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
+        function initApp() {
+            loadContacts();
+            loadMessages('global');
+        }
 
-            onSnapshot(q, (snapshot) => {
+        // Firestore'dan kayıtlı kullanıcıları çekip sol listeye basma
+        function loadContacts() {
+            onSnapshot(collection(db, "users"), (snapshot) => {
+                // Mevcut genel odayı koruyalım, altına kişileri ekleyelim
+                let html = `
+                    <div onclick="window.selectChat('global', 'Genel Kanka Odası 🌍', 'global')" class="flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30">
+                        <div class="w-12 h-12 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
+                            <i class="fa-solid fa-globe"></i>
+                        </div>
+                        <div class="flex-1 overflow-hidden">
+                            <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
+                            <p class="text-xs text-emerald-400 truncate mt-0.5">Ortak sohbet alanı</p>
+                        </div>
+                    </div>
+                `;
+
+                snapshot.forEach((docSnap) => {
+                    const user = docSnap.data();
+                    // Kendini kişi listesinde gösterme
+                    if (currentUser && user.name === currentUser.name) return;
+
+                    // Özel Sohbet ID'si: İki ismi alfabetik sırayla birleştiriyoruz (Örn: Hasan-Mustafa)
+                    const chatId = [currentUser.name, user.name].sort().join('_');
+
+                    let avatarContent = `<div class="w-12 h-12 bg-cyan-600 rounded-full flex items-center justify-center text-white font-bold shadow flex-shrink-0">${user.name.substring(0,2).toUpperCase()}</div>`;
+                    if (user.avatar) {
+                        avatarContent = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
+                    }
+
+                    html += `
+                        <div onclick="window.selectChat('${chatId}', '${user.name}', '${user.avatar || ''}')" class="flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30">
+                            ${avatarContent}
+                            <div class="flex-1 overflow-hidden ml-3">
+                                <div class="flex justify-between items-baseline">
+                                    <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
+                                    <span class="text-[10px] text-emerald-400">Çevrimiçi</span>
+                                </div>
+                                <p class="text-xs text-gray-400 truncate mt-0.5">Özel mesaj göndermek için tıkla</p>
+                            </div>
+                        </div>
+                    `;
+                });
+                contactList.innerHTML = html;
+            });
+        }
+
+        // Globalde veya Kişide Sohbet Seçme Fonksiyonu
+        window.selectChat = function(chatId, name, avatar) {
+            currentChatId = chatId;
+            currentChatName = name;
+            activeChatName.textContent = name;
+
+            if (chatId === 'global') {
+                activeChatAvatar.innerHTML = `<i class="fa-solid fa-globe text-sm"></i>`;
+                activeChatStatus.textContent = "Herkes çevrimiçi";
+            } else {
+                if (avatar && avatar.startsWith('data:image')) {
+                    activeChatAvatar.innerHTML = `<img src="${avatar}" class="w-full h-full rounded-full object-cover">`;
+                } else {
+                    activeChatAvatar.innerHTML = `<span class="text-sm font-bold">${name.substring(0,2).toUpperCase()}</span>`;
+                }
+                activeChatStatus.textContent = "Özel Sohbet";
+            }
+
+            // Mobilde sohbet ekranını aç
+            chatArea.classList.remove('-translate-x-full');
+            loadMessages(chatId);
+        }
+
+        // Mobilde geri tuşu
+        backBtn.addEventListener('click', () => {
+            chatArea.classList.add('-translate-x-full');
+        });
+
+        // Mesajları Yükleme ve Dinleme
+        function loadMessages(chatId) {
+            if (unsubscribeMessages) unsubscribeMessages();
+
+            const q = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"));
+
+            unsubscribeMessages = onSnapshot(q, (snapshot) => {
                 messageContainer.innerHTML = '';
-                let lastMessage = null;
-
                 snapshot.forEach((doc) => {
                     const msg = doc.data();
-                    lastMessage = msg;
                     renderMessage(msg);
                 });
-
-                if (lastMessage) {
-                    lastMsgText.textContent = `${lastMessage.senderName}: ${lastMessage.text}`;
-                    if (lastMessage.createdAt) {
-                        const date = lastMessage.createdAt.toDate();
-                        lastMsgTime.textContent = date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
-                    }
-                }
                 messageContainer.scrollTop = messageContainer.scrollHeight;
+            }, (error) => {
+                console.error("Mesajlar yüklenirken hata:", error);
             });
         }
 
         function renderMessage(msg) {
             const isMe = currentUser && msg.senderName === currentUser.name;
             const msgDiv = document.createElement('div');
-            
             const timeStr = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi';
 
             if (isMe) {
@@ -288,7 +371,10 @@
                     <div class="bg-[#005c4b] text-white px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
                         <p class="text-[11px] text-emerald-200 font-semibold mb-0.5">Sen</p>
                         <p>${escapeHtml(msg.text)}</p>
-                        <span class="text-[10px] text-emerald-200 float-right ml-3 mt-1">${timeStr}</span>
+                        <div class="flex items-center justify-end space-x-1 mt-1">
+                            <span class="text-[10px] text-emerald-200">${timeStr}</span>
+                            <i class="fa-solid fa-check-double text-[10px] text-cyan-300"></i>
+                        </div>
                     </div>
                 `;
             } else {
@@ -315,7 +401,7 @@
             if (!text || !currentUser) return;
 
             try {
-                await addDoc(collection(db, "messages"), {
+                await addDoc(collection(db, "chats", currentChatId, "messages"), {
                     text: text,
                     senderName: currentUser.name,
                     senderAvatar: currentUser.avatar || '',
@@ -333,7 +419,22 @@
             if (e.key === 'Enter') sendMessage();
         });
 
+        // Arama filtresi
+        searchContact.addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const items = contactList.children;
+            for (let item of items) {
+                const text = item.textContent.toLowerCase();
+                if (text.includes(term)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            }
+        });
+
         function escapeHtml(text) {
+            if (!text) return '';
             return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
     </script>
