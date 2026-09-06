@@ -116,7 +116,7 @@
                     </div>
                     <div>
                         <h4 id="active-chat-name" class="text-white font-medium text-sm md:text-base">Genel Kanka Odası 🌍</h4>
-                        <span id="active-chat-status" class="text-[11px] text-emerald-400 font-medium">Çevrimiçi</span>
+                        <span id="active-chat-status" class="text-[11px] text-emerald-400 font-medium"></span>
                     </div>
                 </div>
                 <div class="flex space-x-5 text-gray-400 text-lg">
@@ -185,6 +185,8 @@
         let currentChatId = 'global';
         let currentChatName = 'Genel Kanka Odası 🌍';
         let unsubscribeMessages = null;
+        let unsubscribeChatDoc = null;
+        let typingTimeout = null;
 
         if (currentUser) {
             loginOverlay.classList.add('hidden');
@@ -335,24 +337,32 @@
                                 <span class="text-[11px] text-gray-400 time-span"></span>
                             </div>
                             <div class="flex justify-between items-center mt-0.5">
-                                <p class="text-xs text-gray-400 truncate msg-preview">Henüz mesaj yok</p>
+                                <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
+                                    <span class="tick-container hidden mr-1 flex-shrink-0"></span>
+                                    <span class="preview-text truncate">Henüz mesaj yok</span>
+                                </p>
                                 <div class="unread-badge hidden bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2"></div>
                             </div>
                         </div>
                     `;
 
                     const timeSpan = userDiv.querySelector('.time-span');
-                    const msgPreview = userDiv.querySelector('.msg-preview');
+                    const previewText = userDiv.querySelector('.preview-text');
+                    const tickContainer = userDiv.querySelector('.tick-container');
                     const unreadBadge = userDiv.querySelector('.unread-badge');
 
                     onSnapshot(query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc")), (msgSnapshot) => {
                         let lastText = "Henüz mesaj yok";
                         let lastTime = "";
                         let unreadCount = 0;
+                        let isLastMsgMine = false;
+                        let lastMsgRead = false;
 
                         if (!msgSnapshot.empty) {
                             const latestMsg = msgSnapshot.docs[0].data();
                             lastText = latestMsg.text;
+                            isLastMsgMine = (latestMsg.senderName === currentUser.name);
+                            lastMsgRead = latestMsg.read;
                             if (latestMsg.createdAt) {
                                 lastTime = latestMsg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                             }
@@ -365,8 +375,17 @@
                             }
                         });
 
-                        msgPreview.textContent = lastText;
+                        previewText.textContent = lastText;
                         timeSpan.textContent = lastTime;
+
+                        // İndeks alanında son mesaj benimse tik durumunu göster
+                        if (isLastMsgMine) {
+                            const tickColor = lastMsgRead ? 'text-cyan-300' : 'text-gray-400';
+                            tickContainer.innerHTML = `<i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>`;
+                            tickContainer.classList.remove('hidden');
+                        } else {
+                            tickContainer.classList.add('hidden');
+                        }
 
                         if (unreadCount > 0) {
                             unreadBadge.textContent = unreadCount;
@@ -417,7 +436,7 @@
                 } else {
                     activeChatAvatar.innerHTML = `<span class="text-sm font-bold">${name.substring(0,2).toUpperCase()}</span>`;
                 }
-                activeChatStatus.textContent = "Özel Sohbet";
+                listenToChatDoc(chatId);
             }
 
             if (window.innerWidth < 768) {
@@ -426,6 +445,25 @@
             }
 
             loadMessages(chatId);
+        }
+
+        function listenToChatDoc(chatId) {
+            if (unsubscribeChatDoc) unsubscribeChatDoc();
+            activeChatStatus.textContent = "";
+
+            unsubscribeChatDoc = onSnapshot(doc(db, "chats", chatId), (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const otherName = chatId.split('_').find(n => n !== currentUser.name);
+                    const isOtherTyping = otherName && data[`typing_${otherName}`];
+                    
+                    if (isOtherTyping) {
+                        activeChatStatus.innerHTML = `<span class="text-emerald-400 font-medium animate-pulse">yazıyor...</span>`;
+                    } else {
+                        activeChatStatus.textContent = "";
+                    }
+                }
+            });
         }
 
         backBtn.addEventListener('click', () => {
@@ -458,7 +496,6 @@
             const timeStr = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi';
 
             if (isMe) {
-                // Mesaj okunduysa aktif renk (cyan), okunmadıysa gri tik
                 const tickColor = msg.read ? 'text-cyan-300' : 'text-gray-400';
                 msgDiv.className = "flex justify-end";
                 msgDiv.innerHTML = `
@@ -495,6 +532,13 @@
             if (!text || !currentUser) return;
 
             try {
+                // Mesaj gönderildiğinde yazıyor bilgisini hemen kapat
+                if (currentChatId !== 'global') {
+                    await setDoc(doc(db, "chats", currentChatId), {
+                        [`typing_${currentUser.name}`]: false
+                    }, { merge: true });
+                }
+
                 await addDoc(collection(db, "chats", currentChatId, "messages"), {
                     text: text,
                     senderName: currentUser.name,
@@ -508,6 +552,22 @@
                 alert("Mesaj gönderilirken hata oluştu!");
             }
         }
+
+        // Yazarken karşı tarafa bildirme mantığı
+        messageInput.addEventListener('input', () => {
+            if (currentChatId === 'global') return;
+
+            setDoc(doc(db, "chats", currentChatId), {
+                [`typing_${currentUser.name}`]: true
+            }, { merge: true });
+
+            if (typingTimeout) clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                setDoc(doc(db, "chats", currentChatId), {
+                    [`typing_${currentUser.name}`]: false
+                }, { merge: true });
+            }, 2000);
+        });
 
         sendBtn.addEventListener('click', sendMessage);
         messageInput.addEventListener('keypress', (e) => {
