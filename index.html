@@ -23,9 +23,9 @@
                 <i class="fa-solid fa-comments"></i>
             </div>
             <h2 class="text-white text-xl font-bold mb-1">AuraChat'e Hoş Geldin</h2>
-            <p class="text-gray-400 text-sm mb-6">Kişileri görmek ve mesajlaşmak için adını yaz kanka.</p>
+            <p class="text-gray-400 text-sm mb-6">Güvenli sohbet için adını ve şifreni gir kanka.</p>
 
-            <form id="login-form" class="space-y-5 text-left">
+            <form id="login-form" class="space-y-4 text-left">
                 <div class="flex flex-col items-center">
                     <label for="profile-image-input" class="cursor-pointer group relative">
                         <div id="profile-preview" class="w-20 h-20 bg-[#202c33] border-2 border-dashed border-gray-600 rounded-full flex items-center justify-center text-gray-400 overflow-hidden group-hover:border-emerald-500 transition shadow-inner">
@@ -36,15 +36,20 @@
                         </div>
                     </label>
                     <input type="file" id="profile-image-input" accept="image/*" class="hidden">
-                    <span class="text-xs text-gray-400 mt-2">Profil Fotoğrafı Ekle</span>
+                    <span class="text-xs text-gray-400 mt-2">Profil Fotoğrafı Ekle (İsteğe bağlı)</span>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-gray-300 mb-1.5">Adın veya Rumuzun</label>
-                    <input type="text" id="username-input" autocomplete="off" placeholder="Örn: Hasan veya Mustafa" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+                    <label class="block text-xs font-medium text-gray-300 mb-1">Adın veya Rumuzun</label>
+                    <input type="text" id="username-input" autocomplete="off" placeholder="Örn: Hasan" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
                 </div>
 
-                <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
+                <div>
+                    <label class="block text-xs font-medium text-gray-300 mb-1">Şifren</label>
+                    <input type="password" id="password-input" autocomplete="current-password" placeholder="Örn: 123456" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+                </div>
+
+                <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2 mt-2">
                     <span>Sohbete Başla</span>
                     <i class="fa-solid fa-arrow-right text-sm"></i>
                 </button>
@@ -79,7 +84,7 @@
                 </div>
             </div>
 
-            <!-- Liste (Genel Oda + Diğer Kayıtlı Kullanıcılar) -->
+            <!-- Liste -->
             <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40"></div>
 
             <div class="bg-[#202c33] border-t border-gray-800 py-2.5 px-6 flex justify-between items-center text-gray-400 flex-shrink-0">
@@ -140,7 +145,7 @@
     <!-- FIREBASE VE WHATSAPP MANTIĞI -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
@@ -157,6 +162,7 @@
         const loginOverlay = document.getElementById('login-overlay');
         const loginForm = document.getElementById('login-form');
         const usernameInput = document.getElementById('username-input');
+        const passwordInput = document.getElementById('password-input');
         const profileImageInput = document.getElementById('profile-image-input');
         const profilePreview = document.getElementById('profile-preview');
         const messageContainer = document.getElementById('message-container');
@@ -183,22 +189,9 @@
         if (currentUser) {
             loginOverlay.classList.add('hidden');
             updateUserInterface(currentUser);
-            registerUserToFirestore(currentUser);
             initApp();
         } else {
             loginOverlay.classList.remove('hidden');
-        }
-
-        async function registerUserToFirestore(user) {
-            try {
-                await setDoc(doc(db, "users", user.name), {
-                    name: user.name,
-                    avatar: user.avatar || '',
-                    lastSeen: serverTimestamp()
-                });
-            } catch (e) {
-                console.error("Kullanıcı kaydedilemedi:", e);
-            }
         }
 
         profileImageInput.addEventListener('change', (e) => {
@@ -213,20 +206,47 @@
             }
         });
 
+        // ŞİFRELİ GİRİŞ VE KAYIT MANTIĞI
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const username = usernameInput.value.trim();
-            if (!username) return;
+            const password = passwordInput.value.trim();
+            if (!username || !password) return;
+
+            const userRef = doc(db, "users", username);
+            const userSnap = await getDoc(userRef);
+
+            let finalAvatar = base64Image;
+
+            if (userSnap.exists()) {
+                const userData = userSnap.data();
+                // Şifre kontrolü
+                if (userData.password && userData.password !== password) {
+                    alert("Şifre hatalı kanka! Bu isim başka bir şifreyle kayıtlı.");
+                    return;
+                }
+                // Eğer yeni fotoğraf seçmediyse eskisini koru
+                if (!finalAvatar && userData.avatar) {
+                    finalAvatar = userData.avatar;
+                }
+            }
+
+            // Kullanıcıyı veritabanına kaydet / güncelle
+            await setDoc(userRef, {
+                name: username,
+                password: password,
+                avatar: finalAvatar || '',
+                lastSeen: serverTimestamp()
+            }, { merge: true });
 
             currentUser = {
                 name: username,
-                avatar: base64Image || ''
+                avatar: finalAvatar || ''
             };
 
             localStorage.setItem('aurachat_user', JSON.stringify(currentUser));
             loginOverlay.classList.add('hidden');
             updateUserInterface(currentUser);
-            await registerUserToFirestore(currentUser);
             initApp();
         });
 
@@ -277,14 +297,14 @@
                 const seenNames = new Set();
                 const myNameClean = currentUser ? currentUser.name.trim().toLowerCase() : '';
 
-                // 2. Diğer Kullanıcılar (Kendi adını kesinlikle hariç tut)
+                // 2. Diğer Kullanıcılar
                 snapshot.forEach((docSnap) => {
                     const user = docSnap.data();
                     if (!user || !user.name) return;
                     
                     const targetNameClean = user.name.trim().toLowerCase();
-                    if (targetNameClean === myNameClean) return; // Kendini listede gösterme!
-                    if (seenNames.has(targetNameClean)) return;  // Mükerrer isimleri engelle
+                    if (targetNameClean === myNameClean) return; // Kendini listede gösterme
+                    if (seenNames.has(targetNameClean)) return;  // Mükerrer engelle
                     seenNames.add(targetNameClean);
 
                     const chatId = [currentUser.name, user.name].sort().join('_');
@@ -308,7 +328,6 @@
                         </div>
                     `;
 
-                    // Tıklama olayını güvenli şekilde ekle
                     userDiv.addEventListener('click', () => {
                         selectChat(chatId, user.name, user.avatar || '');
                     });
@@ -335,7 +354,7 @@
                 activeChatStatus.textContent = "Özel Sohbet";
             }
 
-            // MOBİL EKRAN GEÇİŞİ: Mobilde sidebar'ı gizle, sohbet alanını öne getir
+            // Mobilde sidebar gizle, sohbet alanını aç
             if (window.innerWidth < 768) {
                 sidebar.classList.add('-translate-x-full');
                 chatArea.classList.remove('translate-x-full');
@@ -344,7 +363,6 @@
             loadMessages(chatId);
         }
 
-        // Mobilde Geri Tuşu: Sohbeti kapatıp listeye dön
         backBtn.addEventListener('click', () => {
             if (window.innerWidth < 768) {
                 sidebar.classList.remove('-translate-x-full');
