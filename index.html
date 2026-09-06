@@ -13,12 +13,11 @@
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0b141a; }
         ::-webkit-scrollbar-thumb { background: #202c33; border-radius: 4px; }
-        html, body { height: 100%; }
-        .app-height { height: calc(var(--vh, 1vh) * 100) !important; }
+        html, body { height: 100%; margin: 0; overflow: hidden; position: fixed; width: 100%; }
     </style>
 
 </head>
-<body class="app-height bg-[#050b14] w-screen overflow-hidden font-sans flex items-center justify-center p-0 md:p-4">
+<body class="bg-[#050b14] w-screen font-sans flex items-center justify-center p-0 md:p-4">
 
     <!-- GİRİŞ EKRANI (OVERLAY) -->
     <div id="login-overlay" class="fixed inset-0 z-50 bg-[#0b141a] flex items-center justify-center p-4 hidden">
@@ -137,7 +136,7 @@
             <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0">
                 <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
-                <input type="text" id="message-input" autocomplete="off" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
+            <input type="text" id="message-input" autocomplete="off" name="msg-field-no-autofill" data-lpignore="true" data-form-type="other" autocapitalize="sentences" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
                 <button id="send-btn" class="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-500 transition shadow flex-shrink-0">
                     <i class="fa-solid fa-paper-plane text-sm"></i>
                 </button>
@@ -598,16 +597,17 @@
     </script>
 
 <script>
-    function setAppHeight() {
-        const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight) * 0.01;
-        document.documentElement.style.setProperty('--vh', vh + 'px');
+    function syncViewport() {
+        if (!window.visualViewport) return;
+        document.body.style.height = window.visualViewport.height + 'px';
+        document.body.style.top = window.visualViewport.offsetTop + 'px';
+        window.scrollTo(0, 0);
     }
-    setAppHeight();
-    window.addEventListener('resize', setAppHeight);
-    window.addEventListener('orientationchange', setAppHeight);
     if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', setAppHeight);
+        window.visualViewport.addEventListener('resize', syncViewport);
+        window.visualViewport.addEventListener('scroll', syncViewport);
     }
+    syncViewport();
 </script>
 
 <script>
