@@ -3,21 +3,22 @@
 <head>
     <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="virtual-keyboard" content="overlays-content"> 
     <title>AuraChat - WhatsApp Web</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 <link rel="manifest" href="/manifest.json">
     <!-- FontAwesome İkonları -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
+<style>
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0b141a; }
         ::-webkit-scrollbar-thumb { background: #202c33; border-radius: 4px; }
+        html, body { height: 100%; }
+        .app-height { height: calc(var(--vh, 1vh) * 100) !important; }
     </style>
 
 </head>
-<body class="bg-[#050b14] h-[100dvh] w-screen overflow-hidden font-sans flex items-center justify-center p-0 md:p-4">
+<body class="app-height bg-[#050b14] w-screen overflow-hidden font-sans flex items-center justify-center p-0 md:p-4">
 
     <!-- GİRİŞ EKRANI (OVERLAY) -->
     <div id="login-overlay" class="fixed inset-0 z-50 bg-[#0b141a] flex items-center justify-center p-4 hidden">
@@ -595,6 +596,19 @@
             return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
     </script>
+
+<script>
+    function setAppHeight() {
+        const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight) * 0.01;
+        document.documentElement.style.setProperty('--vh', vh + 'px');
+    }
+    setAppHeight();
+    window.addEventListener('resize', setAppHeight);
+    window.addEventListener('orientationchange', setAppHeight);
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', setAppHeight);
+    }
+</script>
 
 <script>
     if ('serviceWorker' in navigator) {
