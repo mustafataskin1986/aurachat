@@ -145,7 +145,7 @@
     <!-- FIREBASE VE WHATSAPP MANTIĞI -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc, getDoc, getDocs, updateDoc, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc, getDoc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
@@ -268,7 +268,6 @@
             loadMessages('global');
         }
 
-        // Kişi Listesini Doldurma ve Son Mesaj / Okunmamış Sayacı Entegrasyonu
         function loadContacts() {
             onSnapshot(collection(db, "users"), (snapshot) => {
                 contactList.innerHTML = '';
@@ -293,7 +292,6 @@
                 });
                 contactList.appendChild(globalDiv);
 
-                // Genel oda için son mesaj dinleyicisi
                 const globalTimeSpan = globalDiv.querySelector('.global-time');
                 const globalPreview = globalDiv.querySelector('.global-preview');
                 onSnapshot(query(collection(db, "chats", "global", "messages"), orderBy("createdAt", "desc")), (msgSnap) => {
@@ -343,7 +341,6 @@
                         </div>
                     `;
 
-                    // Her özel sohbetin mesajlarını dinleyerek son mesajı ve okunmamış sayısını güncelle
                     const timeSpan = userDiv.querySelector('.time-span');
                     const msgPreview = userDiv.querySelector('.msg-preview');
                     const unreadBadge = userDiv.querySelector('.unread-badge');
@@ -361,7 +358,6 @@
                             }
                         }
 
-                        // Karşı taraftan gelen ve okunmamış mesajları say
                         msgSnapshot.forEach((mDoc) => {
                             const mData = mDoc.data();
                             if (mData.senderName !== currentUser.name && mData.read === false) {
@@ -390,7 +386,6 @@
             });
         }
 
-        // Sohbet açıldığında okunmamış mesajları okundu olarak işaretle
         async function markMessagesAsRead(chatId) {
             if (chatId === 'global') return;
             try {
@@ -463,6 +458,8 @@
             const timeStr = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi';
 
             if (isMe) {
+                // Mesaj okunduysa aktif renk (cyan), okunmadıysa gri tik
+                const tickColor = msg.read ? 'text-cyan-300' : 'text-gray-400';
                 msgDiv.className = "flex justify-end";
                 msgDiv.innerHTML = `
                     <div class="bg-[#005c4b] text-white px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
@@ -470,7 +467,7 @@
                         <p>${escapeHtml(msg.text)}</p>
                         <div class="flex items-center justify-end space-x-1 mt-1">
                             <span class="text-[10px] text-emerald-200">${timeStr}</span>
-                            <i class="fa-solid fa-check-double text-[10px] text-cyan-300"></i>
+                            <i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>
                         </div>
                     </div>
                 `;
