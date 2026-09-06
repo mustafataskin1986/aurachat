@@ -14,12 +14,12 @@
         ::-webkit-scrollbar-thumb { background: #202c33; border-radius: 4px; }
     </style>
 </head>
-<body class="bg-[#050b14] h-screen w-screen overflow-hidden font-sans flex items-center justify-center p-0 md:p-4">
+<body class="bg-[#050b14] h-[100dvh] w-screen overflow-hidden font-sans flex items-center justify-center p-0 md:p-4">
 
     <!-- Ana Konteyner -->
     <div class="bg-[#111b21] w-full max-w-6xl h-full md:h-[92vh] flex shadow-2xl rounded-none md:rounded-2xl overflow-hidden border border-gray-800/80 relative">
         
-        <!-- SOL TARAF: Sohbet Listesi -->
+        <!-- SOL TARAF: Sohbet Listesi (Son Kullanılanlar Çekmecesi Gibi) -->
         <div id="sidebar" class="w-full md:w-[36%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute md:relative z-20 transition-all duration-300">
             <!-- Üst Profil Barı -->
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
@@ -67,12 +67,12 @@
                 </div>
             </div>
 
-            <!-- Mesajların Akış Alanı (min-h-0 flex-1 ile taşma ve kayma önlendi) -->
+            <!-- Mesajların Akış Alanı -->
             <div id="message-container" class="flex-1 min-h-0 p-4 md:p-6 overflow-y-auto space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat opacity-95">
                 <!-- Mesajlar dinamik yüklenecek -->
             </div>
 
-            <!-- Mesaj Yazma Paneli (Sabit Alt Kısım) -->
+            <!-- Mesaj Yazma Paneli (Dvh ile Garanti Alt Kısım) -->
             <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0">
                 <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
@@ -138,7 +138,6 @@
             });
         }
 
-        // Sohbeti açma ve history pushState ekleme (Android geri tuşu desteği)
         function openChat(contactId, pushHistory = true) {
             activeContactId = contactId;
             updateActiveChat();
@@ -153,13 +152,12 @@
             }
         }
 
-        // Sohbeti kapatma (Geri dönüş)
         function closeChat() {
             chatArea.classList.add('hidden');
             sidebar.classList.remove('hidden');
         }
 
-        // Android / Tarayıcı Geri Tuşu Yönetimi (popstate)
+        // Android Geri Tuşu Yönetimi
         window.addEventListener('popstate', (event) => {
             if (window.innerWidth < 768) {
                 if (event.state && event.state.chatOpen) {
@@ -170,6 +168,32 @@
                 }
             }
         });
+
+        // ==========================================
+        // 📱 SAĞA KAYDIRMA (SWIPE-TO-GO-BACK) JESTİ
+        // ==========================================
+        let touchStartX = 0;
+        let touchEndX = 0;
+
+        chatArea.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, { passive: true });
+
+        chatArea.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipeGesture();
+        }, { passive: true });
+
+        function handleSwipeGesture() {
+            // Eğer sağa doğru 70 pikselden fazla kaydırıldıysa (ve ekranda mobildeysek)
+            if (touchEndX - touchStartX > 70 && window.innerWidth < 768) {
+                if (window.history.state && window.history.state.chatOpen) {
+                    history.back();
+                } else {
+                    closeChat();
+                }
+            }
+        }
 
         function updateActiveChat() {
             const currentContact = contacts.find(c => c.id === activeContactId);
