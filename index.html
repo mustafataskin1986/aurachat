@@ -79,22 +79,8 @@
                 </div>
             </div>
 
-            <!-- Liste (Genel Oda + Kayıtlı Kullanıcılar) -->
-            <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40">
-                <!-- Genel Oda Sabit -->
-                <div onclick="selectChat('global', 'Genel Kanka Odası 🌍', 'global')" class="flex items-center px-4 py-3 bg-[#202c33]/60 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30">
-                    <div class="w-12 h-12 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
-                        <i class="fa-solid fa-globe"></i>
-                    </div>
-                    <div class="flex-1 overflow-hidden">
-                        <div class="flex justify-between items-baseline">
-                            <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
-                        </div>
-                        <p class="text-xs text-emerald-400 truncate mt-0.5">Herkesin buluştuğu ortak alan</p>
-                    </div>
-                </div>
-                <!-- Diğer Kullanıcılar Buraya Dinamik Gelecek -->
-            </div>
+            <!-- Liste (Genel Oda + Kayıtlı Kullanıcılar Dinamik Dolacak) -->
+            <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40"></div>
 
             <div class="bg-[#202c33] border-t border-gray-800 py-2.5 px-6 flex justify-between items-center text-gray-400 flex-shrink-0">
                 <div class="flex flex-col items-center cursor-pointer text-emerald-500 transition">
@@ -154,7 +140,7 @@
     <!-- FIREBASE VE WHATSAPP MANTIĞI -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
@@ -193,9 +179,7 @@
         let currentChatId = 'global';
         let currentChatName = 'Genel Kanka Odası 🌍';
         let unsubscribeMessages = null;
-        let typingTimeout = null;
 
-        // Kullanıcı Giriş Kontrolü
         if (currentUser) {
             loginOverlay.classList.add('hidden');
             updateUserInterface(currentUser);
@@ -268,54 +252,71 @@
             loadMessages('global');
         }
 
-        // Firestore'dan kayıtlı kullanıcıları çekip sol listeye basma
+        // Güvenli DOM element üretimi (Mükerrer ve tıklama hatasını çözer)
         function loadContacts() {
             onSnapshot(collection(db, "users"), (snapshot) => {
-                // Mevcut genel odayı koruyalım, altına kişileri ekleyelim
-                let html = `
-                    <div onclick="window.selectChat('global', 'Genel Kanka Odası 🌍', 'global')" class="flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30">
-                        <div class="w-12 h-12 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
-                            <i class="fa-solid fa-globe"></i>
-                        </div>
-                        <div class="flex-1 overflow-hidden">
-                            <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
-                            <p class="text-xs text-emerald-400 truncate mt-0.5">Ortak sohbet alanı</p>
-                        </div>
+                contactList.innerHTML = '';
+
+                // 1. Genel Oda Butonu
+                const globalDiv = document.createElement('div');
+                globalDiv.className = "flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30";
+                globalDiv.innerHTML = `
+                    <div class="w-12 h-12 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
+                        <i class="fa-solid fa-globe"></i>
+                    </div>
+                    <div class="flex-1 overflow-hidden">
+                        <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
+                        <p class="text-xs text-emerald-400 truncate mt-0.5">Ortak sohbet alanı</p>
                     </div>
                 `;
+                globalDiv.addEventListener('click', () => {
+                    selectChat('global', 'Genel Kanka Odası 🌍', 'global');
+                });
+                contactList.appendChild(globalDiv);
 
+                const seenNames = new Set();
+                if (currentUser) seenNames.add(currentUser.name);
+
+                // 2. Diğer Kullanıcılar
                 snapshot.forEach((docSnap) => {
                     const user = docSnap.data();
-                    // Kendini kişi listesinde gösterme
+                    if (!user || !user.name) return;
                     if (currentUser && user.name === currentUser.name) return;
+                    if (seenNames.has(user.name)) return; // Mükerrer isimleri engelle
+                    seenNames.add(user.name);
 
-                    // Özel Sohbet ID'si: İki ismi alfabetik sırayla birleştiriyoruz (Örn: Hasan-Mustafa)
                     const chatId = [currentUser.name, user.name].sort().join('_');
 
+                    const userDiv = document.createElement('div');
+                    userDiv.className = "flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
+                    
                     let avatarContent = `<div class="w-12 h-12 bg-cyan-600 rounded-full flex items-center justify-center text-white font-bold shadow flex-shrink-0">${user.name.substring(0,2).toUpperCase()}</div>`;
                     if (user.avatar) {
                         avatarContent = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
                     }
 
-                    html += `
-                        <div onclick="window.selectChat('${chatId}', '${user.name}', '${user.avatar || ''}')" class="flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30">
-                            ${avatarContent}
-                            <div class="flex-1 overflow-hidden ml-3">
-                                <div class="flex justify-between items-baseline">
-                                    <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
-                                    <span class="text-[10px] text-emerald-400">Çevrimiçi</span>
-                                </div>
-                                <p class="text-xs text-gray-400 truncate mt-0.5">Özel mesaj göndermek için tıkla</p>
+                    userDiv.innerHTML = `
+                        ${avatarContent}
+                        <div class="flex-1 overflow-hidden ml-3">
+                            <div class="flex justify-between items-baseline">
+                                <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
+                                <span class="text-[10px] text-emerald-400">Çevrimiçi</span>
                             </div>
+                            <p class="text-xs text-gray-400 truncate mt-0.5">Özel mesaj göndermek için tıkla</p>
                         </div>
                     `;
+
+                    // Tıklama olayını güvenli şekilde ekle
+                    userDiv.addEventListener('click', () => {
+                        selectChat(chatId, user.name, user.avatar || '');
+                    });
+
+                    contactList.appendChild(userDiv);
                 });
-                contactList.innerHTML = html;
             });
         }
 
-        // Globalde veya Kişide Sohbet Seçme Fonksiyonu
-        window.selectChat = function(chatId, name, avatar) {
+        function selectChat(chatId, name, avatar) {
             currentChatId = chatId;
             currentChatName = name;
             activeChatName.textContent = name;
@@ -337,12 +338,10 @@
             loadMessages(chatId);
         }
 
-        // Mobilde geri tuşu
         backBtn.addEventListener('click', () => {
             chatArea.classList.add('-translate-x-full');
         });
 
-        // Mesajları Yükleme ve Dinleme
         function loadMessages(chatId) {
             if (unsubscribeMessages) unsubscribeMessages();
 
@@ -419,7 +418,6 @@
             if (e.key === 'Enter') sendMessage();
         });
 
-        // Arama filtresi
         searchContact.addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
             const items = contactList.children;
