@@ -23,22 +23,19 @@ const profileImageInput = document.getElementById('profile-image-input');
 const profilePreview = document.getElementById('profile-preview');
 
 // ==========================================
-// ⚙️ KLAVYE YÜKSEKLİK / KAYDIRMA AYARI
+// ⚙️ KLAVYE YÜKSEKLİK & EKRAN KİLİT AYARLARI
 // ==========================================
 const KEYBOARD_OFFSET_PX = -120; // Beğendiğin tam oturan yükseklik
 
-// 🚫 SAYFANIN KAYMASINI (SCROLL) TAMAMEN ENGELLEME
-// 1. Tarayıcı kendi kendine sayfayı kaydırmaya kalkarsa anında başa çek
+// 🚫 Sayfanın Yukarı/Aşağı Kaymasını (Scroll) Engelleme
 window.addEventListener('scroll', () => {
     if (loginOverlay && !loginOverlay.classList.contains('hidden')) {
         window.scrollTo(0, 0);
     }
 });
 
-// 2. Ekranı parmakla yukarı-aşağı sürüklemeyi tamamen engelle
 if (loginOverlay) {
     loginOverlay.addEventListener('touchmove', (e) => {
-        // Sadece input alanları haricindeki yerlerde sürüklemeyi engelle
         e.preventDefault();
     }, { passive: false });
 }
@@ -57,7 +54,6 @@ const setCardOffset = (offset) => {
     if (input) {
         input.addEventListener('focus', () => {
             setCardOffset(KEYBOARD_OFFSET_PX);
-            // Odaklanma anında tarayıcının sayfayı kaydırmasını engelle
             setTimeout(() => window.scrollTo(0, 0), 50);
         });
 
@@ -68,7 +64,7 @@ const setCardOffset = (offset) => {
     }
 });
 
-// 📱 MOBİL KLAVYE KAPANMA KONTROLÜ
+// 📱 Mobil Klavye Kapanma Kontrolü
 if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
         if (window.visualViewport.height >= window.innerHeight - 50) {
@@ -77,18 +73,6 @@ if (window.visualViewport) {
             if (document.activeElement && (document.activeElement === usernameInput || document.activeElement === passwordInput)) {
                 document.activeElement.blur();
             }
-        }
-    });
-}
-
-// 🖱️ Boş bir yere dokunulursa klavyeyi kapat ve merkeze indir
-if (loginOverlay) {
-    loginOverlay.addEventListener('click', (e) => {
-        if (e.target === loginOverlay) {
-            setCardOffset(0);
-            window.scrollTo(0, 0);
-            if (usernameInput) usernameInput.blur();
-            if (passwordInput) passwordInput.blur();
         }
     });
 }
@@ -118,7 +102,57 @@ if (profileImageInput) {
     });
 }
 
-// Giriş Formu İşlemleri
+// ==========================================
+// 🔑 ŞİFREMİ UNUTTUM FONKSİYONU
+// ==========================================
+window.resetPassword = async function() {
+    const username = prompt("Şifresini sıfırlamak istediğin Kullanıcı Adını gir:");
+    if (!username) return;
+
+    try {
+        const userRef = doc(db, "users", username.trim());
+        const userSnap = await getDoc(userRef);
+
+        if (!userSnap.exists()) {
+            alert("Böyle bir kullanıcı bulunamadı kanka!");
+            return;
+        }
+
+        const userData = userSnap.data();
+
+        // Eğer daha önce kurtarma kodu koymadıysa
+        if (!userData.recoveryPin) {
+            alert("Bu hesapta henüz bir Kurtarma PIN'i tanımlanmamış. Firebase konsolundan sıfırlaman gerek.");
+            return;
+        }
+
+        const enteredPin = prompt("Hesabına ait 4 haneli Kurtarma PIN'ini gir:");
+        if (enteredPin !== userData.recoveryPin) {
+            alert("Kurtarma PIN'i hatalı!");
+            return;
+        }
+
+        const newPassword = prompt("Yeni Şifreni Gir:");
+        if (!newPassword || newPassword.trim() === "") {
+            alert("Şifre boş olamaz.");
+            return;
+        }
+
+        await setDoc(userRef, {
+            password: newPassword.trim()
+        }, { merge: true });
+
+        alert("Şifren başarıyla değiştirildi kanka! Şimdi yeni şifrenle giriş yapabilirsin.");
+
+    } catch (err) {
+        console.error("Şifre sıfırlama hatası:", err);
+        alert("Şifre sıfırlanırken bir sorun oluştu.");
+    }
+};
+
+// ==========================================
+// 🚀 GİRİŞ VEYA KAYIT FORMU İŞLEMLERİ
+// ==========================================
 if (loginForm) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -131,6 +165,7 @@ if (loginForm) {
             const userSnap = await getDoc(userRef);
 
             let finalAvatar = base64Image;
+            let recoveryPin = '';
 
             if (userSnap.exists()) {
                 const userData = userSnap.data();
@@ -141,11 +176,17 @@ if (loginForm) {
                 if (!finalAvatar && userData.avatar) {
                     finalAvatar = userData.avatar;
                 }
+                recoveryPin = userData.recoveryPin || '';
+            } else {
+                // YENİ KAYIT: İlk defa kaydolan kullanıcıya Kurtarma PIN'i soralım
+                const pinInput = prompt("Şifreni unutursan kurtarmak için 4 haneli bir PIN (Kurtarma Kodu) belirle:", "1234");
+                recoveryPin = pinInput ? pinInput.trim() : '1234';
             }
 
             await setDoc(userRef, {
                 name: username,
                 password: password,
+                recoveryPin: recoveryPin,
                 avatar: finalAvatar || '',
                 lastSeen: serverTimestamp()
             }, { merge: true });
