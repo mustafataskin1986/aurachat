@@ -1,0 +1,6 @@
+{
+  "appId": "com.aurachat.app",
+  "appName": "AuraChat",
+  "webDir": ".",
+  "bundledWebRuntime": false
+}
