@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -169,13 +169,13 @@ window.resetPassword = async function() {
 };
 
 // ==========================================
-// 🚀 GİRİŞ VE KAYIT İŞLEMLERİ (Firebase Auth)
+// 🚀 AKILLI GİRİŞ VE KAYIT İŞLEMLERİ (Firebase Auth + Firestore)
 // ==========================================
 if (loginForm) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const username = usernameInput ? usernameInput.value.trim() : '';
-        const email = emailInput ? emailInput.value.trim() : '';
+        const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
         const password = passwordInput ? passwordInput.value.trim() : '';
 
         if (!username || !email || !password) {
@@ -184,25 +184,47 @@ if (loginForm) {
         }
 
         try {
+            // 🧠 1. AKILLI KULLANICI ADI & E-POSTA KONTROLÜ
+            const usersRef = collection(db, "users");
+            const q = query(usersRef, where("email", "==", email));
+            const querySnapshot = await getDocs(q);
+
+            if (!querySnapshot.empty) {
+                // E-posta veritabanında var! Kullanıcı adını doğrula
+                const existingUserData = querySnapshot.docs[0].data();
+                const registeredUsername = existingUserData.name || querySnapshot.docs[0].id;
+
+                if (registeredUsername.toLowerCase() !== username.toLowerCase()) {
+                    alert(`Girdiğin kullanıcı adı bu e-posta adresiyle eşleşmiyor kanka!`);
+                    return; // İşlemi burada durdur, şifreye bakma bile!
+                }
+            } else {
+                // E-posta veritabanında yok (Yeni Kayıt Olacak). Kullanıcı adı başkasına ait mi kontrol et
+                const userDocRef = doc(db, "users", username);
+                const userDocSnap = await getDoc(userDocRef);
+
+                if (userDocSnap.exists()) {
+                    alert("Bu kullanıcı adı başka bir hesap tarafından kullanılıyor kanka! Lütfen farklı bir ad seç.");
+                    return;
+                }
+            }
+
+            // 🔐 2. FIREBASE AUTH İŞLEMLERİ (Giriş veya Yeni Kayıt)
             let userCredential;
 
             try {
-                // 1. Önce var olan e-posta ile giriş yapmayı dene
                 userCredential = await signInWithEmailAndPassword(auth, email, password);
             } catch (signInErr) {
-                // Doğrudan şifre hatası geldiyse
-                if (signInErr.code === 'auth/wrong-password') {
+                if (signInErr.code === 'auth/wrong-password' || signInErr.code === 'auth/invalid-credential') {
                     alert("Şifreyi yanlış girdiniz kanka!");
                     return;
                 }
 
-                // E-posta bulunamadıysa veya Firebase geçersiz kütük döndüyse yeni kayıt açmayı dene
-                if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
+                if (signInErr.code === 'auth/user-not-found') {
                     try {
                         userCredential = await createUserWithEmailAndPassword(auth, email, password);
                     } catch (signUpErr) {
-                        // Eğer hesap zaten varsa bu şifrenin yanlış olduğu anlamına gelir!
-                        if (signUpErr.code === 'auth/email-already-in-use' || signUpErr.code === 'auth/wrong-password' || signUpErr.code === 'auth/invalid-credential') {
+                        if (signUpErr.code === 'auth/email-already-in-use') {
                             alert("Şifreyi yanlış girdiniz kanka!");
                             return;
                         }
@@ -213,7 +235,7 @@ if (loginForm) {
                 }
             }
 
-            // Firestore Veritabanını Güncelle
+            // 💾 3. FIRESTORE VERİTABANINI GÜNCELLE
             const userRef = doc(db, "users", username);
             const userSnap = await getDoc(userRef);
 
@@ -246,7 +268,7 @@ if (loginForm) {
 
         } catch (err) {
             console.error("Giriş/Kayıt hatası:", err);
-            if (err.code === 'auth/wrong-password' || err.code === 'auth/email-already-in-use') {
+            if (err.code === 'auth/wrong-password' || err.code === 'auth/email-already-in-use' || err.code === 'auth/invalid-credential') {
                 alert("Şifreyi yanlış girdiniz kanka!");
             } else if (err.code === 'auth/weak-password') {
                 alert("Şifre en az 6 karakter olmalıdır!");
@@ -255,7 +277,7 @@ if (loginForm) {
             } else if (err.code === 'auth/too-many-requests') {
                 alert("Çok fazla hatalı deneme yaptın. Lütfen biraz bekleyip tekrar dene kanka!");
             } else {
-                alert("Şifreyi yanlış girdiniz kanka!");
+                alert("Giriş yapılırken bir hata oluştu. Lütfen tekrar dene.");
             }
         }
     });
