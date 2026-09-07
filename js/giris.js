@@ -73,7 +73,6 @@ if (passwordInput && passwordInput.parentElement) {
 // ==========================================
 // ⚙️ KLAVYE YÜKSEKLİK & EKRAN KİLİT AYARLARI
 // ==========================================
-// 1., 2. ve 3. kutucuğa tıklandığında kart TEK VE SABİT bir yüksekliğe geçer.
 const KEYBOARD_OFFSET_PX = -30;
 
 window.addEventListener('scroll', () => {
@@ -96,7 +95,6 @@ const setCardOffset = (offset) => {
     }
 };
 
-// Tüm kutucuklar tıklandığında aynı sabit yüksekliğe (-30px) çıkar
 [usernameInput, emailInput, passwordInput].forEach(input => {
     if (input) {
         input.addEventListener('focus', () => {
@@ -189,16 +187,23 @@ if (loginForm) {
             let userCredential;
 
             try {
-                // 1. Önce giriş yapmayı dene
+                // 1. Önce var olan e-posta ile giriş yapmayı dene
                 userCredential = await signInWithEmailAndPassword(auth, email, password);
             } catch (signInErr) {
-                // 2. Kullanıcı yoksa yeni kayıt oluştur
+                // Doğrudan şifre hatası geldiyse
+                if (signInErr.code === 'auth/wrong-password') {
+                    alert("Şifreyi yanlış girdiniz kanka!");
+                    return;
+                }
+
+                // E-posta bulunamadıysa veya Firebase geçersiz kütük döndüyse yeni kayıt açmayı dene
                 if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
                     try {
                         userCredential = await createUserWithEmailAndPassword(auth, email, password);
                     } catch (signUpErr) {
-                        if (signUpErr.code === 'auth/wrong-password' || signUpErr.code === 'auth/invalid-credential') {
-                            alert("Şifre hatalı kanka!");
+                        // Eğer hesap zaten varsa bu şifrenin yanlış olduğu anlamına gelir!
+                        if (signUpErr.code === 'auth/email-already-in-use' || signUpErr.code === 'auth/wrong-password' || signUpErr.code === 'auth/invalid-credential') {
+                            alert("Şifreyi yanlış girdiniz kanka!");
                             return;
                         }
                         throw signUpErr;
@@ -241,12 +246,16 @@ if (loginForm) {
 
         } catch (err) {
             console.error("Giriş/Kayıt hatası:", err);
-            if (err.code === 'auth/weak-password') {
+            if (err.code === 'auth/wrong-password' || err.code === 'auth/email-already-in-use') {
+                alert("Şifreyi yanlış girdiniz kanka!");
+            } else if (err.code === 'auth/weak-password') {
                 alert("Şifre en az 6 karakter olmalıdır!");
             } else if (err.code === 'auth/invalid-email') {
                 alert("Geçersiz e-posta adresi!");
+            } else if (err.code === 'auth/too-many-requests') {
+                alert("Çok fazla hatalı deneme yaptın. Lütfen biraz bekleyip tekrar dene kanka!");
             } else {
-                alert("İşlem sırasında bir hata oluştu.");
+                alert("Şifreyi yanlış girdiniz kanka!");
             }
         }
     });
