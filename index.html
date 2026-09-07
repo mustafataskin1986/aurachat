@@ -106,7 +106,7 @@
             </div>
         </div>
 
-        <!-- SAĞ TARAF: Aktif Mesajlaşma Ekranı (overflow-hidden eklendi) -->
+        <!-- SAĞ TARAF: Aktif Mesajlaşma Ekranı -->
         <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-y-0 right-0 z-30 translate-x-full md:translate-x-0 transition-transform duration-300 h-full overflow-hidden">
             <!-- Sohbet Üst Barı -->
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0 z-10">
@@ -129,10 +129,10 @@
                 </div>
             </div>
 
-            <!-- Mesajların Akış Alanı (Alt Sarkan Alan İçin pb-8/pb-10 Eklendi) -->
+            <!-- Mesajların Akış Alanı -->
             <div id="message-container" class="flex-1 min-h-0 p-4 md:p-6 pb-10 overflow-y-auto space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat opacity-95"></div>
 
-            <!-- Mesaj Yazma Paneli (z-10 Eklendi) -->
+            <!-- Mesaj Yazma Paneli -->
             <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0 z-10 relative">
                 <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
@@ -187,15 +187,14 @@
 
         let base64Image = '';
         let currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
-        let currentChatId = 'global';
-        let currentChatName = 'Genel Kanka Odası 🌍';
+        let currentChatId = null;
+        let currentChatName = '';
         let unsubscribeMessages = null;
         let unsubscribeChatDoc = null;
         let typingTimeout = null;
         
         const contactElementsMap = new Map();
 
-        // Geçici Skeleton (Yükleniyor) Yapısı
         function renderSkeletonList() {
             let skeletonHtml = '';
             for (let i = 0; i < 5; i++) {
@@ -314,10 +313,9 @@
         }
 
         function initApp() {
-            // Önce Skeleton (Anında yükleniyor animasyonu) göster
             renderSkeletonList();
             loadContacts();
-            loadMessages('global');
+            selectChat('global', 'Genel Kanka Odası 🌍', 'global');
         }
 
         function loadContacts() {
@@ -525,7 +523,21 @@
             });
         }
 
+        // GERİ TUŞU: Mesaj dinleyicisini kapatıp aktif sohbeti tamamen sıfırlar
         backBtn.addEventListener('click', () => {
+            if (unsubscribeMessages) {
+                unsubscribeMessages();
+                unsubscribeMessages = null;
+            }
+            if (unsubscribeChatDoc) {
+                unsubscribeChatDoc();
+                unsubscribeChatDoc = null;
+            }
+
+            currentChatId = null;
+            currentChatName = '';
+            messageContainer.innerHTML = '';
+
             if (window.innerWidth < 768) {
                 sidebar.classList.remove('-translate-x-full');
                 chatArea.classList.add('translate-x-full');
@@ -542,7 +554,8 @@
                 snapshot.forEach((docSnap) => {
                     const msg = docSnap.data();
                     
-                    if (chatId !== 'global' && msg.senderName !== currentUser.name && msg.read === false) {
+                    // Yalnızca kullanıcı hâlâ bu sohbetteyse ve mesaj kendisine ait değilse "okundu" yap
+                    if (currentChatId === chatId && chatId !== 'global' && msg.senderName !== currentUser.name && msg.read === false) {
                         updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), {
                             read: true
                         });
@@ -593,7 +606,7 @@
 
         async function sendMessage() {
             const text = messageInput.value.trim();
-            if (!text || !currentUser) return;
+            if (!text || !currentUser || !currentChatId) return;
 
             try {
                 if (currentChatId !== 'global') {
@@ -620,7 +633,7 @@
         }
 
         messageInput.addEventListener('input', () => {
-            if (currentChatId === 'global') return;
+            if (!currentChatId || currentChatId === 'global') return;
 
             setDoc(doc(db, "chats", currentChatId), {
                 [`typing_${currentUser.name}`]: true
@@ -628,9 +641,11 @@
 
             if (typingTimeout) clearTimeout(typingTimeout);
             typingTimeout = setTimeout(() => {
-                setDoc(doc(db, "chats", currentChatId), {
-                    [`typing_${currentUser.name}`]: false
-                }, { merge: true });
+                if (currentChatId && currentChatId !== 'global') {
+                    setDoc(doc(db, "chats", currentChatId), {
+                        [`typing_${currentUser.name}`]: false
+                    }, { merge: true });
+                }
             }, 2000);
         });
 
