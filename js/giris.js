@@ -25,34 +25,57 @@ const profilePreview = document.getElementById('profile-preview');
 // ==========================================
 // ⚙️ KLAVYE YÜKSEKLİK / KAYDIRMA AYARI
 // ==========================================
-const KEYBOARD_OFFSET_PX = -120; // İstediğin yüksekliğe göre değiştirebilirsin
+const KEYBOARD_OFFSET_PX = -120; // Şu anki ideal yüksekliğin
 
-// Sadece ortadaki kutuyu/formu kaydıran fonksiyon (Arka plan sabit kalır)
+// Ortadaki form kutusunu yumuşakça kaydıran/sıfırlayan fonksiyon
 const setCardOffset = (offset) => {
-    // loginOverlay içindeki ilk kutuyu veya direkt loginForm'u bulup kaldırır
     const targetCard = loginOverlay ? (loginOverlay.firstElementChild || loginForm) : loginForm;
-    
     if (targetCard) {
         targetCard.style.transition = 'transform 0.25s ease-out';
         targetCard.style.transform = `translateY(${offset}px)`;
     }
 };
 
-// Input alanlarına odaklanıldığında çalışacak dinleyiciler
+// Input alanlarına odaklanıldığında ve odaktan çıkıldığında
 [usernameInput, passwordInput].forEach(input => {
     if (input) {
         input.addEventListener('focus', () => {
             setCardOffset(KEYBOARD_OFFSET_PX);
         });
-        
+
         input.addEventListener('blur', () => {
             setCardOffset(0);
         });
     }
 });
 
+// 📱 MOBİL KLAVYE KAPANMA KONTROLÜ (Kesin Çözüm)
+// Mobil klavye gizlendiğinde ekran boyutu eski haline döner, bu anı yakalayıp menüyü indiriyoruz
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+        // Ekran yüksekliği klavye kapandığı için genişlediyse:
+        if (window.visualViewport.height >= window.innerHeight - 50) {
+            setCardOffset(0); // Menüyü merkeze indir
+            if (document.activeElement && (document.activeElement === usernameInput || document.activeElement === passwordInput)) {
+                document.activeElement.blur(); // Odaklanmayı kaldır
+            }
+        }
+    });
+}
+
+// 🖱️ Boş bir yere dokunulursa klavyeyi kapat ve menüyü merkeze indir
+if (loginOverlay) {
+    loginOverlay.addEventListener('click', (e) => {
+        if (e.target === loginOverlay) {
+            setCardOffset(0);
+            if (usernameInput) usernameInput.blur();
+            if (passwordInput) passwordInput.blur();
+        }
+    });
+}
+
 // Oturum kontrolü
-const currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
+const currentUser = JSON.parse(localStorage.stringify ? localStorage.getItem('aurachat_user') : null);
 if (currentUser && loginOverlay) {
     loginOverlay.classList.add('hidden');
 } else if (loginOverlay) {
@@ -116,7 +139,6 @@ if (loginForm) {
             localStorage.setItem('aurachat_user', JSON.stringify(userObj));
             if (loginOverlay) loginOverlay.classList.add('hidden');
             
-            // Ana uygulamayı tetikle veya sayfayı yenile
             if (window.initApp) {
                 window.initApp();
             } else {
