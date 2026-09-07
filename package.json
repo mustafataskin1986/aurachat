@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "AuraChat Mobile App",
   "main": "index.html",
-  "scripts": {
-    "build": "echo 'Build process completed'"
-  },
   "dependencies": {
     "@capacitor/core": "^5.0.0"
   },
