@@ -12,15 +12,15 @@ jobs:
 
     steps:
       - name: Repositoriyi Çek
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Node.js Kur
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
-      - name: Java JDK Kur (Android için)
-        uses: actions/setup-java@v3
+      - name: Java JDK Kur
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -30,10 +30,9 @@ jobs:
           npm install
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: Capacitor Android Projesini Oluştur
+      - name: Capacitor Android Ekle ve Senkronize Et
         run: |
-          npx cap init AuraChat com.aurachat.app --web-dir .
-          npx cap add android
+          npx cap add android || true
           npx cap sync android
 
       - name: APK Derle (Gradle)
@@ -43,7 +42,7 @@ jobs:
           ./gradlew assembleDebug
 
       - name: APK Dosyasını Çıktı Olarak Kaydet
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: AuraChat-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
