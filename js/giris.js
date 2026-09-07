@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
@@ -12,6 +13,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig, "loginApp");
 const db = getFirestore(app);
+const auth = getAuth(app);
 
 let base64Image = '';
 
@@ -23,18 +25,30 @@ const profileImageInput = document.getElementById('profile-image-input');
 const profilePreview = document.getElementById('profile-preview');
 
 // ==========================================
-// 🛠️ "ŞİFREMİ UNUTTUM" BUTONUNU JS İLE DİNAMİK EKLEME
-// (HTML dosyasına dokunmana gerek kalmaz)
+// 🛠️ DİNAMİK E-POSTA VE ŞİFREMİ UNUTTUM ALANLARI
 // ==========================================
+let emailInput = document.getElementById('email-input');
+
 if (passwordInput && passwordInput.parentElement) {
     const parentContainer = passwordInput.parentElement;
-    
-    // Eğer önceden eklenmediyse JS ile yeni bir başlık alanı oluşturuyoruz
+
+    // 1. E-posta Giriş Kutusunu Otomatik Ekle
+    if (!emailInput) {
+        const emailDiv = document.createElement('div');
+        emailDiv.style.cssText = 'margin-bottom: 12px; width: 100%; text-align: left;';
+        emailDiv.innerHTML = `
+            <label style="color: #8696a0; font-size: 14px; display: block; margin-bottom: 6px;">E-posta Adresin</label>
+            <input type="email" id="email-input" placeholder="Örn: ahmet@gmail.com" required style="width: 100%; padding: 12px; background: #202c33; border: 1px solid #2a3942; border-radius: 8px; color: #fff; outline: none; box-sizing: border-box;">
+        `;
+        parentContainer.parentNode.insertBefore(emailDiv, parentContainer);
+        emailInput = document.getElementById('email-input');
+    }
+
+    // 2. Şifremi Unuttum Linkini Otomatik Ekle
     if (!document.getElementById('forgot-password-link')) {
         const headerDiv = document.createElement('div');
         headerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; width: 100%;';
         
-        // Varsa mevcut label'ı al yoksa varsayılan label oluştur
         const existingLabel = parentContainer.querySelector('label');
         const labelText = existingLabel ? existingLabel.innerText : 'Şifren';
         if (existingLabel) existingLabel.remove();
@@ -46,7 +60,6 @@ if (passwordInput && passwordInput.parentElement) {
 
         parentContainer.insertBefore(headerDiv, passwordInput);
 
-        // Dinamik eklenen butona tıklama olayı bağla
         document.getElementById('forgot-password-link').addEventListener('click', (e) => {
             e.preventDefault();
             window.resetPassword();
@@ -57,9 +70,8 @@ if (passwordInput && passwordInput.parentElement) {
 // ==========================================
 // ⚙️ KLAVYE YÜKSEKLİK & EKRAN KİLİT AYARLARI
 // ==========================================
-const KEYBOARD_OFFSET_PX = -120; // İdeal yükseklik
+const KEYBOARD_OFFSET_PX = -120;
 
-// Sayfanın Yukarı/Aşağı Kaymasını (Scroll) Engelleme
 window.addEventListener('scroll', () => {
     if (loginOverlay && !loginOverlay.classList.contains('hidden')) {
         window.scrollTo(0, 0);
@@ -72,7 +84,6 @@ if (loginOverlay) {
     }, { passive: false });
 }
 
-// Ortadaki form kutusunu yumuşakça kaydıran/sıfırlayan fonksiyon
 const setCardOffset = (offset) => {
     const targetCard = loginOverlay ? (loginOverlay.firstElementChild || loginForm) : loginForm;
     if (targetCard) {
@@ -81,8 +92,7 @@ const setCardOffset = (offset) => {
     }
 };
 
-// Input alanlarına odaklanıldığında
-[usernameInput, passwordInput].forEach(input => {
+[usernameInput, emailInput, passwordInput].forEach(input => {
     if (input) {
         input.addEventListener('focus', () => {
             setCardOffset(KEYBOARD_OFFSET_PX);
@@ -96,13 +106,12 @@ const setCardOffset = (offset) => {
     }
 });
 
-// Mobil Klavye Kapanma Kontrolü
 if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
         if (window.visualViewport.height >= window.innerHeight - 50) {
             setCardOffset(0);
             window.scrollTo(0, 0);
-            if (document.activeElement && (document.activeElement === usernameInput || document.activeElement === passwordInput)) {
+            if (document.activeElement && (document.activeElement === usernameInput || document.activeElement === emailInput || document.activeElement === passwordInput)) {
                 document.activeElement.blur();
             }
         }
@@ -135,95 +144,84 @@ if (profileImageInput) {
 }
 
 // ==========================================
-// 🔑 ŞİFREMİ UNUTTUM FONKSİYONU
+// 📧 E-POSTA İLE ŞİFRE SIFIRLAMA FONKSİYONU
 // ==========================================
 window.resetPassword = async function() {
-    const username = prompt("Şifresini sıfırlamak istediğin Kullanıcı Adını gir:");
-    if (!username) return;
+    const email = prompt("Şifreni sıfırlamak için kayıtlı E-posta adresini gir:");
+    if (!email || email.trim() === "") return;
 
     try {
-        const userRef = doc(db, "users", username.trim());
-        const userSnap = await getDoc(userRef);
-
-        if (!userSnap.exists()) {
-            alert("Böyle bir kullanıcı bulunamadı kanka!");
-            return;
-        }
-
-        const userData = userSnap.data();
-
-        if (!userData.recoveryPin) {
-            alert("Bu hesapta henüz bir Kurtarma PIN'i tanımlanmamış. Konsoldan şifrenizi güncelleyin.");
-            return;
-        }
-
-        const enteredPin = prompt("Hesabına ait 4 haneli Kurtarma PIN'ini gir:");
-        if (enteredPin !== userData.recoveryPin) {
-            alert("Kurtarma PIN'i hatalı!");
-            return;
-        }
-
-        const newPassword = prompt("Yeni Şifreni Gir:");
-        if (!newPassword || newPassword.trim() === "") {
-            alert("Şifre boş olamaz.");
-            return;
-        }
-
-        await setDoc(userRef, {
-            password: newPassword.trim()
-        }, { merge: true });
-
-        alert("Şifren başarıyla değiştirildi kanka! Şimdi yeni şifrenle giriş yapabilirsin.");
-
+        await sendPasswordResetEmail(auth, email.trim());
+        alert("Şifre sıfırlama bağlantısı e-posta adresine gönderildi kanka! Gelen kutunu (ve Spam klasörünü) kontrol et.");
     } catch (err) {
         console.error("Şifre sıfırlama hatası:", err);
-        alert("Şifre sıfırlanırken bir sorun oluştu.");
+        if (err.code === 'auth/user-not-found') {
+            alert("Bu e-posta adresiyle kayıtlı bir kullanıcı bulunamadı!");
+        } else if (err.code === 'auth/invalid-email') {
+            alert("Lütfen geçerli bir e-posta adresi gir!");
+        } else {
+            alert("Şifre sıfırlama maili gönderilirken bir hata oluştu.");
+        }
     }
 };
 
 // ==========================================
-// 🚀 GİRİŞ VEYA KAYIT FORMU İŞLEMLERİ
+// 🚀 GİRİŞ VE KAYIT İŞLEMLERİ (Firebase Auth)
 // ==========================================
 if (loginForm) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const username = usernameInput.value.trim();
-        const password = passwordInput.value.trim();
-        if (!username || !password) return;
+        const username = usernameInput ? usernameInput.value.trim() : '';
+        const email = emailInput ? emailInput.value.trim() : '';
+        const password = passwordInput ? passwordInput.value.trim() : '';
+
+        if (!username || !email || !password) {
+            alert("Lütfen tüm alanları doldur kanka!");
+            return;
+        }
 
         try {
+            let userCredential;
+
+            try {
+                // 1. Önce giriş yapmayı dene
+                userCredential = await signInWithEmailAndPassword(auth, email, password);
+            } catch (signInErr) {
+                // 2. Kullanıcı yoksa yeni kayıt oluştur
+                if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
+                    try {
+                        userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                    } catch (signUpErr) {
+                        if (signUpErr.code === 'auth/wrong-password' || signUpErr.code === 'auth/invalid-credential') {
+                            alert("Şifre hatalı kanka!");
+                            return;
+                        }
+                        throw signUpErr;
+                    }
+                } else {
+                    throw signInErr;
+                }
+            }
+
+            // Firestore Veritabanını Güncelle
             const userRef = doc(db, "users", username);
             const userSnap = await getDoc(userRef);
 
             let finalAvatar = base64Image;
-            let recoveryPin = '';
-
-            if (userSnap.exists()) {
-                const userData = userSnap.data();
-                if (userData.password && userData.password !== password) {
-                    alert("Şifre hatalı kanka! Bu isim başka bir şifreyle kayıtlı.");
-                    return;
-                }
-                if (!finalAvatar && userData.avatar) {
-                    finalAvatar = userData.avatar;
-                }
-                recoveryPin = userData.recoveryPin || '';
-            } else {
-                // YENİ KAYIT: İlk defa kaydolan kullanıcıya Kurtarma PIN'i sorulur
-                const pinInput = prompt("Şifreni unutursan kurtarmak için 4 haneli bir PIN (Kurtarma Kodu) belirle:", "1234");
-                recoveryPin = pinInput ? pinInput.trim() : '1234';
+            if (userSnap.exists() && !finalAvatar && userSnap.data().avatar) {
+                finalAvatar = userSnap.data().avatar;
             }
 
             await setDoc(userRef, {
                 name: username,
-                password: password,
-                recoveryPin: recoveryPin,
+                email: email,
                 avatar: finalAvatar || '',
                 lastSeen: serverTimestamp()
             }, { merge: true });
 
             const userObj = {
                 name: username,
+                email: email,
                 avatar: finalAvatar || ''
             };
 
@@ -235,9 +233,16 @@ if (loginForm) {
             } else {
                 location.reload();
             }
+
         } catch (err) {
-            console.error("Giriş hatası:", err);
-            alert("Giriş yapılırken bir sorun oluştu.");
+            console.error("Giriş/Kayıt hatası:", err);
+            if (err.code === 'auth/weak-password') {
+                alert("Şifre en az 6 karakter olmalıdır!");
+            } else if (err.code === 'auth/invalid-email') {
+                alert("Geçersiz e-posta adresi!");
+            } else {
+                alert("İşlem sırasında bir hata oluştu.");
+            }
         }
     });
 }
