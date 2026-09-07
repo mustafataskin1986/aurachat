@@ -1,0 +1,49 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repositoriyi Çek
+        uses: actions/checkout@v3
+
+      - name: Node.js Kur
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Java JDK Kur (Android için)
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Bağımlılıkları Yükle
+        run: |
+          npm install
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: Capacitor Android Projesini Oluştur
+        run: |
+          npx cap init AuraChat com.aurachat.app --web-dir .
+          npx cap add android
+          npx cap sync android
+
+      - name: APK Derle (Gradle)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: APK Dosyasını Çıktı Olarak Kaydet
+        uses: actions/upload-artifact@v3
+        with:
+          name: AuraChat-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
