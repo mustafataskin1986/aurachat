@@ -28,7 +28,20 @@ jobs:
       - name: Bağımlılıkları Yükle
         run: |
           npm install
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core@5.7.0 @capacitor/cli@5.7.0 @capacitor/android@5.7.0
+
+      - name: Web Dosyalarını Hazırla ve Konfigüre Et
+        run: |
+          mkdir -p www
+          cp -r index.html manifest.json sw.js js static www/ 2>/dev/null || true
+          cat << 'EOF' > capacitor.config.json
+          {
+            "appId": "com.aurachat.app",
+            "appName": "AuraChat",
+            "webDir": "www",
+            "bundledWebRuntime": false
+          }
+          EOF
 
       - name: Capacitor Android Ekle ve Senkronize Et
         run: |
@@ -45,4 +58,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AuraChat-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk 
+          path: android/app/build/outputs/apk/debug/app-debug.apk
