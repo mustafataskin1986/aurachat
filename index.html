@@ -3,20 +3,19 @@
 <head>
     <base href="https://asistanim-nine.vercel.app">
     <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>AuraChat - WhatsApp Web</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-<link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="/manifest.json">
     <!-- FontAwesome İkonları -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<style>
+    <style>
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0b141a; }
         ::-webkit-scrollbar-thumb { background: #202c33; border-radius: 4px; }
-        html, body { height: 100%; margin: 0; overflow: hidden; position: fixed; width: 100%; }
+        html, body { height: 100%; margin: 0; overflow: hidden; position: fixed; width: 100%; background-color: #050b14; }
     </style>
-
 </head>
 <body class="bg-[#050b14] w-screen font-sans flex items-center justify-center p-0 md:p-4">
 
@@ -29,7 +28,7 @@
             <h2 class="text-white text-xl font-bold mb-1">AuraChat'e Hoş Geldin</h2>
             <p class="text-gray-400 text-sm mb-6">Güvenli sohbet için adını ve şifreni gir kanka.</p>
 
-            <form id="login-form" class="space-y-4 text-left">
+            <form id="login-form" class="space-y-4 text-left" autocomplete="off">
                 <div class="flex flex-col items-center">
                     <label for="profile-image-input" class="cursor-pointer group relative">
                         <div id="profile-preview" class="w-20 h-20 bg-[#202c33] border-2 border-dashed border-gray-600 rounded-full flex items-center justify-center text-gray-400 overflow-hidden group-hover:border-emerald-500 transition shadow-inner">
@@ -45,12 +44,12 @@
 
                 <div>
                     <label class="block text-xs font-medium text-gray-300 mb-1">Adın veya Rumuzun</label>
-                    <input type="text" id="username-input" autocomplete="off" placeholder="Örn: Hasan" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+                    <input type="text" id="username-input" name="aurachat_usr_field" autocomplete="off" data-lpignore="true" data-form-type="other" placeholder="Örn: Hasan" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
                 </div>
 
                 <div>
                     <label class="block text-xs font-medium text-gray-300 mb-1">Şifren</label>
-                    <input type="password" id="password-input" autocomplete="current-password" placeholder="Örn: 123456" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+                    <input type="password" id="password-input" name="aurachat_pwd_field" autocomplete="new-password" data-lpignore="true" data-form-type="other" placeholder="Örn: 123456" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
                 </div>
 
                 <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2 mt-2">
@@ -84,7 +83,7 @@
             <div class="p-2.5 bg-[#111b21] flex-shrink-0">
                 <div class="bg-[#202c33] flex items-center px-3 py-2 rounded-xl border border-transparent focus-within:border-emerald-500/50 transition">
                     <i class="fa-solid fa-magnifying-glass text-gray-400 text-sm mr-3"></i>
-                    <input type="text" id="search-contact" placeholder="Kişilerde veya odalarda ara..." class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400">
+                    <input type="text" id="search-contact" autocomplete="off" name="search_contact_field" data-lpignore="true" placeholder="Kişilerde veya odalarda ara..." class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400">
                 </div>
             </div>
 
@@ -137,7 +136,10 @@
             <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0">
                 <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
-            <input type="text" id="message-input" autocomplete="off" name="msg-field-no-autofill" data-lpignore="true" data-form-type="other" autocapitalize="sentences" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
+                
+                <!-- Kart Bilgisi ve Şifre Pop-up Engelleyici Özellikler Eklenmiş Input -->
+                <input type="text" id="message-input" name="aura_chat_msg_input_no_autofill" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="true" data-lpignore="true" data-form-type="other" inputmode="text" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
+                
                 <button id="send-btn" class="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-500 transition shadow flex-shrink-0">
                     <i class="fa-solid fa-paper-plane text-sm"></i>
                 </button>
@@ -191,6 +193,9 @@
         let unsubscribeMessages = null;
         let unsubscribeChatDoc = null;
         let typingTimeout = null;
+        
+        // Dinamik kişi sıralama hafızası
+        const contactElementsMap = new Map();
 
         if (currentUser) {
             loginOverlay.classList.add('hidden');
@@ -277,6 +282,7 @@
         function loadContacts() {
             onSnapshot(collection(db, "users"), (snapshot) => {
                 contactList.innerHTML = '';
+                contactElementsMap.clear();
 
                 // 1. Genel Oda Butonu
                 const globalDiv = document.createElement('div');
@@ -300,6 +306,7 @@
 
                 const globalTimeSpan = globalDiv.querySelector('.global-time');
                 const globalPreview = globalDiv.querySelector('.global-preview');
+                
                 onSnapshot(query(collection(db, "chats", "global", "messages"), orderBy("createdAt", "desc")), (msgSnap) => {
                     if (!msgSnap.empty) {
                         const lastMsg = msgSnap.docs[0].data();
@@ -355,9 +362,19 @@
                     const tickContainer = userDiv.querySelector('.tick-container');
                     const unreadBadge = userDiv.querySelector('.unread-badge');
 
+                    // Map içinde element ve zaman tut
+                    contactElementsMap.set(chatId, {
+                        element: userDiv,
+                        lastTimeObj: null
+                    });
+                    
+                    contactList.appendChild(userDiv);
+
+                    // Her kişi için mesaj dinleyicisi
                     onSnapshot(query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc")), (msgSnapshot) => {
                         let lastText = "Henüz mesaj yok";
                         let lastTime = "";
+                        let lastTimeObj = null;
                         let unreadCount = 0;
                         let isLastMsgMine = false;
                         let lastMsgRead = false;
@@ -368,7 +385,8 @@
                             isLastMsgMine = (latestMsg.senderName === currentUser.name);
                             lastMsgRead = latestMsg.read;
                             if (latestMsg.createdAt) {
-                                lastTime = latestMsg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                lastTimeObj = latestMsg.createdAt.toDate();
+                                lastTime = lastTimeObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                             }
                         }
 
@@ -382,9 +400,9 @@
                         previewText.textContent = lastText;
                         timeSpan.textContent = lastTime;
 
-                        // İndeks alanında son mesaj benimse tik durumunu göster
+                        // İndeks alanında son mesaj benimse tık durumunu güncelle (Mavi Tık)
                         if (isLastMsgMine) {
-                            const tickColor = lastMsgRead ? 'text-cyan-300' : 'text-gray-400';
+                            const tickColor = lastMsgRead ? 'text-[#53bdeb]' : 'text-gray-400';
                             tickContainer.innerHTML = `<i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>`;
                             tickContainer.classList.remove('hidden');
                         } else {
@@ -397,33 +415,35 @@
                         } else {
                             unreadBadge.classList.add('hidden');
                         }
+
+                        // Son mesaj zamanını güncelle ve listeyi yeniden sırala
+                        const itemData = contactElementsMap.get(chatId);
+                        if (itemData) {
+                            itemData.lastTimeObj = lastTimeObj;
+                            sortContactList();
+                        }
                     });
 
                     userDiv.addEventListener('click', () => {
                         selectChat(chatId, user.name, user.avatar || '');
-                        markMessagesAsRead(chatId);
                     });
-
-                    contactList.appendChild(userDiv);
                 });
             });
         }
 
-        async function markMessagesAsRead(chatId) {
-            if (chatId === 'global') return;
-            try {
-                const snapshot = await getDocs(collection(db, "chats", chatId, "messages"));
-                snapshot.forEach(async (docSnap) => {
-                    const msg = docSnap.data();
-                    if (msg.senderName !== currentUser.name && msg.read === false) {
-                        await updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), {
-                            read: true
-                        });
-                    }
-                });
-            } catch (e) {
-                console.error("Okundu işaretlenirken hata:", e);
-            }
+        // Kişi listesini son mesaja göre üst tarafa sıralama fonksiyonu
+        function sortContactList() {
+            const itemsArray = Array.from(contactElementsMap.values());
+            itemsArray.sort((a, b) => {
+                if (!a.lastTimeObj) return 1;
+                if (!b.lastTimeObj) return -1;
+                return b.lastTimeObj - a.lastTimeObj;
+            });
+
+            // Genel Odanın altına sıralı elemanları diz
+            itemsArray.forEach(item => {
+                contactList.appendChild(item.element);
+            });
         }
 
         function selectChat(chatId, name, avatar) {
@@ -484,8 +504,16 @@
 
             unsubscribeMessages = onSnapshot(q, (snapshot) => {
                 messageContainer.innerHTML = '';
-                snapshot.forEach((doc) => {
-                    const msg = doc.data();
+                snapshot.forEach((docSnap) => {
+                    const msg = docSnap.data();
+                    
+                    // Sohbet açıkken gelen okunmamış mesajları ANINDA okundu yap (Mavi Tık Tetikleme)
+                    if (chatId !== 'global' && msg.senderName !== currentUser.name && msg.read === false) {
+                        updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), {
+                            read: true
+                        });
+                    }
+
                     renderMessage(msg);
                 });
                 messageContainer.scrollTop = messageContainer.scrollHeight;
@@ -500,12 +528,13 @@
             const timeStr = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi';
 
             if (isMe) {
-                const tickColor = msg.read ? 'text-cyan-300' : 'text-gray-400';
+                // WhatsApp Tarzı Canlı Mavi Tık Renklendirmesi (#53bdeb)
+                const tickColor = msg.read ? 'text-[#53bdeb]' : 'text-gray-400';
                 msgDiv.className = "flex justify-end";
                 msgDiv.innerHTML = `
                     <div class="bg-[#005c4b] text-white px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
                         <p class="text-[11px] text-emerald-200 font-semibold mb-0.5">Sen</p>
-                        <p>${escapeHtml(msg.text)}</p>
+                        <p class="break-words">${escapeHtml(msg.text)}</p>
                         <div class="flex items-center justify-end space-x-1 mt-1">
                             <span class="text-[10px] text-emerald-200">${timeStr}</span>
                             <i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>
@@ -523,7 +552,7 @@
                     ${avatarHtml}
                     <div class="bg-[#202c33] text-gray-100 px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
                         <p class="text-[11px] text-emerald-400 font-semibold mb-0.5">${escapeHtml(msg.senderName)}</p>
-                        <p>${escapeHtml(msg.text)}</p>
+                        <p class="break-words">${escapeHtml(msg.text)}</p>
                         <span class="text-[10px] text-gray-400 float-right ml-3 mt-1">${timeStr}</span>
                     </div>
                 `;
@@ -536,12 +565,13 @@
             if (!text || !currentUser) return;
 
             try {
-                // Mesaj gönderildiğinde yazıyor bilgisini hemen kapat
                 if (currentChatId !== 'global') {
                     await setDoc(doc(db, "chats", currentChatId), {
                         [`typing_${currentUser.name}`]: false
                     }, { merge: true });
                 }
+
+                messageInput.value = '';
 
                 await addDoc(collection(db, "chats", currentChatId, "messages"), {
                     text: text,
@@ -550,14 +580,15 @@
                     createdAt: serverTimestamp(),
                     read: false
                 });
-                messageInput.value = '';
+
+                messageContainer.scrollTop = messageContainer.scrollHeight;
             } catch (e) {
                 console.error("Mesaj gönderilemedi: ", e);
                 alert("Mesaj gönderilirken hata oluştu!");
             }
         }
 
-        // Yazarken karşı tarafa bildirme mantığı
+        // Yazıyor bildirim mantığı
         messageInput.addEventListener('input', () => {
             if (currentChatId === 'global') return;
 
@@ -575,7 +606,10 @@
 
         sendBtn.addEventListener('click', sendMessage);
         messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendMessage();
+            }
         });
 
         searchContact.addEventListener('input', (e) => {
@@ -598,12 +632,19 @@
     </script>
 
 <script>
+    // Mobil Ekran ve Klavye Dinamiği Düzeltmesi
     function syncViewport() {
         if (!window.visualViewport) return;
         document.body.style.height = window.visualViewport.height + 'px';
         document.body.style.top = window.visualViewport.offsetTop + 'px';
         window.scrollTo(0, 0);
+        
+        const messageContainer = document.getElementById('message-container');
+        if (messageContainer) {
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
     }
+    
     if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', syncViewport);
         window.visualViewport.addEventListener('scroll', syncViewport);
@@ -615,8 +656,8 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
-          .then(reg => console.log('Service Worker başarıyla kaydedildi! 👍', reg.scope))
-          .catch(err => console.log('Service Worker kayıt hatası: ❌', err));
+          .then(reg => console.log('Service Worker kaydedildi 👍', reg.scope))
+          .catch(err => console.log('Service Worker hatası ❌', err));
       });
     }
 </script>
