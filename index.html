@@ -45,12 +45,12 @@
 
                 <div>
                     <label class="block text-xs font-medium text-gray-300 mb-1">Adın veya Rumuzun</label>
-                    <input type="text" id="username-input" autocomplete="off" placeholder="Örn: Hasan" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+              <input type="text" id="username-input" autocomplete="off" name="no-af-user" readonly onfocus="this.removeAttribute('readonly')" placeholder="Örn: Hasan" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
                 </div>
 
                 <div>
                     <label class="block text-xs font-medium text-gray-300 mb-1">Şifren</label>
-                    <input type="password" id="password-input" autocomplete="current-password" placeholder="Örn: 123456" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+                <input type="password" id="password-input" autocomplete="new-password" name="no-af-pwd" readonly onfocus="this.removeAttribute('readonly')" placeholder="Örn: 123456" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
                 </div>
 
                 <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2 mt-2">
