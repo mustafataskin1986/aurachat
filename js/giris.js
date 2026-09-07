@@ -25,28 +25,28 @@ const profilePreview = document.getElementById('profile-preview');
 // ==========================================
 // ⚙️ KLAVYE YÜKSEKLİK / KAYDIRMA AYARI
 // ==========================================
-// Menünün yukarı ne kadar kalkacağını buradan değiştirebilirsin:
-// - Daha fazla YUKARI kalksın istiyorsan değeri büyüt (Örn: -160, -200)
-// - Daha AŞAĞIDA kalsın istiyorsan değeri küçült (Örn: -80, -50)
-const KEYBOARD_OFFSET_PX = -120;
+const KEYBOARD_OFFSET_PX = -120; // İstediğin yüksekliğe göre değiştirebilirsin
 
-// Input alanlarına odaklanıldığında çalışacak kaydırma fonksiyonu
-const setOverlayOffset = (offset) => {
-    if (loginOverlay) {
-        loginOverlay.style.transition = 'transform 0.25s ease-out';
-        loginOverlay.style.transform = `translateY(${offset}px)`;
+// Sadece ortadaki kutuyu/formu kaydıran fonksiyon (Arka plan sabit kalır)
+const setCardOffset = (offset) => {
+    // loginOverlay içindeki ilk kutuyu veya direkt loginForm'u bulup kaldırır
+    const targetCard = loginOverlay ? (loginOverlay.firstElementChild || loginForm) : loginForm;
+    
+    if (targetCard) {
+        targetCard.style.transition = 'transform 0.25s ease-out';
+        targetCard.style.transform = `translateY(${offset}px)`;
     }
 };
 
-// Hem kullanıcı adı hem şifre kutusuna odaklanma / çıkma dinleyicileri
+// Input alanlarına odaklanıldığında çalışacak dinleyiciler
 [usernameInput, passwordInput].forEach(input => {
     if (input) {
         input.addEventListener('focus', () => {
-            setOverlayOffset(KEYBOARD_OFFSET_PX);
+            setCardOffset(KEYBOARD_OFFSET_PX);
         });
         
         input.addEventListener('blur', () => {
-            setOverlayOffset(0);
+            setCardOffset(0);
         });
     }
 });
