@@ -71,21 +71,9 @@ if (passwordInput && passwordInput.parentElement) {
 }
 
 // ==========================================
-// ⚙️ KLAVYE YÜKSEKLİK & EKRAN KİLİT AYARLARI
+// ⚙️ UYUMLU KLAVYE VE ODAKLANMA (FOCUS) AYARLARI
 // ==========================================
 const KEYBOARD_OFFSET_PX = -30;
-
-window.addEventListener('scroll', () => {
-    if (loginOverlay && !loginOverlay.classList.contains('hidden')) {
-        window.scrollTo(0, 0);
-    }
-});
-
-if (loginOverlay) {
-    loginOverlay.addEventListener('touchmove', (e) => {
-        e.preventDefault();
-    }, { passive: false });
-}
 
 const setCardOffset = (offset) => {
     const targetCard = loginOverlay ? (loginOverlay.firstElementChild || loginForm) : loginForm;
@@ -99,12 +87,10 @@ const setCardOffset = (offset) => {
     if (input) {
         input.addEventListener('focus', () => {
             setCardOffset(KEYBOARD_OFFSET_PX);
-            setTimeout(() => window.scrollTo(0, 0), 50);
         });
 
         input.addEventListener('blur', () => {
             setCardOffset(0);
-            window.scrollTo(0, 0);
         });
     }
 });
@@ -113,10 +99,6 @@ if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
         if (window.visualViewport.height >= window.innerHeight - 50) {
             setCardOffset(0);
-            window.scrollTo(0, 0);
-            if (document.activeElement && (document.activeElement === usernameInput || document.activeElement === emailInput || document.activeElement === passwordInput)) {
-                document.activeElement.blur();
-            }
         }
     });
 }
