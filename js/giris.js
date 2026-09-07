@@ -23,11 +23,43 @@ const profileImageInput = document.getElementById('profile-image-input');
 const profilePreview = document.getElementById('profile-preview');
 
 // ==========================================
+// 🛠️ "ŞİFREMİ UNUTTUM" BUTONUNU JS İLE DİNAMİK EKLEME
+// (HTML dosyasına dokunmana gerek kalmaz)
+// ==========================================
+if (passwordInput && passwordInput.parentElement) {
+    const parentContainer = passwordInput.parentElement;
+    
+    // Eğer önceden eklenmediyse JS ile yeni bir başlık alanı oluşturuyoruz
+    if (!document.getElementById('forgot-password-link')) {
+        const headerDiv = document.createElement('div');
+        headerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; width: 100%;';
+        
+        // Varsa mevcut label'ı al yoksa varsayılan label oluştur
+        const existingLabel = parentContainer.querySelector('label');
+        const labelText = existingLabel ? existingLabel.innerText : 'Şifren';
+        if (existingLabel) existingLabel.remove();
+
+        headerDiv.innerHTML = `
+            <span style="color: #8696a0; font-size: 14px;">${labelText}</span>
+            <a href="#" id="forgot-password-link" style="color: #00a884; font-size: 13px; text-decoration: none; font-weight: 500;">Şifremi Unuttum?</a>
+        `;
+
+        parentContainer.insertBefore(headerDiv, passwordInput);
+
+        // Dinamik eklenen butona tıklama olayı bağla
+        document.getElementById('forgot-password-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            window.resetPassword();
+        });
+    }
+}
+
+// ==========================================
 // ⚙️ KLAVYE YÜKSEKLİK & EKRAN KİLİT AYARLARI
 // ==========================================
-const KEYBOARD_OFFSET_PX = -120; // Beğendiğin tam oturan yükseklik
+const KEYBOARD_OFFSET_PX = -120; // İdeal yükseklik
 
-// 🚫 Sayfanın Yukarı/Aşağı Kaymasını (Scroll) Engelleme
+// Sayfanın Yukarı/Aşağı Kaymasını (Scroll) Engelleme
 window.addEventListener('scroll', () => {
     if (loginOverlay && !loginOverlay.classList.contains('hidden')) {
         window.scrollTo(0, 0);
@@ -64,7 +96,7 @@ const setCardOffset = (offset) => {
     }
 });
 
-// 📱 Mobil Klavye Kapanma Kontrolü
+// Mobil Klavye Kapanma Kontrolü
 if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
         if (window.visualViewport.height >= window.innerHeight - 50) {
