@@ -15,6 +15,9 @@ const app = initializeApp(firebaseConfig, "loginApp");
 const db = getFirestore(app);
 const auth = getAuth(app);
 
+// 🇹🇷 MAİLLERİN TÜRKÇE GİTMESİNİ SAĞLAYAN SATIR:
+auth.languageCode = 'tr';
+
 let base64Image = '';
 
 const loginOverlay = document.getElementById('login-overlay');
