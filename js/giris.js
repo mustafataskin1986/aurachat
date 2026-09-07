@@ -15,7 +15,7 @@ const app = initializeApp(firebaseConfig, "loginApp");
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// 🇹🇷 Maillerin otomatik Türkçe gitmesi için:
+// 🇹🇷 MAİLLERİN TÜRKÇE GİTMESİNİ SAĞLAYAN SATIR:
 auth.languageCode = 'tr';
 
 let base64Image = '';
@@ -71,8 +71,11 @@ if (passwordInput && passwordInput.parentElement) {
 }
 
 // ==========================================
-// ⚙️ YUMUŞATILMIŞ KLAVYE HİZALAMA AYARLARI
+// ⚙️ KLAVYE YÜKSEKLİK & EKRAN KİLİT AYARLARI
 // ==========================================
+// 1., 2. ve 3. kutucuğa tıklandığında kart TEK VE SABİT bir yüksekliğe geçer.
+const KEYBOARD_OFFSET_PX = -30;
+
 window.addEventListener('scroll', () => {
     if (loginOverlay && !loginOverlay.classList.contains('hidden')) {
         window.scrollTo(0, 0);
@@ -93,17 +96,11 @@ const setCardOffset = (offset) => {
     }
 };
 
-// Kutucuklara özel yumuşak yukarı kaydırma değerleri
-const inputOffsets = [
-    { input: usernameInput, offset: -10 },
-    { input: emailInput, offset: -30 },
-    { input: passwordInput, offset: -40 }
-];
-
-inputOffsets.forEach(({ input, offset }) => {
+// Tüm kutucuklar tıklandığında aynı sabit yüksekliğe (-30px) çıkar
+[usernameInput, emailInput, passwordInput].forEach(input => {
     if (input) {
         input.addEventListener('focus', () => {
-            setCardOffset(offset);
+            setCardOffset(KEYBOARD_OFFSET_PX);
             setTimeout(() => window.scrollTo(0, 0), 50);
         });
 
