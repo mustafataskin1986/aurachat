@@ -315,7 +315,14 @@
         function initApp() {
             renderSkeletonList();
             loadContacts();
-            selectChat('global', 'Genel Kanka Odası 🌍', 'global');
+            
+            // Yalnızca masaüstü cihazlarda genel odayı varsayılan seç; mobilde liste ekranında başla
+            if (window.innerWidth >= 768) {
+                selectChat('global', 'Genel Kanka Odası 🌍', 'global');
+            } else {
+                sidebar.classList.remove('-translate-x-full');
+                chatArea.classList.add('translate-x-full');
+            }
         }
 
         function loadContacts() {
@@ -523,7 +530,6 @@
             });
         }
 
-        // GERİ TUŞU: Mesaj dinleyicisini kapatıp aktif sohbeti tamamen sıfırlar
         backBtn.addEventListener('click', () => {
             if (unsubscribeMessages) {
                 unsubscribeMessages();
@@ -554,7 +560,6 @@
                 snapshot.forEach((docSnap) => {
                     const msg = docSnap.data();
                     
-                    // Yalnızca kullanıcı hâlâ bu sohbetteyse ve mesaj kendisine ait değilse "okundu" yap
                     if (currentChatId === chatId && chatId !== 'global' && msg.senderName !== currentUser.name && msg.read === false) {
                         updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), {
                             read: true
