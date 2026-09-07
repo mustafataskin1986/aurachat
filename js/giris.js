@@ -120,9 +120,8 @@ window.resetPassword = async function() {
 
         const userData = userSnap.data();
 
-        // Eğer daha önce kurtarma kodu koymadıysa
         if (!userData.recoveryPin) {
-            alert("Bu hesapta henüz bir Kurtarma PIN'i tanımlanmamış. Firebase konsolundan sıfırlaman gerek.");
+            alert("Bu hesapta henüz bir Kurtarma PIN'i tanımlanmamış. Konsoldan şifrenizi güncelleyin.");
             return;
         }
 
@@ -178,7 +177,7 @@ if (loginForm) {
                 }
                 recoveryPin = userData.recoveryPin || '';
             } else {
-                // YENİ KAYIT: İlk defa kaydolan kullanıcıya Kurtarma PIN'i soralım
+                // YENİ KAYIT: İlk defa kaydolan kullanıcıya Kurtarma PIN'i sorulur
                 const pinInput = prompt("Şifreni unutursan kurtarmak için 4 haneli bir PIN (Kurtarma Kodu) belirle:", "1234");
                 recoveryPin = pinInput ? pinInput.trim() : '1234';
             }
