@@ -106,10 +106,10 @@
             </div>
         </div>
 
-        <!-- SAĞ TARAF: Aktif Mesajlaşma Ekranı -->
-        <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-y-0 right-0 z-30 translate-x-full md:translate-x-0 transition-transform duration-300 h-full">
+        <!-- SAĞ TARAF: Aktif Mesajlaşma Ekranı (overflow-hidden eklendi) -->
+        <div id="chat-area" class="w-full md:flex-1 flex flex-col bg-[#0b141a] absolute md:relative inset-y-0 right-0 z-30 translate-x-full md:translate-x-0 transition-transform duration-300 h-full overflow-hidden">
             <!-- Sohbet Üst Barı -->
-            <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
+            <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0 z-10">
                 <div class="flex items-center space-x-3">
                     <button id="back-btn" class="md:hidden text-gray-400 mr-1 hover:text-white transition text-lg px-1 py-0.5">
                         <i class="fa-solid fa-arrow-left"></i>
@@ -129,11 +129,11 @@
                 </div>
             </div>
 
-            <!-- Mesajların Akış Alanı -->
-            <div id="message-container" class="flex-1 min-h-0 p-4 md:p-6 overflow-y-auto space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat opacity-95"></div>
+            <!-- Mesajların Akış Alanı (Alt Sarkan Alan İçin pb-8/pb-10 Eklendi) -->
+            <div id="message-container" class="flex-1 min-h-0 p-4 md:p-6 pb-10 overflow-y-auto space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat opacity-95"></div>
 
-            <!-- Mesaj Yazma Paneli -->
-            <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0">
+            <!-- Mesaj Yazma Paneli (z-10 Eklendi) -->
+            <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0 z-10 relative">
                 <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 
@@ -193,10 +193,25 @@
         let unsubscribeChatDoc = null;
         let typingTimeout = null;
         
-        // Dinamik kişi sıralama hafızası
         const contactElementsMap = new Map();
 
-        // Tarih/Saat Formatlayıcı (Bugün -> Saat | Dün -> Dün | Daha eski -> GG.AA.YYYY)
+        // Geçici Skeleton (Yükleniyor) Yapısı
+        function renderSkeletonList() {
+            let skeletonHtml = '';
+            for (let i = 0; i < 5; i++) {
+                skeletonHtml += `
+                    <div class="flex items-center px-4 py-3 animate-pulse border-b border-gray-800/30">
+                        <div class="w-12 h-12 bg-gray-700/50 rounded-full mr-3 flex-shrink-0"></div>
+                        <div class="flex-1">
+                            <div class="h-3.5 bg-gray-700/60 rounded w-1/3 mb-2"></div>
+                            <div class="h-2.5 bg-gray-800/80 rounded w-2/3"></div>
+                        </div>
+                    </div>
+                `;
+            }
+            contactList.innerHTML = skeletonHtml;
+        }
+
         function formatTimestamp(dateObj) {
             if (!dateObj) return '';
             const now = new Date();
@@ -282,6 +297,7 @@
 
         logoutBtn.addEventListener('click', () => {
             localStorage.removeItem('aurachat_user');
+            localStorage.removeItem('aurachat_contacts_cache');
             location.reload();
         });
 
@@ -298,6 +314,8 @@
         }
 
         function initApp() {
+            // Önce Skeleton (Anında yükleniyor animasyonu) göster
+            renderSkeletonList();
             loadContacts();
             loadMessages('global');
         }
@@ -532,10 +550,16 @@
 
                     renderMessage(msg);
                 });
-                messageContainer.scrollTop = messageContainer.scrollHeight;
+                scrollToBottom();
             }, (error) => {
                 console.error("Mesajlar yüklenirken hata:", error);
             });
+        }
+
+        function scrollToBottom() {
+            setTimeout(() => {
+                messageContainer.scrollTop = messageContainer.scrollHeight;
+            }, 50);
         }
 
         function renderMessage(msg) {
@@ -588,7 +612,7 @@
                     read: false
                 });
 
-                messageContainer.scrollTop = messageContainer.scrollHeight;
+                scrollToBottom();
             } catch (e) {
                 console.error("Mesaj gönderilemedi: ", e);
                 alert("Mesaj gönderilirken hata oluştu!");
