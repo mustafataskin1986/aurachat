@@ -25,7 +25,23 @@ const profilePreview = document.getElementById('profile-preview');
 // ==========================================
 // ⚙️ KLAVYE YÜKSEKLİK / KAYDIRMA AYARI
 // ==========================================
-const KEYBOARD_OFFSET_PX = -120; // Şu anki ideal yüksekliğin
+const KEYBOARD_OFFSET_PX = -120; // Beğendiğin tam oturan yükseklik
+
+// 🚫 SAYFANIN KAYMASINI (SCROLL) TAMAMEN ENGELLEME
+// 1. Tarayıcı kendi kendine sayfayı kaydırmaya kalkarsa anında başa çek
+window.addEventListener('scroll', () => {
+    if (loginOverlay && !loginOverlay.classList.contains('hidden')) {
+        window.scrollTo(0, 0);
+    }
+});
+
+// 2. Ekranı parmakla yukarı-aşağı sürüklemeyi tamamen engelle
+if (loginOverlay) {
+    loginOverlay.addEventListener('touchmove', (e) => {
+        // Sadece input alanları haricindeki yerlerde sürüklemeyi engelle
+        e.preventDefault();
+    }, { passive: false });
+}
 
 // Ortadaki form kutusunu yumuşakça kaydıran/sıfırlayan fonksiyon
 const setCardOffset = (offset) => {
@@ -36,38 +52,41 @@ const setCardOffset = (offset) => {
     }
 };
 
-// Input alanlarına odaklanıldığında ve odaktan çıkıldığında
+// Input alanlarına odaklanıldığında
 [usernameInput, passwordInput].forEach(input => {
     if (input) {
         input.addEventListener('focus', () => {
             setCardOffset(KEYBOARD_OFFSET_PX);
+            // Odaklanma anında tarayıcının sayfayı kaydırmasını engelle
+            setTimeout(() => window.scrollTo(0, 0), 50);
         });
 
         input.addEventListener('blur', () => {
             setCardOffset(0);
+            window.scrollTo(0, 0);
         });
     }
 });
 
-// 📱 MOBİL KLAVYE KAPANMA KONTROLÜ (Kesin Çözüm)
-// Mobil klavye gizlendiğinde ekran boyutu eski haline döner, bu anı yakalayıp menüyü indiriyoruz
+// 📱 MOBİL KLAVYE KAPANMA KONTROLÜ
 if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
-        // Ekran yüksekliği klavye kapandığı için genişlediyse:
         if (window.visualViewport.height >= window.innerHeight - 50) {
-            setCardOffset(0); // Menüyü merkeze indir
+            setCardOffset(0);
+            window.scrollTo(0, 0);
             if (document.activeElement && (document.activeElement === usernameInput || document.activeElement === passwordInput)) {
-                document.activeElement.blur(); // Odaklanmayı kaldır
+                document.activeElement.blur();
             }
         }
     });
 }
 
-// 🖱️ Boş bir yere dokunulursa klavyeyi kapat ve menüyü merkeze indir
+// 🖱️ Boş bir yere dokunulursa klavyeyi kapat ve merkeze indir
 if (loginOverlay) {
     loginOverlay.addEventListener('click', (e) => {
         if (e.target === loginOverlay) {
             setCardOffset(0);
+            window.scrollTo(0, 0);
             if (usernameInput) usernameInput.blur();
             if (passwordInput) passwordInput.blur();
         }
@@ -75,7 +94,7 @@ if (loginOverlay) {
 }
 
 // Oturum kontrolü
-const currentUser = JSON.parse(localStorage.stringify ? localStorage.getItem('aurachat_user') : null);
+const currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
 if (currentUser && loginOverlay) {
     loginOverlay.classList.add('hidden');
 } else if (loginOverlay) {
