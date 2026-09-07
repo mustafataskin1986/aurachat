@@ -44,12 +44,12 @@
 
                 <div>
                     <label class="block text-xs font-medium text-gray-300 mb-1">Adın veya Rumuzun</label>
-                    <input type="text" id="username-input" name="aurachat_usr_field" autocomplete="off" data-lpignore="true" data-form-type="other" placeholder="Örn: Hasan" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+                <input type="text" id="username-input" name="aurachat_usr_field" autocomplete="off" data-lpignore="true" data-form-type="other" readonly onfocus="this.removeAttribute('readonly');" placeholder="Örn: Hasan" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
                 </div>
 
                 <div>
                     <label class="block text-xs font-medium text-gray-300 mb-1">Şifren</label>
-                    <input type="password" id="password-input" name="aurachat_pwd_field" autocomplete="new-password" data-lpignore="true" data-form-type="other" placeholder="Örn: 123456" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
+                <input type="password" id="password-input" name="aurachat_pwd_field" autocomplete="new-password" data-lpignore="true" data-form-type="other" readonly onfocus="this.removeAttribute('readonly');" placeholder="Örn: 123456" required class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500">
                 </div>
 
                 <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2 mt-2">
@@ -138,7 +138,7 @@
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 
                 <!-- Kart Bilgisi ve Şifre Pop-up Engelleyici Özellikler Eklenmiş Input -->
-                <input type="text" id="message-input" name="aura_chat_msg_input_no_autofill" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="true" data-lpignore="true" data-form-type="other" inputmode="text" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition">
+            <textarea id="message-input" name="aura_chat_msg_input_no_autofill" rows="1" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="true" data-lpignore="true" data-form-type="other" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition resize-none overflow-hidden leading-tight" style="height:42px; max-height:42px;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
                 
                 <button id="send-btn" class="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-500 transition shadow flex-shrink-0">
                     <i class="fa-solid fa-paper-plane text-sm"></i>
