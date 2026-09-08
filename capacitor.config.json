@@ -1,6 +1,10 @@
 {
   "appId": "com.aurachat.app",
   "appName": "AuraChat",
-  "webDir": ".",
-  "bundledWebRuntime": false
-} 
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://aurachat-amber.vercel.app",
+    "cleartext": true
+  }
+}
