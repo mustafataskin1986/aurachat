@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -130,6 +130,8 @@ if (btnForgotSubmit) {
         } catch (err) {
             if (err.code === 'auth/user-not-found') {
                 alert("Bu e-posta adresiyle kayıtlı bir kullanıcı bulunamadı kanka!");
+            } else if (err.code === 'auth/too-many-requests') {
+                alert("Çok fazla başarısız deneme yapıldı. Lütfen biraz bekleyin veya internetinizi (IP) değiştirip tekrar deneyin.");
             } else {
                 alert("Sıfırlama maili gönderilemedi: " + err.message);
             }
@@ -190,7 +192,13 @@ if (btnStep1Next) {
                     if (window.initApp) window.initApp(); else location.reload();
 
                 } catch (authErr) {
-                    alert("Şifren hatalı kanka! Lütfen doğru şifre gir veya 'Şifremi Unuttum?' bağlantısını kullan.");
+                    if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
+                        alert("Şifren hatalı kanka! Lütfen doğru şifre gir veya 'Şifremi Unuttum?' bağlantısını kullan.");
+                    } else if (authErr.code === 'auth/too-many-requests') {
+                        alert("Çok fazla hatalı giriş yapıldı. Lütfen biraz bekleyin veya internet bağlantınızı değiştirin.");
+                    } else {
+                        alert("Giriş yapılamadı: " + authErr.message);
+                    }
                 }
             } else {
                 // KULLANICI YOK -> Mail Doğrulama Sürecini Başlat
@@ -199,47 +207,55 @@ if (btnStep1Next) {
                     userCred = await createUserWithEmailAndPassword(auth, email, password);
                 } catch (createErr) {
                     if (createErr.code === 'auth/email-already-in-use') {
-                        userCred = await signInWithEmailAndPassword(auth, email, password);
+                        // Eğer mail auth sisteminde var ama Firestore kaydı yoksa giriş yapmayı dene
+                        try {
+                            userCred = await signInWithEmailAndPassword(auth, email, password);
+                        } catch (loginErr) {
+                            alert("Bu e-posta adresi sistemde kayıtlı ancak girdiğin şifre hatalı kanka!");
+                            return;
+                        }
+                    } else if (createErr.code === 'auth/too-many-requests') {
+                        alert("Çok fazla deneme yapıldı kanka. Lütfen internetini (IP) değiştirip tekrar dene.");
+                        return;
                     } else {
                         throw createErr;
                     }
                 }
 
-                // Doğrulama maili gönder
-                await sendEmailVerification(userCred.user);
+                if (userCred && userCred.user) {
+                    // Doğrulama maili gönder
+                    await sendEmailVerification(userCred.user);
 
-                if (verifyEmailText) verifyEmailText.textContent = email;
-                if (verifyModal) verifyModal.classList.remove('hidden');
+                    if (verifyEmailText) verifyEmailText.textContent = email;
+                    if (verifyModal) verifyModal.classList.remove('hidden');
 
-                // Canlı e-posta onay kontrol döngüsü (Her 3 saniyede bir bak)
-                if (verifyCheckInterval) clearInterval(verifyCheckInterval);
+                    if (verifyCheckInterval) clearInterval(verifyCheckInterval);
 
-                verifyCheckInterval = setInterval(async () => {
-                    if (auth.currentUser) {
-                        await auth.currentUser.reload(); // Kullanıcının mail onay durumunu sunucudan tazele
-                        
-                        if (auth.currentUser.emailVerified) {
-                            clearInterval(verifyCheckInterval);
+                    verifyCheckInterval = setInterval(async () => {
+                        if (auth.currentUser) {
+                            await auth.currentUser.reload();
                             
-                            if (verifyModal) verifyModal.classList.add('hidden');
+                            if (auth.currentUser.emailVerified) {
+                                clearInterval(verifyCheckInterval);
+                                
+                                if (verifyModal) verifyModal.classList.add('hidden');
 
-                            // Kutucuk yanındaki yazıyı Yeşil "✓ Onaylandı" Yap
-                            if (emailStatus) {
-                                emailStatus.textContent = '✓ Onaylandı';
-                                emailStatus.className = 'text-xs font-semibold text-emerald-400';
+                                if (emailStatus) {
+                                    emailStatus.textContent = '✓ Onaylandı';
+                                    emailStatus.className = 'text-xs font-semibold text-emerald-400';
+                                }
+
+                                step1.classList.add('hidden');
+                                step2.classList.remove('hidden');
+                                if (stepSubtitle) stepSubtitle.textContent = 'E-posta Onaylandı! Profilini tamamla kanka.';
                             }
-
-                            // Adım 2'ye Geçiş Yap
-                            step1.classList.add('hidden');
-                            step2.classList.remove('hidden');
-                            if (stepSubtitle) stepSubtitle.textContent = 'E-posta Onaylandı! Profilini tamamla kanka.';
                         }
-                    }
-                }, 3000);
+                    }, 3000);
+                }
             }
 
         } catch (err) {
-            alert("Bağlantı/Kayıt hatası: " + err.message);
+            alert("İşlem hatası: " + err.message);
         } finally {
             btnStep1Next.disabled = false;
             btnStep1Next.innerHTML = originalBtnContent;
@@ -280,7 +296,6 @@ if (loginForm) {
         }
 
         try {
-            // Telefon Numarası Çakışma Kontrolü
             const phoneQuery = query(collection(db, "users"), where("phone", "==", cleanPhone));
             const phoneSnap = await getDocs(phoneQuery);
 
@@ -296,7 +311,6 @@ if (loginForm) {
                 return;
             }
 
-            // Firestore Veritabanına Kullanıcıyı Ekle
             const userRef = doc(db, "users", currentUserAuth.uid);
             await setDoc(userRef, {
                 uid: currentUserAuth.uid,
