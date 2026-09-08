@@ -280,7 +280,11 @@ if (loginForm) {
         const username = usernameInput ? usernameInput.value.trim() : '';
         const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
         const rawPhone = phoneInput ? phoneInput.value.trim() : '';
-        const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
+        
+        // Sadece rakamları ayıkla ve son 10 haneyi al
+        const digits = rawPhone.replace(/\D/g, '');
+        const cleanPhone = digits.length >= 10 ? digits.slice(-10) : '';
+        const formattedPhone = '+90' + cleanPhone;
 
         if (!username || cleanPhone.length !== 10) {
             alert("Lütfen kullanıcı adı ve 10 haneli telefon numaranı eksiksiz gir kanka!");
@@ -296,7 +300,9 @@ if (loginForm) {
         }
 
         try {
-            const phoneQuery = query(collection(db, "users"), where("phone", "==", cleanPhone));
+            // Numarayı veritabanında 3 farklı olası formatta kontrol et (mükerrer kaydı önler)
+            const phoneFormats = [cleanPhone, formattedPhone, '0' + cleanPhone];
+            const phoneQuery = query(collection(db, "users"), where("phone", "in", phoneFormats));
             const phoneSnap = await getDocs(phoneQuery);
 
             if (!phoneSnap.empty) {
@@ -316,12 +322,12 @@ if (loginForm) {
                 uid: currentUserAuth.uid,
                 name: username,
                 email: email,
-                phone: cleanPhone,
+                phone: formattedPhone, // Veritabanına uluslararası standartta (+905XXXXXXXXX) kaydet
                 avatar: base64Image || '',
                 lastSeen: serverTimestamp()
             });
 
-            const userObj = { name: username, email: email, phone: cleanPhone, avatar: base64Image || '' };
+            const userObj = { name: username, email: email, phone: formattedPhone, avatar: base64Image || '' };
             localStorage.setItem('aurachat_user', JSON.stringify(userObj));
             
             if (loginOverlay) loginOverlay.classList.add('hidden');
