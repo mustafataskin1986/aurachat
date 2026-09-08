@@ -54,9 +54,8 @@
                     </button>
                 </div>
 
-                <!-- 2. ADIM: PROFİL VE AVATAR KURULUMU (Başlangıçta Gizli) -->
+                <!-- 2. ADIM: PROFİL VE AVATAR KURULUMU -->
                 <div id="step-2" class="space-y-4 hidden">
-                    <!-- Üst Kısım: Avatar Seçimi -->
                     <div class="flex flex-col items-center my-2">
                         <label for="profile-image-input" class="cursor-pointer group relative">
                             <div id="profile-preview" class="w-24 h-24 bg-[#202c33] border-2 border-dashed border-gray-600 rounded-full flex items-center justify-center text-gray-400 overflow-hidden group-hover:border-emerald-500 transition shadow-inner">
@@ -70,7 +69,6 @@
                         <span class="text-xs text-gray-400 mt-2">Profil Fotoğrafı Ekle (İsteğe bağlı)</span>
                     </div>
 
-                    <!-- Alt Kısım: Kullanıcı Adı -->
                     <div>
                         <label class="block text-xs font-medium text-gray-300 mb-1">Adın veya Rumuzun</label>
                         <textarea id="username-input" rows="1" name="aurachat_usr_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Örn: Hasan" class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500 resize-none overflow-hidden leading-tight" style="height:46px; max-height:46px;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
@@ -270,7 +268,6 @@
             renderSkeletonList();
             loadContacts();
             
-            // Yalnızca masaüstü cihazlarda genel odayı varsayılan seç; mobilde liste ekranında başla
             if (window.innerWidth >= 768) {
                 selectChat('global', 'Genel Kanka Odası 🌍', 'global');
             } else {
@@ -302,7 +299,6 @@
         }
 
         async function loadContacts() {
-            // TELEFON REHBERİNİ TARAMA VE NUMARALARI TOPLAMA
             let localPhoneNumbers = new Set();
 
             try {
@@ -341,7 +337,7 @@
                 contactList.innerHTML = '';
                 contactElementsMap.clear();
 
-                // 1. Genel Oda
+                // 1. Genel Oda (Her zaman üstte kalır)
                 const globalDiv = document.createElement('div');
                 globalDiv.className = "flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30";
                 globalDiv.innerHTML = `
@@ -374,74 +370,87 @@
                     }
                 });
 
-                const seenNames = new Set();
                 const myNameClean = currentUser ? currentUser.name.trim().toLowerCase() : '';
                 const myPhoneClean = currentUser && currentUser.phone ? currentUser.phone.trim() : '';
 
-                // 2. Diğer Kullanıcılar (SADECE TELEFON REHBERİNDE OLANLAR)
+                // 2. Özel Sohbetler (SADECE Rehberde Olanlar VEYA Aktif Mesaj Geçmişi Olanlar)
                 snapshot.forEach((docSnap) => {
                     const user = docSnap.data();
                     if (!user || !user.name) return;
-                    
+
                     const targetNameClean = user.name.trim().toLowerCase();
                     const targetPhoneClean = user.phone ? user.phone.trim() : '';
 
-                    // Kendini listede gösterme
+                    // Kendini gösterme
                     if (targetNameClean === myNameClean) return;
                     if (myPhoneClean && targetPhoneClean === myPhoneClean) return;
-                    if (seenNames.has(targetNameClean)) return;
-
-                    // APK NATIVE KONTROLÜ: Telefon numaran rehberde yoksa gösterme
-                    const isNativeApp = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
-                    
-                    if (isNativeApp || localPhoneNumbers.size > 0) {
-                        if (!targetPhoneClean || !localPhoneNumbers.has(targetPhoneClean)) {
-                            return; // Rehberde bulunmayan kullanıcıyı atla
-                        }
-                    }
-
-                    seenNames.add(targetNameClean);
 
                     const chatId = [currentUser.name, user.name].sort().join('_');
-
-                    const userDiv = document.createElement('div');
-                    userDiv.className = "flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
-                    
-                    let avatarContent = `<div class="w-12 h-12 bg-cyan-600 rounded-full flex items-center justify-center text-white font-bold shadow flex-shrink-0">${user.name.substring(0,2).toUpperCase()}</div>`;
-                    if (user.avatar) {
-                        avatarContent = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
-                    }
-
-                    userDiv.innerHTML = `
-                        ${avatarContent}
-                        <div class="flex-1 overflow-hidden ml-3">
-                            <div class="flex justify-between items-baseline">
-                                <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
-                                <span class="text-[11px] text-gray-400 time-span"></span>
-                            </div>
-                            <div class="flex justify-between items-center mt-0.5">
-                                <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
-                                    <span class="tick-container hidden mr-1 flex-shrink-0"></span>
-                                    <span class="preview-text truncate">Henüz mesaj yok</span>
-                                </p>
-                                <div class="unread-badge hidden bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2"></div>
-                            </div>
-                        </div>
-                    `;
-
-                    const timeSpan = userDiv.querySelector('.time-span');
-                    const previewText = userDiv.querySelector('.preview-text');
-                    const tickContainer = userDiv.querySelector('.tick-container');
-                    const unreadBadge = userDiv.querySelector('.unread-badge');
-
-                    contactElementsMap.set(chatId, {
-                        element: userDiv,
-                        lastTimeObj: null
-                    });
-                    
-                    contactList.appendChild(userDiv);
+                    const isInContacts = targetPhoneClean && localPhoneNumbers.has(targetPhoneClean);
 
                     onSnapshot(query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc")), (msgSnapshot) => {
+                        const hasMessages = !msgSnapshot.empty;
+
+                        // WHATSAPP MANTIĞI: Rehberde kayıtlı değilse VE geçmiş mesaj yoksa listeye EKLEME
+                        if (!isInContacts && !hasMessages) {
+                            if (contactElementsMap.has(chatId)) {
+                                const item = contactElementsMap.get(chatId);
+                                if (item.element && item.element.parentNode) {
+                                    item.element.parentNode.removeChild(item.element);
+                                }
+                                contactElementsMap.delete(chatId);
+                            }
+                            return;
+                        }
+
+                        // Eğer listede yoksa yeni olarak oluştur
+                        if (!contactElementsMap.has(chatId)) {
+                            const userDiv = document.createElement('div');
+                            userDiv.className = "flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
+                            
+                            let avatarContent = `<div class="w-12 h-12 bg-cyan-600 rounded-full flex items-center justify-center text-white font-bold shadow flex-shrink-0">${user.name.substring(0,2).toUpperCase()}</div>`;
+                            if (user.avatar) {
+                                avatarContent = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
+                            }
+
+                            userDiv.innerHTML = `
+                                ${avatarContent}
+                                <div class="flex-1 overflow-hidden ml-3">
+                                    <div class="flex justify-between items-baseline">
+                                        <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
+                                        <span class="text-[11px] text-gray-400 time-span"></span>
+                                    </div>
+                                    <div class="flex justify-between items-center mt-0.5">
+                                        <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
+                                            <span class="tick-container hidden mr-1 flex-shrink-0"></span>
+                                            <span class="preview-text truncate">Henüz mesaj yok</span>
+                                        </p>
+                                        <div class="unread-badge hidden bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2"></div>
+                                    </div>
+                                </div>
+                            `;
+
+                            userDiv.addEventListener('click', () => {
+                                selectChat(chatId, user.name, user.avatar || '');
+                            });
+
+                            contactElementsMap.set(chatId, {
+                                element: userDiv,
+                                lastTimeObj: null
+                            });
+
+                            contactList.appendChild(userDiv);
+                        }
+
+                        // Mesaj ve görünüm güncelleme
+                        const itemData = contactElementsMap.get(chatId);
+                        if (!itemData) return;
+
+                        const timeSpan = itemData.element.querySelector('.time-span');
+                        const previewText = itemData.element.querySelector('.preview-text');
+                        const tickContainer = itemData.element.querySelector('.tick-container');
+                        const unreadBadge = itemData.element.querySelector('.unread-badge');
+
                         let lastText = "Henüz mesaj yok";
                         let lastTime = "";
                         let lastTimeObj = null;
@@ -449,7 +458,7 @@
                         let isLastMsgMine = false;
                         let lastMsgRead = false;
 
-                        if (!msgSnapshot.empty) {
+                        if (hasMessages) {
                             const latestMsg = msgSnapshot.docs[0].data();
                             lastText = latestMsg.text;
                             isLastMsgMine = (latestMsg.senderName === currentUser.name);
@@ -485,15 +494,8 @@
                             unreadBadge.classList.add('hidden');
                         }
 
-                        const itemData = contactElementsMap.get(chatId);
-                        if (itemData) {
-                            itemData.lastTimeObj = lastTimeObj;
-                            sortContactList();
-                        }
-                    });
-
-                    userDiv.addEventListener('click', () => {
-                        selectChat(chatId, user.name, user.avatar || '');
+                        itemData.lastTimeObj = lastTimeObj;
+                        sortContactList();
                     });
                 });
             });
