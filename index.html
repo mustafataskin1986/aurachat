@@ -26,7 +26,7 @@
                 <i class="fa-solid fa-comments"></i>
             </div>
             <h2 class="text-white text-xl font-bold mb-1">AuraChat'e Hoş Geldin</h2>
-            <p class="text-gray-400 text-sm mb-6">Güvenli sohbet için adını ve şifreni gir kanka.</p>
+            <p class="text-gray-400 text-sm mb-6">Güvenli sohbet için bilgilerini gir kanka.</p>
 
             <form id="login-form" class="space-y-4 text-left" autocomplete="off">
                 <div class="flex flex-col items-center">
@@ -269,7 +269,42 @@
             if (userNameSpan) userNameSpan.textContent = user.name;
         }
 
-        function loadContacts() {
+        async function loadContacts() {
+            // TELEFON REHBERİNİ TARAMA VE NUMARALARI TOPLAMA
+            let localPhoneNumbers = new Set();
+
+            try {
+                const ContactsPlugin = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Contacts)
+                    ? window.Capacitor.Plugins.Contacts
+                    : null;
+
+                if (ContactsPlugin) {
+                    let perm = await ContactsPlugin.checkPermissions();
+                    if (perm.contacts !== 'granted') {
+                        perm = await ContactsPlugin.requestPermissions();
+                    }
+                    if (perm.contacts === 'granted') {
+                        const result = await ContactsPlugin.getContacts({ projection: { phones: true } });
+                        if (result && result.contacts) {
+                            result.contacts.forEach(c => {
+                                if (c.phones && Array.isArray(c.phones)) {
+                                    c.phones.forEach(p => {
+                                        if (p.number) {
+                                            const clean = p.number.replace(/\D/g, '').slice(-10);
+                                            if (clean.length === 10) {
+                                                localPhoneNumbers.add(clean);
+                                            }
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn("Rehber okunurken bir durum oluştu:", err);
+            }
+
             onSnapshot(collection(db, "users"), (snapshot) => {
                 contactList.innerHTML = '';
                 contactElementsMap.clear();
@@ -309,15 +344,30 @@
 
                 const seenNames = new Set();
                 const myNameClean = currentUser ? currentUser.name.trim().toLowerCase() : '';
+                const myPhoneClean = currentUser && currentUser.phone ? currentUser.phone.trim() : '';
 
-                // 2. Diğer Kullanıcılar
+                // 2. Diğer Kullanıcılar (SADECE TELEFON REHBERİNDE OLANLAR)
                 snapshot.forEach((docSnap) => {
                     const user = docSnap.data();
                     if (!user || !user.name) return;
                     
                     const targetNameClean = user.name.trim().toLowerCase();
+                    const targetPhoneClean = user.phone ? user.phone.trim() : '';
+
+                    // Kendini listede gösterme
                     if (targetNameClean === myNameClean) return;
+                    if (myPhoneClean && targetPhoneClean === myPhoneClean) return;
                     if (seenNames.has(targetNameClean)) return;
+
+                    // APK NATIVE KONTROLÜ: Telefon numaran rehberde yoksa gösterme
+                    const isNativeApp = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+                    
+                    if (isNativeApp || localPhoneNumbers.size > 0) {
+                        if (!targetPhoneClean || !localPhoneNumbers.has(targetPhoneClean)) {
+                            return; // Rehberde bulunmayan kullanıcıyı atla
+                        }
+                    }
+
                     seenNames.add(targetNameClean);
 
                     const chatId = [currentUser.name, user.name].sort().join('_');
