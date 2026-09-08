@@ -28,9 +28,10 @@ const profileImageInput = document.getElementById('profile-image-input');
 const profilePreview = document.getElementById('profile-preview');
 
 // ==========================================
-// 🛠️ DİNAMİK E-POSTA VE ŞİFREMİ UNUTTUM ALANLARI
+// 🛠️ DİNAMİK E-POSTA, TELEFON VE ŞİFREMİ UNUTTUM ALANLARI
 // ==========================================
 let emailInput = document.getElementById('email-input');
+let phoneInput = document.getElementById('phone-input');
 
 if (passwordInput && passwordInput.parentElement) {
     const parentContainer = passwordInput.parentElement;
@@ -47,7 +48,19 @@ if (passwordInput && passwordInput.parentElement) {
         emailInput = document.getElementById('email-input');
     }
 
-    // 2. Şifremi Unuttum Linkini Otomatik Ekle
+    // 2. Telefon Numarası Giriş Kutusunu Otomatik Ekle (YENİ)
+    if (!phoneInput) {
+        const phoneDiv = document.createElement('div');
+        phoneDiv.style.cssText = 'margin-bottom: 12px; width: 100%; text-align: left;';
+        phoneDiv.innerHTML = `
+            <label style="color: #8696a0; font-size: 14px; display: block; margin-bottom: 6px;">Telefon Numaran (Rehber Eşleşmesi İçin)</label>
+            <input type="tel" id="phone-input" placeholder="Örn: 05551234567" maxlength="11" required style="width: 100%; padding: 12px; background: #202c33; border: 1px solid #2a3942; border-radius: 8px; color: #fff; outline: none; box-sizing: border-box;">
+        `;
+        parentContainer.parentNode.insertBefore(phoneDiv, parentContainer);
+        phoneInput = document.getElementById('phone-input');
+    }
+
+    // 3. Şifremi Unuttum Linkini Otomatik Ekle
     if (!document.getElementById('forgot-password-link')) {
         const headerDiv = document.createElement('div');
         headerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; width: 100%;';
@@ -83,7 +96,7 @@ const setCardOffset = (offset) => {
     }
 };
 
-[usernameInput, emailInput, passwordInput].forEach(input => {
+[usernameInput, emailInput, phoneInput, passwordInput].forEach(input => {
     if (input) {
         input.addEventListener('focus', () => {
             setCardOffset(KEYBOARD_OFFSET_PX);
@@ -159,9 +172,13 @@ if (loginForm) {
         const username = usernameInput ? usernameInput.value.trim() : '';
         const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
         const password = passwordInput ? passwordInput.value.trim() : '';
+        const rawPhone = phoneInput ? phoneInput.value.trim() : '';
+        
+        // Telefon numarasındaki boşluk/tire gibi karakterleri silip sadece son 10 haneyi alıyoruz
+        const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
 
-        if (!username || !email || !password) {
-            alert("Lütfen tüm alanları doldur kanka!");
+        if (!username || !email || !password || cleanPhone.length !== 10) {
+            alert("Lütfen tüm alanları ve 10 haneli telefon numaranı doğru şekilde doldur kanka!");
             return;
         }
 
@@ -178,7 +195,7 @@ if (loginForm) {
 
                 if (registeredUsername.toLowerCase() !== username.toLowerCase()) {
                     alert(`Girdiğin kullanıcı adı bu e-posta adresiyle eşleşmiyor kanka!`);
-                    return; // İşlemi burada durdur, şifreye bakma bile!
+                    return;
                 }
             } else {
                 // E-posta veritabanında yok (Yeni Kayıt Olacak). Kullanıcı adı başkasına ait mi kontrol et
@@ -229,6 +246,7 @@ if (loginForm) {
             await setDoc(userRef, {
                 name: username,
                 email: email,
+                phone: cleanPhone,
                 avatar: finalAvatar || '',
                 lastSeen: serverTimestamp()
             }, { merge: true });
@@ -236,6 +254,7 @@ if (loginForm) {
             const userObj = {
                 name: username,
                 email: email,
+                phone: cleanPhone,
                 avatar: finalAvatar || ''
             };
 
