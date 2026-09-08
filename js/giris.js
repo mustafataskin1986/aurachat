@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
@@ -18,6 +18,7 @@ const auth = getAuth(app);
 auth.languageCode = 'tr';
 
 let base64Image = '';
+let verifyCheckInterval = null;
 
 // DOM ELEMENTLERİ
 const loginOverlay = document.getElementById('login-overlay');
@@ -38,6 +39,15 @@ const emailStatus = document.getElementById('email-status');
 
 const profileImageInput = document.getElementById('profile-image-input');
 const profilePreview = document.getElementById('profile-preview');
+
+// MODAL ELEMENTLERİ
+const forgotModal = document.getElementById('forgot-modal');
+const forgotEmailInput = document.getElementById('forgot-email-input');
+const btnForgotCancel = document.getElementById('btn-forgot-cancel');
+const btnForgotSubmit = document.getElementById('btn-forgot-submit');
+
+const verifyModal = document.getElementById('verify-modal');
+const verifyEmailText = document.getElementById('verify-email-text');
 
 // Oturum kontrolü
 const currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
@@ -83,41 +93,49 @@ if (emailInput && emailStatus) {
     });
 }
 
-// Şifremi Unuttum İşlemi (E-POSTA SIFIRLAMA LİNKİ GÖNDERME)
+// 1. ŞİFREMİ UNUTTUM MODAL İŞLEMLERİ
 if (btnForgotPassword) {
-    btnForgotPassword.addEventListener('click', async () => {
-        const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
+    btnForgotPassword.addEventListener('click', () => {
+        if (forgotEmailInput && emailInput) {
+            forgotEmailInput.value = emailInput.value.trim();
+        }
+        if (forgotModal) forgotModal.classList.remove('hidden');
+    });
+}
+
+if (btnForgotCancel) {
+    btnForgotCancel.addEventListener('click', () => {
+        if (forgotModal) forgotModal.classList.add('hidden');
+    });
+}
+
+if (btnForgotSubmit) {
+    btnForgotSubmit.addEventListener('click', async () => {
+        const email = forgotEmailInput ? forgotEmailInput.value.trim().toLowerCase() : '';
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
         if (!email || !emailRegex.test(email)) {
-            alert("Şifre sıfırlama bağlantısı gönderebilmemiz için lütfen önce e-posta alanına geçerli bir mail adresi yaz kanka!");
-            if (emailInput) emailInput.focus();
+            alert("Lütfen geçerli bir e-posta adresi yaz kanka!");
             return;
         }
 
+        const originalText = btnForgotSubmit.innerHTML;
+        btnForgotSubmit.disabled = true;
+        btnForgotSubmit.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Gönderiliyor...`;
+
         try {
-            if (emailStatus) {
-                emailStatus.textContent = 'Gönderiliyor...';
-                emailStatus.className = 'text-xs font-semibold text-amber-400 animate-pulse';
-            }
-
             await sendPasswordResetEmail(auth, email);
-
-            if (emailStatus) {
-                emailStatus.textContent = '✓ Mail Gönderildi';
-                emailStatus.className = 'text-xs font-semibold text-emerald-400';
-            }
-            alert(`Sıfırlama bağlantısı ${email} adresine gönderildi kanka! Gelen kutunu ve Spam klasörünü kontrol et.`);
+            alert(`Sıfırlama bağlantısı ${email} adresine başarıyla gönderildi kanka! Gelen kutunu ve Spam klasörünü kontrol et.`);
+            if (forgotModal) forgotModal.classList.add('hidden');
         } catch (err) {
-            if (emailStatus) {
-                emailStatus.textContent = 'Hata Oluştu';
-                emailStatus.className = 'text-xs font-semibold text-rose-400';
-            }
             if (err.code === 'auth/user-not-found') {
                 alert("Bu e-posta adresiyle kayıtlı bir kullanıcı bulunamadı kanka!");
             } else {
                 alert("Sıfırlama maili gönderilemedi: " + err.message);
             }
+        } finally {
+            btnForgotSubmit.disabled = false;
+            btnForgotSubmit.innerHTML = originalText;
         }
     });
 }
@@ -138,7 +156,7 @@ function validateStep1() {
     return true;
 }
 
-// Devam Et butonuna basıldığında Kontrol Mantığı
+// 2. ADIM 1 DEVAM ET VE CANLI DOĞRULAMA KONTROLÜ
 if (btnStep1Next) {
     btnStep1Next.addEventListener('click', async () => {
         if (!validateStep1()) return;
@@ -151,12 +169,12 @@ if (btnStep1Next) {
         btnStep1Next.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-sm"></i> <span>Kontrol Ediliyor...</span>`;
 
         try {
-            // Önce bu mail veritabanımızda zaten kayıtlı mı diye sorgulayalım
+            // Önce bu mail veritabanımızda zaten kayıtlı mı kontrol et
             const q = query(collection(db, "users"), where("email", "==", email));
             const querySnapshot = await getDocs(q);
 
             if (!querySnapshot.empty) {
-                // Kullanıcı veritabanında var -> Giriş Yapmayı Dene
+                // KULLANICI VAR -> Giriş Yapmayı Dene
                 try {
                     await signInWithEmailAndPassword(auth, email, password);
                     
@@ -175,14 +193,53 @@ if (btnStep1Next) {
                     alert("Şifren hatalı kanka! Lütfen doğru şifre gir veya 'Şifremi Unuttum?' bağlantısını kullan.");
                 }
             } else {
-                // Mail veritabanında YOK -> Yeni Kayıt (Adım 2'ye Geç)
-                step1.classList.add('hidden');
-                step2.classList.remove('hidden');
-                if (stepSubtitle) stepSubtitle.textContent = 'Yeni Kayıt: Profilini tamamla kanka.';
+                // KULLANICI YOK -> Mail Doğrulama Sürecini Başlat
+                let userCred;
+                try {
+                    userCred = await createUserWithEmailAndPassword(auth, email, password);
+                } catch (createErr) {
+                    if (createErr.code === 'auth/email-already-in-use') {
+                        userCred = await signInWithEmailAndPassword(auth, email, password);
+                    } else {
+                        throw createErr;
+                    }
+                }
+
+                // Doğrulama maili gönder
+                await sendEmailVerification(userCred.user);
+
+                if (verifyEmailText) verifyEmailText.textContent = email;
+                if (verifyModal) verifyModal.classList.remove('hidden');
+
+                // Canlı e-posta onay kontrol döngüsü (Her 3 saniyede bir bak)
+                if (verifyCheckInterval) clearInterval(verifyCheckInterval);
+
+                verifyCheckInterval = setInterval(async () => {
+                    if (auth.currentUser) {
+                        await auth.currentUser.reload(); // Kullanıcının mail onay durumunu sunucudan tazele
+                        
+                        if (auth.currentUser.emailVerified) {
+                            clearInterval(verifyCheckInterval);
+                            
+                            if (verifyModal) verifyModal.classList.add('hidden');
+
+                            // Kutucuk yanındaki yazıyı Yeşil "✓ Onaylandı" Yap
+                            if (emailStatus) {
+                                emailStatus.textContent = '✓ Onaylandı';
+                                emailStatus.className = 'text-xs font-semibold text-emerald-400';
+                            }
+
+                            // Adım 2'ye Geçiş Yap
+                            step1.classList.add('hidden');
+                            step2.classList.remove('hidden');
+                            if (stepSubtitle) stepSubtitle.textContent = 'E-posta Onaylandı! Profilini tamamla kanka.';
+                        }
+                    }
+                }, 3000);
             }
 
         } catch (err) {
-            alert("Bağlantı hatası: " + err.message);
+            alert("Bağlantı/Kayıt hatası: " + err.message);
         } finally {
             btnStep1Next.disabled = false;
             btnStep1Next.innerHTML = originalBtnContent;
@@ -192,20 +249,20 @@ if (btnStep1Next) {
 
 if (btnStep2Back) {
     btnStep2Back.addEventListener('click', () => {
+        if (verifyCheckInterval) clearInterval(verifyCheckInterval);
         step2.classList.add('hidden');
         step1.classList.remove('hidden');
         if (stepSubtitle) stepSubtitle.textContent = 'Giriş yapmak için bilgilerinizi girin kanka.';
     });
 }
 
-// Form Gönderildiğinde (Adım 2 Yeni Kayıt İşlemleri)
+// 3. ADIM 2 PROFİL KAYIT FORMU
 if (loginForm) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         const username = usernameInput ? usernameInput.value.trim() : '';
         const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
-        const password = passwordInput ? passwordInput.value.trim() : '';
         const rawPhone = phoneInput ? phoneInput.value.trim() : '';
         const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
 
@@ -219,11 +276,11 @@ if (loginForm) {
         if (submitBtn) {
             originalSubmitContent = submitBtn.innerHTML;
             submitBtn.disabled = true;
-            submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-sm"></i> <span>Kayıt Yapılıyor...</span>`;
+            submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-sm"></i> <span>Kayıt Tamamlanıyor...</span>`;
         }
 
         try {
-            // Telefon Numarası veya Kullanıcı Adı Çakışma Kontrolü
+            // Telefon Numarası Çakışma Kontrolü
             const phoneQuery = query(collection(db, "users"), where("phone", "==", cleanPhone));
             const phoneSnap = await getDocs(phoneQuery);
 
@@ -232,13 +289,17 @@ if (loginForm) {
                 return;
             }
 
-            // Firebase Auth ile Yeni Kullanıcı Oluştur
-            const userCred = await createUserWithEmailAndPassword(auth, email, password);
+            const currentUserAuth = auth.currentUser;
+            if (!currentUserAuth) {
+                alert("Oturum süresi doldu kanka. Lütfen Adım 1'den tekrar başla.");
+                location.reload();
+                return;
+            }
 
-            // Firestore Veritabanına Auth UID ile Kaydet (Çakışmayı tam engeller)
-            const userRef = doc(db, "users", userCred.user.uid);
+            // Firestore Veritabanına Kullanıcıyı Ekle
+            const userRef = doc(db, "users", currentUserAuth.uid);
             await setDoc(userRef, {
-                uid: userCred.user.uid,
+                uid: currentUserAuth.uid,
                 name: username,
                 email: email,
                 phone: cleanPhone,
@@ -253,13 +314,7 @@ if (loginForm) {
             if (window.initApp) window.initApp(); else location.reload();
 
         } catch (err) {
-            if (err.code === 'auth/email-already-in-use') {
-                alert("Bu e-posta adresi zaten kullanımda! Lütfen Adım 1'e dönüp doğru şifren ile giriş yap.");
-                step2.classList.add('hidden');
-                step1.classList.remove('hidden');
-            } else {
-                alert("Kayıt oluşturulurken hata: " + err.message);
-            }
+            alert("Kayıt oluşturulurken hata: " + err.message);
         } finally {
             if (submitBtn) {
                 submitBtn.disabled = false;
