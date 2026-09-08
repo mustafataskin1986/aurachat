@@ -25,18 +25,12 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: İmza Anahtarı Önbelleğini Yükle (Cache)
-        uses: actions/cache@v4
-        id: keystore-cache
-        with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
-
       - name: Sabit Dijital İmza (Keystore) Oluştur
-        if: steps.keystore-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.android
-          keytool -genkeypair -alias androiddebugkey -keypass android -keystore ~/.android/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -alias androiddebugkey -keypass android -keystore ~/.android/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12
+          fi
 
       - name: Bağımlılıkları Yükle
         run: |
@@ -49,15 +43,18 @@ jobs:
         run: |
           rm -rf www
           mkdir -p www
-          # Kök dizindeki tüm JS, HTML, CSS ve JSON dosyalarını kopyala
           cp -r *.html *.js *.json *.css www/ 2>/dev/null || true
-          # Varsa alt klasörleri de aktar
           cp -r js static assets css www/ 2>/dev/null || true
           cat << 'EOF' > capacitor.config.json
           {
             "appId": "com.aurachat.app",
             "appName": "AuraChat",
-            "webDir": "www"
+            "webDir": "www",
+            "bundledWebRuntime": false,
+            "server": {
+              "url": "https://aurachat-amber.vercel.app",
+              "cleartext": true
+            }
           }
           EOF
 
