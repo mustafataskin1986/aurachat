@@ -27,11 +27,11 @@
                 <i class="fa-solid fa-comments"></i>
             </div>
             <h2 class="text-white text-xl font-bold mb-1">AuraChat'e Hoş Geldin</h2>
-            <p id="step-subtitle" class="text-gray-400 text-xs mb-5">Adım 1/2: Güvenli sohbet için bilgini gir kanka.</p>
+            <p id="step-subtitle" class="text-gray-400 text-xs mb-5">Giriş yapmak için bilgilerinizi girin kanka.</p>
 
             <form id="login-form" class="space-y-4 text-left" autocomplete="off">
                 
-                <!-- 1. ADIM: İLETİŞİM VE HESAP BİLGİLERİ -->
+                <!-- 1. ADIM: E-POSTA VE ŞİFRE -->
                 <div id="step-1" class="space-y-4">
                     <div>
                         <label class="block text-xs font-medium text-gray-300 mb-1">E-posta Adresin</label>
@@ -43,18 +43,13 @@
                         <textarea id="password-input" rows="1" name="aurachat_pwd_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Örn: 123456" class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500 resize-none overflow-hidden leading-tight" style="height:46px; max-height:46px; -webkit-text-security: disk;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
                     </div>
 
-                    <div>
-                        <label class="block text-xs font-medium text-gray-300 mb-1">Telefon Numaran</label>
-                        <textarea id="phone-input" rows="1" name="aurachat_phone_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Örn: 05551234567" class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500 resize-none overflow-hidden leading-tight" style="height:46px; max-height:46px;" oninput="this.value = this.value.replace(/\D/g, '');" maxlength="11"></textarea>
-                    </div>
-
                     <button type="button" id="btn-step-1-next" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2 mt-4">
                         <span>Devam Et</span>
                         <i class="fa-solid fa-arrow-right text-sm"></i>
                     </button>
                 </div>
 
-                <!-- 2. ADIM: PROFİL VE AVATAR KURULUMU -->
+                <!-- 2. ADIM: KULLANICI ADI, TELEFON VE AVATAR (YALNIZCA YENİ KAYIT) -->
                 <div id="step-2" class="space-y-4 hidden">
                     <div class="flex flex-col items-center my-2">
                         <label for="profile-image-input" class="cursor-pointer group relative">
@@ -74,13 +69,18 @@
                         <textarea id="username-input" rows="1" name="aurachat_usr_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Örn: Hasan" class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500 resize-none overflow-hidden leading-tight" style="height:46px; max-height:46px;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
                     </div>
 
+                    <div>
+                        <label class="block text-xs font-medium text-gray-300 mb-1">Telefon Numaran</label>
+                        <textarea id="phone-input" rows="1" name="aurachat_phone_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Örn: 05551234567" class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500 resize-none overflow-hidden leading-tight" style="height:46px; max-height:46px;" oninput="this.value = this.value.replace(/\D/g, '');" maxlength="11"></textarea>
+                    </div>
+
                     <div class="flex items-center space-x-2 pt-2">
                         <button type="button" id="btn-step-2-back" class="w-1/3 bg-[#202c33] hover:bg-gray-700 text-gray-300 font-medium py-3 rounded-xl transition flex items-center justify-center space-x-1 text-sm">
                             <i class="fa-solid fa-arrow-left text-xs"></i>
                             <span>Geri</span>
                         </button>
                         <button type="submit" id="btn-step-2-submit" class="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
-                            <span>Sohbete Başla</span>
+                            <span>Kayıt Ol ve Başla</span>
                             <i class="fa-solid fa-check text-sm"></i>
                         </button>
                     </div>
