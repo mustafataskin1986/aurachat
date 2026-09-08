@@ -83,14 +83,14 @@ if (emailInput && emailStatus) {
     });
 }
 
-// Şifremi Unuttum İşlemi
+// Şifremi Unuttum İşlemi (E-POSTA SIFIRLAMA LİNKİ GÖNDERME)
 if (btnForgotPassword) {
     btnForgotPassword.addEventListener('click', async () => {
         const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
         if (!email || !emailRegex.test(email)) {
-            alert("Şifre sıfırlama bağlantısı gönderebilmemiz için lütfen önce geçerli bir e-posta adresi gir kanka!");
+            alert("Şifre sıfırlama bağlantısı gönderebilmemiz için lütfen önce e-posta alanına geçerli bir mail adresi yaz kanka!");
             if (emailInput) emailInput.focus();
             return;
         }
@@ -107,7 +107,7 @@ if (btnForgotPassword) {
                 emailStatus.textContent = '✓ Mail Gönderildi';
                 emailStatus.className = 'text-xs font-semibold text-emerald-400';
             }
-            alert("Şifre sıfırlama bağlantısı e-posta adresine gönderildi kanka. Kutunu kontrol et!");
+            alert(`Sıfırlama bağlantısı ${email} adresine gönderildi kanka! Gelen kutunu ve Spam klasörünü kontrol et.`);
         } catch (err) {
             if (emailStatus) {
                 emailStatus.textContent = 'Hata Oluştu';
@@ -138,7 +138,7 @@ function validateStep1() {
     return true;
 }
 
-// Devam Et butonuna basıldığında Doğrudan Giriş Denemesi Yapılır
+// Devam Et butonuna basıldığında Kontrol Mantığı
 if (btnStep1Next) {
     btnStep1Next.addEventListener('click', async () => {
         if (!validateStep1()) return;
@@ -151,50 +151,38 @@ if (btnStep1Next) {
         btnStep1Next.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-sm"></i> <span>Kontrol Ediliyor...</span>`;
 
         try {
-            // Önce Giriş Yapmayı Dene
-            const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            
-            // Giriş başarılıysa Firestore'dan Kullanıcı Bilgisini Çek
+            // Önce bu mail veritabanımızda zaten kayıtlı mı diye sorgulayalım
             const q = query(collection(db, "users"), where("email", "==", email));
             const querySnapshot = await getDocs(q);
 
             if (!querySnapshot.empty) {
-                const userData = querySnapshot.docs[0].data();
-                const userObj = {
-                    name: userData.name || querySnapshot.docs[0].id,
-                    email: userData.email,
-                    phone: userData.phone || '',
-                    avatar: userData.avatar || ''
-                };
-                localStorage.setItem('aurachat_user', JSON.stringify(userObj));
-                if (loginOverlay) loginOverlay.classList.add('hidden');
-                if (window.initApp) window.initApp(); else location.reload();
+                // Kullanıcı veritabanında var -> Giriş Yapmayı Dene
+                try {
+                    await signInWithEmailAndPassword(auth, email, password);
+                    
+                    const userData = querySnapshot.docs[0].data();
+                    const userObj = {
+                        name: userData.name || querySnapshot.docs[0].id,
+                        email: userData.email,
+                        phone: userData.phone || '',
+                        avatar: userData.avatar || ''
+                    };
+                    localStorage.setItem('aurachat_user', JSON.stringify(userObj));
+                    if (loginOverlay) loginOverlay.classList.add('hidden');
+                    if (window.initApp) window.initApp(); else location.reload();
+
+                } catch (authErr) {
+                    alert("Şifren hatalı kanka! Lütfen doğru şifre gir veya 'Şifremi Unuttum?' bağlantısını kullan.");
+                }
             } else {
-                // Auth var ama Firestore kaydı yoksa Adım 2'ye yönlendir
+                // Mail veritabanında YOK -> Yeni Kayıt (Adım 2'ye Geç)
                 step1.classList.add('hidden');
                 step2.classList.remove('hidden');
+                if (stepSubtitle) stepSubtitle.textContent = 'Yeni Kayıt: Profilini tamamla kanka.';
             }
 
         } catch (err) {
-            if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-                // E-posta yoksa veya yeni kayıt adımı için yönlendir
-                // Not: Firebase v10+ 'invalid-credential' dönebilir, kayıt var mı sorgulayalım
-                const q = query(collection(db, "users"), where("email", "==", email));
-                const querySnapshot = await getDocs(q);
-
-                if (querySnapshot.empty) {
-                    // Kullanıcı veritabanında yok, Yeni Kayıt adımına geç
-                    step1.classList.add('hidden');
-                    step2.classList.remove('hidden');
-                    if (stepSubtitle) stepSubtitle.textContent = 'Yeni Kayıt: Profilini özelleştir kanka.';
-                } else {
-                    alert("Şifren hatalı kanka! Lütfen kontrol edip tekrar dene.");
-                }
-            } else if (err.code === 'auth/wrong-password') {
-                alert("Şifreni yanlış girdin kanka!");
-            } else {
-                alert("Bir hata oluştu: " + err.message);
-            }
+            alert("Bağlantı hatası: " + err.message);
         } finally {
             btnStep1Next.disabled = false;
             btnStep1Next.innerHTML = originalBtnContent;
@@ -210,7 +198,7 @@ if (btnStep2Back) {
     });
 }
 
-// Form Gönderildiğinde (Sadece Adım 2 Yeni Kayıt İşlemleri İçin)
+// Form Gönderildiğinde (Adım 2 Yeni Kayıt İşlemleri)
 if (loginForm) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -235,18 +223,28 @@ if (loginForm) {
         }
 
         try {
-            // Firebase Auth ile Yeni Kullanıcı Oluştur
-            await createUserWithEmailAndPassword(auth, email, password);
+            // Telefon Numarası veya Kullanıcı Adı Çakışma Kontrolü
+            const phoneQuery = query(collection(db, "users"), where("phone", "==", cleanPhone));
+            const phoneSnap = await getDocs(phoneQuery);
 
-            // Firestore Veritabanına Kaydet
-            const userRef = doc(db, "users", username);
+            if (!phoneSnap.empty) {
+                alert("Bu telefon numarası başka bir hesaba tanımlı kanka! Lütfen kendi telefon numaranı gir.");
+                return;
+            }
+
+            // Firebase Auth ile Yeni Kullanıcı Oluştur
+            const userCred = await createUserWithEmailAndPassword(auth, email, password);
+
+            // Firestore Veritabanına Auth UID ile Kaydet (Çakışmayı tam engeller)
+            const userRef = doc(db, "users", userCred.user.uid);
             await setDoc(userRef, {
+                uid: userCred.user.uid,
                 name: username,
                 email: email,
                 phone: cleanPhone,
                 avatar: base64Image || '',
                 lastSeen: serverTimestamp()
-            }, { merge: true });
+            });
 
             const userObj = { name: username, email: email, phone: cleanPhone, avatar: base64Image || '' };
             localStorage.setItem('aurachat_user', JSON.stringify(userObj));
@@ -256,7 +254,7 @@ if (loginForm) {
 
         } catch (err) {
             if (err.code === 'auth/email-already-in-use') {
-                alert("Bu e-posta adresi zaten kullanımda! Lütfen doğru şifre ile Adım 1'den giriş yap kanka.");
+                alert("Bu e-posta adresi zaten kullanımda! Lütfen Adım 1'e dönüp doğru şifren ile giriş yap.");
                 step2.classList.add('hidden');
                 step1.classList.remove('hidden');
             } else {
