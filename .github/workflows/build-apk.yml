@@ -25,6 +25,19 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
+      - name: İmza Anahtarı Önbelleğini Yükle (Cache)
+        uses: actions/cache@v4
+        id: keystore-cache
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
+      - name: Sabit Dijital İmza (Keystore) Oluştur
+        if: steps.keystore-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -alias androiddebugkey -keypass android -keystore ~/.android/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12
+
       - name: Bağımlılıkları Yükle
         run: |
           if [ ! -f package.json ]; then
