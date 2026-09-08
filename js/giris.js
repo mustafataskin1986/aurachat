@@ -124,8 +124,6 @@ if (profileImageInput) {
 function validateStep1() {
     const email = emailInput ? emailInput.value.trim() : '';
     const password = passwordInput ? passwordInput.value.trim() : '';
-    const rawPhone = phoneInput ? phoneInput.value.trim() : '';
-    const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
 
     if (!email || !email.includes('@')) {
         alert("Lütfen geçerli bir e-posta adresi gir kanka!");
@@ -133,10 +131,6 @@ function validateStep1() {
     }
     if (!password || password.length < 6) {
         alert("Şifren en az 6 karakter olmalıdır!");
-        return false;
-    }
-    if (cleanPhone.length !== 10) {
-        alert("Lütfen 10 haneli telefon numaranı eksiksiz gir kanka! (Örn: 5551234567)");
         return false;
     }
     return true;
@@ -148,7 +142,7 @@ if (btnStep1Next) {
             step1.classList.add('hidden');
             step2.classList.remove('hidden');
             if (stepSubtitle) {
-                stepSubtitle.textContent = 'Adım 2/2: Profilini özelleştir ve rumuzunu gir.';
+                stepSubtitle.textContent = 'Adım 2/2: Profilini özelleştir, numara ve rumuzunu gir.';
             }
         }
     });
@@ -159,13 +153,13 @@ if (btnStep2Back) {
         step2.classList.add('hidden');
         step1.classList.remove('hidden');
         if (stepSubtitle) {
-            stepSubtitle.textContent = 'Adım 1/2: Güvenli sohbet için bilgini gir kanka.';
+            stepSubtitle.textContent = 'Giriş yapmak için bilgilerinizi girin kanka.';
         }
     });
 }
 
 // Step 1 girdilerinde Enter basılınca form yerine sonraki adıma geçişi sağla
-[emailInput, passwordInput, phoneInput].forEach(input => {
+[emailInput, passwordInput].forEach(input => {
     if (input) {
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
@@ -220,6 +214,11 @@ if (loginForm) {
 
         if (!username) {
             alert("Lütfen bir kullanıcı adı veya rumuz belirt kanka!");
+            return;
+        }
+
+        if (cleanPhone.length !== 10) {
+            alert("Lütfen 10 haneli telefon numaranı eksiksiz gir kanka! (Örn: 5551234567)");
             return;
         }
 
