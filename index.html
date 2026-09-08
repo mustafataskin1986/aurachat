@@ -34,12 +34,18 @@
                 <!-- 1. ADIM: E-POSTA VE ŞİFRE -->
                 <div id="step-1" class="space-y-4">
                     <div>
-                        <label class="block text-xs font-medium text-gray-300 mb-1">E-posta Adresin</label>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="block text-xs font-medium text-gray-300">E-posta Adresin</label>
+                            <span id="email-status" class="text-xs font-semibold"></span>
+                        </div>
                         <textarea id="email-input" rows="1" name="aurachat_email_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Örn: ahmet@gmail.com" class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500 resize-none overflow-hidden leading-tight" style="height:46px; max-height:46px;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
                     </div>
 
                     <div>
-                        <label class="block text-xs font-medium text-gray-300 mb-1">Şifren</label>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="block text-xs font-medium text-gray-300">Şifren</label>
+                            <button type="button" id="btn-forgot-password" class="text-[11px] text-emerald-400 hover:underline focus:outline-none">Şifremi Unuttum?</button>
+                        </div>
                         <textarea id="password-input" rows="1" name="aurachat_pwd_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Örn: 123456" class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none transition placeholder-gray-500 resize-none overflow-hidden leading-tight" style="height:46px; max-height:46px; -webkit-text-security: disk;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
                     </div>
 
