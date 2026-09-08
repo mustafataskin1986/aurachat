@@ -47,8 +47,12 @@ jobs:
 
       - name: Web Dosyalarını Hazırla ve Konfigüre Et
         run: |
+          rm -rf www
           mkdir -p www
-          cp -r index.html manifest.json sw.js js static www/ 2>/dev/null || true
+          # Kök dizindeki tüm JS, HTML, CSS ve JSON dosyalarını kopyala
+          cp -r *.html *.js *.json *.css www/ 2>/dev/null || true
+          # Varsa alt klasörleri de aktar
+          cp -r js static assets css www/ 2>/dev/null || true
           cat << 'EOF' > capacitor.config.json
           {
             "appId": "com.aurachat.app",
@@ -60,6 +64,7 @@ jobs:
       - name: Capacitor Android Ekle ve Senkronize Et
         run: |
           npx cap add android || true
+          npx cap copy android
           npx cap sync android
 
       - name: Android İzinlerini Manifest'e Ekle
