@@ -33,6 +33,8 @@ const usernameInput = document.getElementById('username-input');
 
 const btnStep1Next = document.getElementById('btn-step-1-next');
 const btnStep2Back = document.getElementById('btn-step-2-back');
+const btnForgotPassword = document.getElementById('btn-forgot-password');
+const emailStatus = document.getElementById('email-status');
 
 const profileImageInput = document.getElementById('profile-image-input');
 const profilePreview = document.getElementById('profile-preview');
@@ -62,11 +64,70 @@ if (profileImageInput) {
     });
 }
 
+// E-posta Canlı Format Doğrulama
+if (emailInput && emailStatus) {
+    emailInput.addEventListener('input', () => {
+        const email = emailInput.value.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!email) {
+            emailStatus.textContent = '';
+            emailStatus.className = 'text-xs font-semibold';
+        } else if (emailRegex.test(email)) {
+            emailStatus.textContent = '✓ Geçerli';
+            emailStatus.className = 'text-xs font-semibold text-emerald-400';
+        } else {
+            emailStatus.textContent = 'Geçersiz E-posta';
+            emailStatus.className = 'text-xs font-semibold text-rose-400';
+        }
+    });
+}
+
+// Şifremi Unuttum İşlemi
+if (btnForgotPassword) {
+    btnForgotPassword.addEventListener('click', async () => {
+        const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!email || !emailRegex.test(email)) {
+            alert("Şifre sıfırlama bağlantısı gönderebilmemiz için lütfen önce geçerli bir e-posta adresi gir kanka!");
+            if (emailInput) emailInput.focus();
+            return;
+        }
+
+        try {
+            if (emailStatus) {
+                emailStatus.textContent = 'Gönderiliyor...';
+                emailStatus.className = 'text-xs font-semibold text-amber-400 animate-pulse';
+            }
+
+            await sendPasswordResetEmail(auth, email);
+
+            if (emailStatus) {
+                emailStatus.textContent = '✓ Mail Gönderildi';
+                emailStatus.className = 'text-xs font-semibold text-emerald-400';
+            }
+            alert("Şifre sıfırlama bağlantısı e-posta adresine gönderildi kanka. Kutunu kontrol et!");
+        } catch (err) {
+            if (emailStatus) {
+                emailStatus.textContent = 'Hata Oluştu';
+                emailStatus.className = 'text-xs font-semibold text-rose-400';
+            }
+            if (err.code === 'auth/user-not-found') {
+                alert("Bu e-posta adresiyle kayıtlı bir kullanıcı bulunamadı kanka!");
+            } else {
+                alert("Sıfırlama maili gönderilemedi: " + err.message);
+            }
+        }
+    });
+}
+
 function validateStep1() {
     const email = emailInput ? emailInput.value.trim() : '';
     const password = passwordInput ? passwordInput.value.trim() : '';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!email || !email.includes('@')) {
+    if (!email || !emailRegex.test(email)) {
         alert("Lütfen geçerli bir e-posta adresi gir kanka!");
         return false;
     }
@@ -84,6 +145,10 @@ if (btnStep1Next) {
 
         const email = emailInput.value.trim().toLowerCase();
         const password = passwordInput.value.trim();
+
+        const originalBtnContent = btnStep1Next.innerHTML;
+        btnStep1Next.disabled = true;
+        btnStep1Next.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-sm"></i> <span>Kontrol Ediliyor...</span>`;
 
         try {
             // Önce Giriş Yapmayı Dene
@@ -111,16 +176,28 @@ if (btnStep1Next) {
             }
 
         } catch (err) {
-            if (err.code === 'auth/user-not-found') {
-                // Kullanıcı yoksa YENİ KAYIT adımına geç
-                step1.classList.add('hidden');
-                step2.classList.remove('hidden');
-                if (stepSubtitle) stepSubtitle.textContent = 'Yeni Kayıt: Profilini özelleştir kanka.';
-            } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+            if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+                // E-posta yoksa veya yeni kayıt adımı için yönlendir
+                // Not: Firebase v10+ 'invalid-credential' dönebilir, kayıt var mı sorgulayalım
+                const q = query(collection(db, "users"), where("email", "==", email));
+                const querySnapshot = await getDocs(q);
+
+                if (querySnapshot.empty) {
+                    // Kullanıcı veritabanında yok, Yeni Kayıt adımına geç
+                    step1.classList.add('hidden');
+                    step2.classList.remove('hidden');
+                    if (stepSubtitle) stepSubtitle.textContent = 'Yeni Kayıt: Profilini özelleştir kanka.';
+                } else {
+                    alert("Şifren hatalı kanka! Lütfen kontrol edip tekrar dene.");
+                }
+            } else if (err.code === 'auth/wrong-password') {
                 alert("Şifreni yanlış girdin kanka!");
             } else {
                 alert("Bir hata oluştu: " + err.message);
             }
+        } finally {
+            btnStep1Next.disabled = false;
+            btnStep1Next.innerHTML = originalBtnContent;
         }
     });
 }
@@ -129,6 +206,7 @@ if (btnStep2Back) {
     btnStep2Back.addEventListener('click', () => {
         step2.classList.add('hidden');
         step1.classList.remove('hidden');
+        if (stepSubtitle) stepSubtitle.textContent = 'Giriş yapmak için bilgilerinizi girin kanka.';
     });
 }
 
@@ -146,6 +224,14 @@ if (loginForm) {
         if (!username || cleanPhone.length !== 10) {
             alert("Lütfen kullanıcı adı ve 10 haneli telefon numaranı eksiksiz gir kanka!");
             return;
+        }
+
+        const submitBtn = document.getElementById('btn-step-2-submit');
+        let originalSubmitContent = '';
+        if (submitBtn) {
+            originalSubmitContent = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-sm"></i> <span>Kayıt Yapılıyor...</span>`;
         }
 
         try {
@@ -171,8 +257,15 @@ if (loginForm) {
         } catch (err) {
             if (err.code === 'auth/email-already-in-use') {
                 alert("Bu e-posta adresi zaten kullanımda! Lütfen doğru şifre ile Adım 1'den giriş yap kanka.");
+                step2.classList.add('hidden');
+                step1.classList.remove('hidden');
             } else {
                 alert("Kayıt oluşturulurken hata: " + err.message);
+            }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalSubmitContent;
             }
         }
     });
