@@ -55,7 +55,7 @@
                     </button>
                 </div>
 
-                <!-- 2. ADIM: KULLANICI ADI, TELEFON VE AVATAR (YALNIZCA YENİ KAYIT) -->
+                <!-- 2. ADIM: KULLANICI ADI, TELEFON VE AVATAR -->
                 <div id="step-2" class="space-y-4 hidden">
                     <div class="flex flex-col items-center my-2">
                         <label for="profile-image-input" class="cursor-pointer group relative">
@@ -155,15 +155,13 @@
         
         <!-- SOL TARAF: Sohbet ve Kişi Listesi -->
         <div id="sidebar" class="w-full md:w-[38%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute md:relative inset-y-0 left-0 z-20 transition-transform duration-300">
-            <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
+            
+            <!-- SABİT ÜST BAR (WhatsApp gibi sadece başlık) -->
+            <div class="bg-[#202c33] px-4 py-3.5 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
-                    <div id="user-profile-container" class="cursor-pointer">
-                        <div class="w-10 h-10 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center text-white font-semibold shadow justify-center">AC</div>
-                    </div>
-                    <span id="user-name-span" class="text-gray-100 font-semibold tracking-wide text-sm">AuraChat</span>
+                    <h1 class="text-emerald-500 font-bold text-xl tracking-wide select-none">AuraChat</h1>
                 </div>
                 <div class="flex space-x-4 text-gray-400 text-lg items-center">
-                    <!-- ADMİN BUTONU -->
                     <i class="fa-solid fa-user-shield cursor-pointer text-amber-400 hover:text-amber-300 transition hidden" id="admin-btn" title="Admin Paneli"></i>
                     <i class="fa-solid fa-circle-notch cursor-pointer hover:text-white transition"></i>
                     <i class="fa-solid fa-comment-alt cursor-pointer hover:text-white transition"></i>
@@ -171,17 +169,22 @@
                 </div>
             </div>
 
-            <!-- Arama Kutusu -->
-            <div class="p-2.5 bg-[#111b21] flex-shrink-0">
-                <div class="bg-[#202c33] flex items-center px-3 py-2 rounded-xl border border-transparent focus-within:border-emerald-500/50 transition">
-                    <i class="fa-solid fa-magnifying-glass text-gray-400 text-sm mr-3"></i>
-                    <textarea id="search-contact" rows="1" name="search_contact_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Kişilerde veya odalarda ara..." class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400 resize-none overflow-hidden leading-tight" style="height:22px; max-height:22px;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
+            <!-- SABİT ARAMA BAR (Görseldeki Gibi Oval & Sor Butonlu) -->
+            <div class="p-2.5 bg-[#111b21] flex-shrink-0 border-b border-gray-800/30">
+                <div class="bg-[#202c33] flex items-center px-3.5 py-1.5 rounded-full border border-transparent focus-within:border-emerald-500/50 transition shadow-inner">
+                    <i id="search-icon" class="fa-solid fa-magnifying-glass text-gray-400 text-sm mr-2.5 ml-0.5 flex-shrink-0"></i>
+                    <textarea id="search-contact" rows="1" name="search_contact_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Ara..." class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400 resize-none overflow-hidden leading-tight py-1" style="height:28px; max-height:28px;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
+                    <button id="search-ai-btn" type="button" class="bg-[#2a3942] hover:bg-[#32444f] text-purple-300 text-xs px-3 py-1 rounded-full flex items-center space-x-1.5 flex-shrink-0 transition ml-1 border border-purple-500/20 shadow-sm">
+                        <i class="fa-solid fa-wand-magic-sparkles text-purple-400 text-[11px]"></i>
+                        <span class="font-semibold text-[11px] tracking-wide">Sor</span>
+                    </button>
                 </div>
             </div>
 
-            <!-- Liste -->
-            <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40"></div>
+            <!-- KAYAR ORTA KISIM (Kişiler / Odalar Listesi) -->
+            <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40 min-h-0"></div>
 
+            <!-- SABİT ALT BAR -->
             <div class="bg-[#202c33] border-t border-gray-800 py-2.5 px-6 flex justify-between items-center text-gray-400 flex-shrink-0">
                 <div class="flex flex-col items-center cursor-pointer text-emerald-500 transition">
                     <i class="fa-solid fa-comment-dots text-lg"></i>
@@ -206,7 +209,7 @@
                     <button id="back-btn" class="md:hidden text-gray-400 mr-1 hover:text-white transition text-lg px-1 py-0.5">
                         <i class="fa-solid fa-arrow-left"></i>
                     </button>
-                    <div id="active-chat-avatar" class="w-10 h-10 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0">
+                    <div id="active-chat-avatar" class="w-10 h-10 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0">
                         <i class="fa-solid fa-globe text-sm"></i>
                     </div>
                     <div>
@@ -248,7 +251,7 @@
         import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc, updateDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // ==========================================
-        // BURAYA KENDİ GMAIL ADRESİNİ YAZ KANKA:
+        // ADMIN GMAIL ADRESİ
         // ==========================================
         const ADMIN_EMAIL = "mustafataskin1986@gmail.com";
 
@@ -267,8 +270,6 @@
         const messageContainer = document.getElementById('message-container');
         const messageInput = document.getElementById('message-input');
         const sendBtn = document.getElementById('send-btn');
-        const userProfileContainer = document.getElementById('user-profile-container');
-        const userNameSpan = document.getElementById('user-name-span');
         const contactList = document.getElementById('contact-list');
         const sidebar = document.getElementById('sidebar');
         const chatArea = document.getElementById('chat-area');
@@ -278,6 +279,7 @@
         const activeChatAvatar = document.getElementById('active-chat-avatar');
         const activeChatStatus = document.getElementById('active-chat-status');
         const searchContact = document.getElementById('search-contact');
+        const searchIcon = document.getElementById('search-icon');
 
         const adminBtn = document.getElementById('admin-btn');
         const adminModal = document.getElementById('admin-modal');
@@ -292,6 +294,35 @@
         let typingTimeout = null;
         
         const contactElementsMap = new Map();
+
+        // CANLI / DİNAMİK AVATAR RENK LİSTESİ
+        const AVATAR_COLORS = [
+            '#e53935', '#d81b60', '#8e24aa', '#5e35b1', '#3949ab',
+            '#1e88e5', '#039be5', '#00acc1', '#00897b', '#43a047',
+            '#7cb342', '#fb8c00', '#f4511e', '#6d4c41', '#546e7a',
+            '#059669', '#2563eb', '#d97706', '#dc2626', '#9333ea'
+        ];
+
+        // İsme Göre Değişmeyen Sabit/Farklı Renk Üretici
+        function getUserColor(str) {
+            if (!str) return '#00897b';
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % AVATAR_COLORS.length;
+            return AVATAR_COLORS[index];
+        }
+
+        // BAŞ HARF ÜRETİCİ (Mustafa -> M | Mustafa Taşkın -> MT)
+        function getInitials(name) {
+            if (!name) return 'AC';
+            const cleanName = name.replace(/^👑\s*/, '').trim();
+            const parts = cleanName.split(/\s+/).filter(Boolean);
+            if (parts.length === 0) return 'AC';
+            if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+            return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+        }
 
         // Admin Isim ve Taç Ayarı
         function formatAdminUser(user) {
@@ -382,16 +413,6 @@
             if (!user) return;
             user = formatAdminUser(user);
 
-            if (userProfileContainer) {
-                if (user.avatar) {
-                    userProfileContainer.innerHTML = `<img src="${user.avatar}" class="w-10 h-10 rounded-full object-cover shadow border border-emerald-500/50">`;
-                } else {
-                    const initials = user.name.replace('👑', '').trim().substring(0, 2).toUpperCase();
-                    userProfileContainer.innerHTML = `<div class="w-10 h-10 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center justify-center text-white font-semibold shadow">${initials}</div>`;
-                }
-            }
-            if (userNameSpan) userNameSpan.textContent = user.name;
-
             // Admin Buton Gizle/Göster
             if (user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
                 if (adminBtn) adminBtn.classList.remove('hidden');
@@ -440,6 +461,7 @@
                 contactList.innerHTML = '';
                 contactElementsMap.clear();
 
+                // Genel Oda Elementi
                 const globalDiv = document.createElement('div');
                 globalDiv.className = "flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30";
                 globalDiv.innerHTML = `
@@ -508,9 +530,14 @@
                             const userDiv = document.createElement('div');
                             userDiv.className = "flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
                             
-                            let avatarContent = `<div class="w-12 h-12 bg-cyan-600 rounded-full flex items-center justify-center text-white font-bold shadow flex-shrink-0">${user.name.replace('👑','').trim().substring(0,2).toUpperCase()}</div>`;
+                            // Özelleştirilmiş Dinamik Avatar
+                            let avatarContent = '';
                             if (user.avatar) {
                                 avatarContent = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
+                            } else {
+                                const initials = getInitials(user.name);
+                                const color = getUserColor(user.name);
+                                avatarContent = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color: ${color};">${initials}</div>`;
                             }
 
                             userDiv.innerHTML = `
@@ -575,7 +602,7 @@
                             }
                         });
 
-                        previewText.textContent = lastText;
+                        previewText.textContent = isLastMsgMine ? `Siz: ${lastText}` : lastText;
                         timeSpan.textContent = lastTime;
 
                         if (isLastMsgMine) {
@@ -619,14 +646,21 @@
             activeChatName.textContent = name;
 
             if (chatId === 'global') {
+                activeChatAvatar.style.backgroundColor = '';
+                activeChatAvatar.className = "w-10 h-10 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0";
                 activeChatAvatar.innerHTML = `<i class="fa-solid fa-globe text-sm"></i>`;
                 activeChatStatus.textContent = "Herkes çevrimiçi";
             } else {
                 if (avatar && avatar.startsWith('data:image')) {
-                    activeChatAvatar.innerHTML = `<img src="${avatar}" class="w-full h-full rounded-full object-cover">`;
+                    activeChatAvatar.style.backgroundColor = '';
+                    activeChatAvatar.className = "w-10 h-10 rounded-full overflow-hidden shadow flex-shrink-0";
+                    activeChatAvatar.innerHTML = `<img src="${avatar}" class="w-full h-full object-cover">`;
                 } else {
-                    const initials = name.replace('👑','').trim().substring(0,2).toUpperCase();
-                    activeChatAvatar.innerHTML = `<span class="text-sm font-bold">${initials}</span>`;
+                    const initials = getInitials(name);
+                    const color = getUserColor(name);
+                    activeChatAvatar.style.backgroundColor = color;
+                    activeChatAvatar.className = "w-10 h-10 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0 text-sm";
+                    activeChatAvatar.innerHTML = `<span>${initials}</span>`;
                 }
                 listenToChatDoc(chatId);
             }
@@ -791,8 +825,16 @@
             }
         });
 
+        // GÖRSELDEKİ GİBİ ARAMA BARI İŞLEVİ (Sol Ok & Temizleme Desteği)
         searchContact.addEventListener('input', (e) => {
-            const term = e.target.value.toLowerCase();
+            const term = e.target.value.toLowerCase().trim();
+            
+            if (term.length > 0) {
+                searchIcon.className = "fa-solid fa-arrow-left text-emerald-400 text-sm mr-2.5 ml-0.5 cursor-pointer hover:text-white transition flex-shrink-0";
+            } else {
+                searchIcon.className = "fa-solid fa-magnifying-glass text-gray-400 text-sm mr-2.5 ml-0.5 flex-shrink-0";
+            }
+
             const items = contactList.children;
             for (let item of items) {
                 const text = item.textContent.toLowerCase();
@@ -801,6 +843,13 @@
                 } else {
                     item.style.display = 'none';
                 }
+            }
+        });
+
+        searchIcon.addEventListener('click', () => {
+            if (searchContact.value.length > 0) {
+                searchContact.value = '';
+                searchContact.dispatchEvent(new Event('input'));
             }
         });
 
@@ -832,9 +881,13 @@
                         const userDiv = document.createElement('div');
                         userDiv.className = "flex items-center justify-between p-3 bg-[#202c33]/60 hover:bg-[#202c33] rounded-xl border border-gray-800 transition";
 
-                        let avatarHtml = `<div class="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0">${(user.name || 'K').replace('👑','').trim().substring(0,2).toUpperCase()}</div>`;
+                        let avatarHtml = '';
                         if (user.avatar) {
                             avatarHtml = `<img src="${user.avatar}" class="w-10 h-10 rounded-full object-cover shadow flex-shrink-0">`;
+                        } else {
+                            const initials = getInitials(user.name);
+                            const color = getUserColor(user.name);
+                            avatarHtml = `<div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shadow flex-shrink-0" style="background-color: ${color};">${initials}</div>`;
                         }
 
                         userDiv.innerHTML = `
