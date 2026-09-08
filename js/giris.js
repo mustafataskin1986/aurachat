@@ -15,63 +15,45 @@ const app = initializeApp(firebaseConfig, "loginApp");
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// 🇹🇷 MAİLLERİN TÜRKÇE GİTMESİNİ SAĞLAYAN SATIR:
+// 🇹🇷 MAİLLERİN TÜRKÇE GİTMESİNİ SAĞLAYAN SATIR
 auth.languageCode = 'tr';
 
 let base64Image = '';
 
+// DOM ELEMENTLERİ
 const loginOverlay = document.getElementById('login-overlay');
 const loginForm = document.getElementById('login-form');
-const usernameInput = document.getElementById('username-input');
+const step1 = document.getElementById('step-1');
+const step2 = document.getElementById('step-2');
+const stepSubtitle = document.getElementById('step-subtitle');
+
+const emailInput = document.getElementById('email-input');
 const passwordInput = document.getElementById('password-input');
+const phoneInput = document.getElementById('phone-input');
+const usernameInput = document.getElementById('username-input');
+
+const btnStep1Next = document.getElementById('btn-step-1-next');
+const btnStep2Back = document.getElementById('btn-step-2-back');
+
 const profileImageInput = document.getElementById('profile-image-input');
 const profilePreview = document.getElementById('profile-preview');
 
 // ==========================================
-// 🛠️ DİNAMİK E-POSTA, TELEFON VE ŞİFREMİ UNUTTUM ALANLARI
+// 🔗 ŞİFREMİ UNUTTUM LİNKİ EKLEME
 // ==========================================
-let emailInput = document.getElementById('email-input');
-let phoneInput = document.getElementById('phone-input');
-
 if (passwordInput && passwordInput.parentElement) {
     const parentContainer = passwordInput.parentElement;
-
-    // 1. E-posta Giriş Kutusunu Otomatik Ekle
-    if (!emailInput) {
-        const emailDiv = document.createElement('div');
-        emailDiv.style.cssText = 'margin-bottom: 12px; width: 100%; text-align: left;';
-        emailDiv.innerHTML = `
-            <label style="color: #8696a0; font-size: 14px; display: block; margin-bottom: 6px;">E-posta Adresin</label>
-            <input type="email" id="email-input" placeholder="Örn: ahmet@gmail.com" required style="width: 100%; padding: 12px; background: #202c33; border: 1px solid #2a3942; border-radius: 8px; color: #fff; outline: none; box-sizing: border-box;">
-        `;
-        parentContainer.parentNode.insertBefore(emailDiv, parentContainer);
-        emailInput = document.getElementById('email-input');
-    }
-
-    // 2. Telefon Numarası Giriş Kutusunu Otomatik Ekle (YENİ)
-    if (!phoneInput) {
-        const phoneDiv = document.createElement('div');
-        phoneDiv.style.cssText = 'margin-bottom: 12px; width: 100%; text-align: left;';
-        phoneDiv.innerHTML = `
-            <label style="color: #8696a0; font-size: 14px; display: block; margin-bottom: 6px;">Telefon Numaran (Rehber Eşleşmesi İçin)</label>
-            <input type="tel" id="phone-input" placeholder="Örn: 05551234567" maxlength="11" required style="width: 100%; padding: 12px; background: #202c33; border: 1px solid #2a3942; border-radius: 8px; color: #fff; outline: none; box-sizing: border-box;">
-        `;
-        parentContainer.parentNode.insertBefore(phoneDiv, parentContainer);
-        phoneInput = document.getElementById('phone-input');
-    }
-
-    // 3. Şifremi Unuttum Linkini Otomatik Ekle
     if (!document.getElementById('forgot-password-link')) {
         const headerDiv = document.createElement('div');
-        headerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; width: 100%;';
+        headerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; width: 100%;';
         
         const existingLabel = parentContainer.querySelector('label');
         const labelText = existingLabel ? existingLabel.innerText : 'Şifren';
         if (existingLabel) existingLabel.remove();
 
         headerDiv.innerHTML = `
-            <span style="color: #8696a0; font-size: 14px;">${labelText}</span>
-            <a href="#" id="forgot-password-link" style="color: #00a884; font-size: 13px; text-decoration: none; font-weight: 500;">Şifremi Unuttum?</a>
+            <span class="text-xs font-medium text-gray-300">${labelText}</span>
+            <a href="#" id="forgot-password-link" class="text-xs text-emerald-400 hover:underline font-medium">Şifremi Unuttum?</a>
         `;
 
         parentContainer.insertBefore(headerDiv, passwordInput);
@@ -86,25 +68,20 @@ if (passwordInput && passwordInput.parentElement) {
 // ==========================================
 // ⚙️ UYUMLU KLAVYE VE ODAKLANMA (FOCUS) AYARLARI
 // ==========================================
-const KEYBOARD_OFFSET_PX = -30;
+const KEYBOARD_OFFSET_PX = -20;
 
 const setCardOffset = (offset) => {
-    const targetCard = loginOverlay ? (loginOverlay.firstElementChild || loginForm) : loginForm;
+    const targetCard = loginOverlay ? loginOverlay.firstElementChild : loginForm;
     if (targetCard) {
         targetCard.style.transition = 'transform 0.25s ease-out';
         targetCard.style.transform = `translateY(${offset}px)`;
     }
 };
 
-[usernameInput, emailInput, phoneInput, passwordInput].forEach(input => {
+[emailInput, passwordInput, phoneInput, usernameInput].forEach(input => {
     if (input) {
-        input.addEventListener('focus', () => {
-            setCardOffset(KEYBOARD_OFFSET_PX);
-        });
-
-        input.addEventListener('blur', () => {
-            setCardOffset(0);
-        });
+        input.addEventListener('focus', () => setCardOffset(KEYBOARD_OFFSET_PX));
+        input.addEventListener('blur', () => setCardOffset(0));
     }
 });
 
@@ -142,6 +119,64 @@ if (profileImageInput) {
 }
 
 // ==========================================
+// 🔀 2 ADIMLI GEÇİŞ MANTIĞI (STEP NAVIGATION)
+// ==========================================
+function validateStep1() {
+    const email = emailInput ? emailInput.value.trim() : '';
+    const password = passwordInput ? passwordInput.value.trim() : '';
+    const rawPhone = phoneInput ? phoneInput.value.trim() : '';
+    const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
+
+    if (!email || !email.includes('@')) {
+        alert("Lütfen geçerli bir e-posta adresi gir kanka!");
+        return false;
+    }
+    if (!password || password.length < 6) {
+        alert("Şifren en az 6 karakter olmalıdır!");
+        return false;
+    }
+    if (cleanPhone.length !== 10) {
+        alert("Lütfen 10 haneli telefon numaranı eksiksiz gir kanka! (Örn: 5551234567)");
+        return false;
+    }
+    return true;
+}
+
+if (btnStep1Next) {
+    btnStep1Next.addEventListener('click', () => {
+        if (validateStep1()) {
+            step1.classList.add('hidden');
+            step2.classList.remove('hidden');
+            if (stepSubtitle) {
+                stepSubtitle.textContent = 'Adım 2/2: Profilini özelleştir ve rumuzunu gir.';
+            }
+        }
+    });
+}
+
+if (btnStep2Back) {
+    btnStep2Back.addEventListener('click', () => {
+        step2.classList.add('hidden');
+        step1.classList.remove('hidden');
+        if (stepSubtitle) {
+            stepSubtitle.textContent = 'Adım 1/2: Güvenli sohbet için bilgini gir kanka.';
+        }
+    });
+}
+
+// Step 1 girdilerinde Enter basılınca form yerine sonraki adıma geçişi sağla
+[emailInput, passwordInput, phoneInput].forEach(input => {
+    if (input) {
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                btnStep1Next.click();
+            }
+        });
+    }
+});
+
+// ==========================================
 // 📧 E-POSTA İLE ŞİFRE SIFIRLAMA FONKSİYONU
 // ==========================================
 window.resetPassword = async function() {
@@ -169,16 +204,22 @@ window.resetPassword = async function() {
 if (loginForm) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+
+        // Step 1 doğrulaması düşmüşse kontrol et
+        if (!validateStep1()) {
+            step2.classList.add('hidden');
+            step1.classList.remove('hidden');
+            return;
+        }
+
         const username = usernameInput ? usernameInput.value.trim() : '';
         const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
         const password = passwordInput ? passwordInput.value.trim() : '';
         const rawPhone = phoneInput ? phoneInput.value.trim() : '';
-        
-        // Telefon numarasındaki boşluk/tire gibi karakterleri silip sadece son 10 haneyi alıyoruz
         const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
 
-        if (!username || !email || !password || cleanPhone.length !== 10) {
-            alert("Lütfen tüm alanları ve 10 haneli telefon numaranı doğru şekilde doldur kanka!");
+        if (!username) {
+            alert("Lütfen bir kullanıcı adı veya rumuz belirt kanka!");
             return;
         }
 
@@ -194,11 +235,11 @@ if (loginForm) {
                 const registeredUsername = existingUserData.name || querySnapshot.docs[0].id;
 
                 if (registeredUsername.toLowerCase() !== username.toLowerCase()) {
-                    alert(`Girdiğin kullanıcı adı bu e-posta adresiyle eşleşmiyor kanka!`);
+                    alert(`Girdiğin kullanıcı adı bu e-posta adresiyle eşleşmiyor kanka! (Kayıtlı Ad: ${registeredUsername})`);
                     return;
                 }
             } else {
-                // E-posta veritabanında yok (Yeni Kayıt Olacak). Kullanıcı adı başkasına ait mi kontrol et
+                // E-posta veritabanında yok (Yeni Kayıt). Kullanıcı adı başkasına ait mi kontrol et
                 const userDocRef = doc(db, "users", username);
                 const userDocSnap = await getDoc(userDocRef);
 
