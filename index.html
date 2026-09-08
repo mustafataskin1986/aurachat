@@ -302,6 +302,13 @@
             }
         }
 
+        // Numaralardaki sadece son 10 haneyi alma fonksiyonu
+        function getPhoneLast10(ph) {
+            if (!ph) return '';
+            const digits = String(ph).replace(/\D/g, '');
+            return digits.length >= 10 ? digits.slice(-10) : '';
+        }
+
         window.initApp = function() {
             currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
             if (!currentUser) return;
@@ -360,9 +367,10 @@
                                 if (c.phones && Array.isArray(c.phones)) {
                                     c.phones.forEach(p => {
                                         if (p.number) {
-                                            const clean = p.number.replace(/\D/g, '').slice(-10);
-                                            if (clean.length === 10) {
-                                                localPhoneNumbers.add(clean);
+                                            const last10 = getPhoneLast10(p.number);
+                                            if (last10) {
+                                                localPhoneNumbers.add(last10);
+                                                localPhoneNumbers.add('+90' + last10);
                                             }
                                         }
                                     });
@@ -412,20 +420,20 @@
                 });
 
                 const myNameClean = currentUser ? currentUser.name.trim().toLowerCase() : '';
-                const myPhoneClean = currentUser && currentUser.phone ? currentUser.phone.trim() : '';
+                const myPhoneLast10 = currentUser ? getPhoneLast10(currentUser.phone) : '';
 
                 snapshot.forEach((docSnap) => {
                     const user = docSnap.data();
                     if (!user || !user.name) return;
 
                     const targetNameClean = user.name.trim().toLowerCase();
-                    const targetPhoneClean = user.phone ? user.phone.trim() : '';
+                    const targetPhoneLast10 = getPhoneLast10(user.phone);
 
                     if (targetNameClean === myNameClean) return;
-                    if (myPhoneClean && targetPhoneClean === myPhoneClean) return;
+                    if (myPhoneLast10 && targetPhoneLast10 && myPhoneLast10 === targetPhoneLast10) return;
 
                     const chatId = [currentUser.name, user.name].sort().join('_');
-                    const isInContacts = targetPhoneClean && localPhoneNumbers.has(targetPhoneClean);
+                    const isInContacts = targetPhoneLast10 && (localPhoneNumbers.has(targetPhoneLast10) || localPhoneNumbers.has('+90' + targetPhoneLast10));
 
                     onSnapshot(query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc")), (msgSnapshot) => {
                         const hasMessages = !msgSnapshot.empty;
