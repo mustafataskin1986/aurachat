@@ -132,6 +132,24 @@
         </div>
     </div>
 
+    <!-- ADMİN KULLANICI LİSTESİ MODAL -->
+    <div id="admin-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-[#111b21] border border-amber-500/30 rounded-2xl p-5 w-full max-w-md shadow-2xl flex flex-col max-h-[80vh]">
+            <div class="flex justify-between items-center pb-3 border-b border-gray-800 mb-3">
+                <div class="flex items-center space-x-2 text-amber-400 font-bold text-base">
+                    <i class="fa-solid fa-user-shield text-lg"></i>
+                    <span>Tüm Kayıtlı Kullanıcılar (Admin)</span>
+                </div>
+                <button id="admin-modal-close" class="text-gray-400 hover:text-white text-lg px-2">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div id="admin-user-list" class="flex-1 overflow-y-auto space-y-2 pr-1">
+                <!-- Kullanıcılar dinamik yüklenecek -->
+            </div>
+        </div>
+    </div>
+
     <!-- Ana Konteyner -->
     <div class="bg-[#111b21] w-full max-w-6xl h-full md:h-[92vh] flex shadow-2xl rounded-none md:rounded-2xl overflow-hidden border border-gray-800/80 relative">
         
@@ -144,7 +162,9 @@
                     </div>
                     <span id="user-name-span" class="text-gray-100 font-semibold tracking-wide text-sm">AuraChat</span>
                 </div>
-                <div class="flex space-x-4 text-gray-400 text-lg">
+                <div class="flex space-x-4 text-gray-400 text-lg items-center">
+                    <!-- ADMİN BUTONU -->
+                    <i class="fa-solid fa-user-shield cursor-pointer text-amber-400 hover:text-amber-300 transition hidden" id="admin-btn" title="Admin Paneli"></i>
                     <i class="fa-solid fa-circle-notch cursor-pointer hover:text-white transition"></i>
                     <i class="fa-solid fa-comment-alt cursor-pointer hover:text-white transition"></i>
                     <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition" id="logout-btn" title="Çıkış Yap"></i>
@@ -225,7 +245,12 @@
     <!-- FIREBASE VE UYGULAMA MANTIĞI -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, doc, setDoc, updateDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // ==========================================
+        // BURAYA KENDİ GMAIL ADRESİNİ YAZ KANKA:
+        // ==========================================
+        const ADMIN_EMAIL = "mustafataskin1986@gmail.com";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
@@ -254,6 +279,11 @@
         const activeChatStatus = document.getElementById('active-chat-status');
         const searchContact = document.getElementById('search-contact');
 
+        const adminBtn = document.getElementById('admin-btn');
+        const adminModal = document.getElementById('admin-modal');
+        const adminModalClose = document.getElementById('admin-modal-close');
+        const adminUserList = document.getElementById('admin-user-list');
+
         let currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
         let currentChatId = null;
         let currentChatName = '';
@@ -262,6 +292,17 @@
         let typingTimeout = null;
         
         const contactElementsMap = new Map();
+
+        // Admin Isim ve Taç Ayarı
+        function formatAdminUser(user) {
+            if (!user) return user;
+            if (user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+                if (!user.name.startsWith('👑')) {
+                    user.name = '👑 ' + user.name.replace(/^👑\s*/, '');
+                }
+            }
+            return user;
+        }
 
         function renderSkeletonList() {
             let skeletonHtml = '';
@@ -302,7 +343,6 @@
             }
         }
 
-        // Numaralardaki sadece son 10 haneyi alma fonksiyonu
         function getPhoneLast10(ph) {
             if (!ph) return '';
             const digits = String(ph).replace(/\D/g, '');
@@ -312,6 +352,9 @@
         window.initApp = function() {
             currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
             if (!currentUser) return;
+
+            currentUser = formatAdminUser(currentUser);
+            localStorage.setItem('aurachat_user', JSON.stringify(currentUser));
 
             updateUserInterface(currentUser);
             renderSkeletonList();
@@ -336,15 +379,25 @@
         });
 
         function updateUserInterface(user) {
+            if (!user) return;
+            user = formatAdminUser(user);
+
             if (userProfileContainer) {
                 if (user.avatar) {
                     userProfileContainer.innerHTML = `<img src="${user.avatar}" class="w-10 h-10 rounded-full object-cover shadow border border-emerald-500/50">`;
                 } else {
-                    const initials = user.name.substring(0, 2).toUpperCase();
+                    const initials = user.name.replace('👑', '').trim().substring(0, 2).toUpperCase();
                     userProfileContainer.innerHTML = `<div class="w-10 h-10 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center justify-center text-white font-semibold shadow">${initials}</div>`;
                 }
             }
             if (userNameSpan) userNameSpan.textContent = user.name;
+
+            // Admin Buton Gizle/Göster
+            if (user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+                if (adminBtn) adminBtn.classList.remove('hidden');
+            } else {
+                if (adminBtn) adminBtn.classList.add('hidden');
+            }
         }
 
         async function loadContacts() {
@@ -419,14 +472,16 @@
                     }
                 });
 
-                const myNameClean = currentUser ? currentUser.name.trim().toLowerCase() : '';
+                const myNameClean = currentUser ? currentUser.name.replace('👑', '').trim().toLowerCase() : '';
                 const myPhoneLast10 = currentUser ? getPhoneLast10(currentUser.phone) : '';
 
                 snapshot.forEach((docSnap) => {
-                    const user = docSnap.data();
+                    let user = docSnap.data();
                     if (!user || !user.name) return;
 
-                    const targetNameClean = user.name.trim().toLowerCase();
+                    user = formatAdminUser(user);
+
+                    const targetNameClean = user.name.replace('👑', '').trim().toLowerCase();
                     const targetPhoneLast10 = getPhoneLast10(user.phone);
 
                     if (targetNameClean === myNameClean) return;
@@ -453,7 +508,7 @@
                             const userDiv = document.createElement('div');
                             userDiv.className = "flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
                             
-                            let avatarContent = `<div class="w-12 h-12 bg-cyan-600 rounded-full flex items-center justify-center text-white font-bold shadow flex-shrink-0">${user.name.substring(0,2).toUpperCase()}</div>`;
+                            let avatarContent = `<div class="w-12 h-12 bg-cyan-600 rounded-full flex items-center justify-center text-white font-bold shadow flex-shrink-0">${user.name.replace('👑','').trim().substring(0,2).toUpperCase()}</div>`;
                             if (user.avatar) {
                                 avatarContent = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
                             }
@@ -570,7 +625,8 @@
                 if (avatar && avatar.startsWith('data:image')) {
                     activeChatAvatar.innerHTML = `<img src="${avatar}" class="w-full h-full rounded-full object-cover">`;
                 } else {
-                    activeChatAvatar.innerHTML = `<span class="text-sm font-bold">${name.substring(0,2).toUpperCase()}</span>`;
+                    const initials = name.replace('👑','').trim().substring(0,2).toUpperCase();
+                    activeChatAvatar.innerHTML = `<span class="text-sm font-bold">${initials}</span>`;
                 }
                 listenToChatDoc(chatId);
             }
@@ -673,6 +729,7 @@
                 msgDiv.className = "flex justify-start";
                 msgDiv.innerHTML = `
                     <div class="bg-[#202c33] text-gray-100 px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
+                        ${currentChatId === 'global' ? `<span class="text-[11px] font-bold text-amber-400 block mb-0.5">${escapeHtml(msg.senderName)}</span>` : ''}
                         <p class="break-words">${escapeHtml(msg.text)}</p>
                         <span class="text-[10px] text-gray-400 float-right ml-3 mt-1">${timeStr}</span>
                     </div>
@@ -746,6 +803,81 @@
                 }
             }
         });
+
+        // ADMİN PANELİ TIKLAMA İŞLEMLERİ
+        if (adminBtn) {
+            adminBtn.addEventListener('click', async () => {
+                adminUserList.innerHTML = `
+                    <div class="text-center py-8 text-gray-400">
+                        <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-amber-400"></i>
+                        <p class="text-xs">Veritabanından tüm kullanıcılar çekiliyor...</p>
+                    </div>`;
+                adminModal.classList.remove('hidden');
+
+                try {
+                    const snapshot = await getDocs(collection(db, "users"));
+                    adminUserList.innerHTML = '';
+
+                    if (snapshot.empty) {
+                        adminUserList.innerHTML = `<p class="text-xs text-gray-400 text-center py-4">Kayıtlı kullanıcı bulunamadı.</p>`;
+                        return;
+                    }
+
+                    snapshot.forEach((docSnap) => {
+                        let user = docSnap.data();
+                        user = formatAdminUser(user);
+
+                        const isMe = currentUser && (user.email === currentUser.email);
+
+                        const userDiv = document.createElement('div');
+                        userDiv.className = "flex items-center justify-between p-3 bg-[#202c33]/60 hover:bg-[#202c33] rounded-xl border border-gray-800 transition";
+
+                        let avatarHtml = `<div class="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0">${(user.name || 'K').replace('👑','').trim().substring(0,2).toUpperCase()}</div>`;
+                        if (user.avatar) {
+                            avatarHtml = `<img src="${user.avatar}" class="w-10 h-10 rounded-full object-cover shadow flex-shrink-0">`;
+                        }
+
+                        userDiv.innerHTML = `
+                            <div class="flex items-center space-x-3 overflow-hidden">
+                                ${avatarHtml}
+                                <div class="overflow-hidden">
+                                    <h5 class="text-white text-sm font-medium truncate flex items-center gap-1.5">
+                                        ${escapeHtml(user.name || 'İsimsiz')}
+                                        ${isMe ? '<span class="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-bold">SEN</span>' : ''}
+                                    </h5>
+                                    <p class="text-xs text-gray-400 truncate">${escapeHtml(user.email || '-')}</p>
+                                    <p class="text-[11px] text-emerald-400 font-mono">${escapeHtml(user.phone || '-')}</p>
+                                </div>
+                            </div>
+                            ${!isMe ? `
+                            <button class="btn-admin-chat bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl text-xs font-medium transition flex-shrink-0 ml-2 flex items-center space-x-1">
+                                <i class="fa-solid fa-comment"></i>
+                                <span>Sohbet Et</span>
+                            </button>` : ''}
+                        `;
+
+                        if (!isMe) {
+                            const chatBtn = userDiv.querySelector('.btn-admin-chat');
+                            chatBtn.addEventListener('click', () => {
+                                const chatId = [currentUser.name, user.name].sort().join('_');
+                                adminModal.classList.add('hidden');
+                                selectChat(chatId, user.name, user.avatar || '');
+                            });
+                        }
+
+                        adminUserList.appendChild(userDiv);
+                    });
+                } catch (err) {
+                    adminUserList.innerHTML = `<p class="text-xs text-rose-400 text-center py-4">Hata oluştu: ${err.message}</p>`;
+                }
+            });
+        }
+
+        if (adminModalClose) {
+            adminModalClose.addEventListener('click', () => {
+                adminModal.classList.add('hidden');
+            });
+        }
 
         function escapeHtml(text) {
             if (!text) return '';
