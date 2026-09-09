@@ -169,7 +169,7 @@ function renderMessage(msg, isMine) {
     const isImage = msg.type === 'image' && msg.imageUrl;
 
     const bodyHtml = isImage
-        ? `<img src="${msg.imageUrl}" class="rounded-lg max-w-full max-h-72 object-cover cursor-pointer" onclick="window.open('${msg.imageUrl}', '_blank')">`
+        ? `<img src="${msg.imageUrl}" class="rounded-lg max-w-full max-h-72 object-cover cursor-pointer" onclick="openImageLightbox(this.src)">`
         : `<p class="break-words">${escapeHtml(msg.text)}</p>`;
 
     if (isMine) {
@@ -202,6 +202,16 @@ function scrollToBottom() {
         messageContainer.scrollTop = messageContainer.scrollHeight;
     }, 50);
 }
+
+// Resme tıklayınca sayfa içi büyütme (data: URI'lerde window.open engellendiği için)
+window.openImageLightbox = function (src) {
+    const lightbox = document.getElementById('image-lightbox');
+    const lightboxImg = document.getElementById('lightbox-img');
+    if (!lightbox || !lightboxImg) return;
+    lightboxImg.src = src;
+    lightbox.classList.remove('hidden');
+    lightbox.classList.add('flex');
+};
 
 // ------------------------------------------
 // MESAJ GÖNDERME
