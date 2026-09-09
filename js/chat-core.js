@@ -6,17 +6,20 @@
 // selectChat({ uid, name, avatar }) çağıracak.
 // ==========================================
 
-import { db } from "./firebase-init.js";
+import { db, storage } from "./firebase-init.js";
 import {
     collection, addDoc, onSnapshot, query, orderBy,
     serverTimestamp, doc, setDoc, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
 const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
+const attachBtn = document.getElementById('attach-btn');
+const imageInput = document.getElementById('image-input');
 const sidebar = document.getElementById('sidebar');
 const chatArea = document.getElementById('chat-area');
 const backBtn = document.getElementById('back-btn');
@@ -164,14 +167,19 @@ function loadMessages(chatId) {
 function renderMessage(msg, isMine) {
     const msgDiv = document.createElement('div');
     const timeStr = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi';
+    const isImage = msg.type === 'image' && msg.imageUrl;
+
+    const bodyHtml = isImage
+        ? `<img src="${msg.imageUrl}" class="rounded-lg max-w-full max-h-72 object-cover cursor-pointer" onclick="window.open('${msg.imageUrl}', '_blank')">`
+        : `<p class="break-words">${escapeHtml(msg.text)}</p>`;
 
     if (isMine) {
         const tickColor = msg.read ? 'text-[#53bdeb]' : 'text-gray-400';
         msgDiv.className = "flex justify-end";
         msgDiv.innerHTML = `
-            <div class="bg-[#005c4b] text-white px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
-                <p class="break-words">${escapeHtml(msg.text)}</p>
-                <div class="flex items-center justify-end space-x-1 mt-1">
+            <div class="bg-[#005c4b] text-white ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
+                ${bodyHtml}
+                <div class="flex items-center justify-end space-x-1 mt-1 ${isImage ? 'px-2 pb-1' : ''}">
                     <span class="text-[10px] text-emerald-200">${timeStr}</span>
                     <i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>
                 </div>
@@ -180,10 +188,10 @@ function renderMessage(msg, isMine) {
     } else {
         msgDiv.className = "flex justify-start";
         msgDiv.innerHTML = `
-            <div class="bg-[#202c33] text-gray-100 px-4 py-2 rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
-                ${currentChatId === 'global' ? `<span class="text-[11px] font-bold text-amber-400 block mb-0.5">${escapeHtml(msg.senderName)}</span>` : ''}
-                <p class="break-words">${escapeHtml(msg.text)}</p>
-                <span class="text-[10px] text-gray-400 float-right ml-3 mt-1">${timeStr}</span>
+            <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
+                ${currentChatId === 'global' ? `<span class="text-[11px] font-bold text-amber-400 block mb-0.5 ${isImage ? 'px-2 pt-1' : ''}">${escapeHtml(msg.senderName)}</span>` : ''}
+                ${bodyHtml}
+                <span class="text-[10px] text-gray-400 ${isImage ? 'block text-right px-2 pb-1' : 'float-right ml-3 mt-1'}">${timeStr}</span>
             </div>
         `;
     }
@@ -253,3 +261,87 @@ messageInput.addEventListener('input', () => {
         }
     }, 2000);
 });
+
+// ------------------------------------------
+// GÖRSEL GÖNDERME
+// Yükleme öncesi görseli tarayıcıda sıkıştırır (max 1280px, JPEG %80)
+// ------------------------------------------
+function compressImage(file, maxDim = 1280, quality = 0.8) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height = Math.round(height * (maxDim / width));
+                        width = maxDim;
+                    } else {
+                        width = Math.round(width * (maxDim / height));
+                        height = maxDim;
+                    }
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob((blob) => {
+                    if (blob) resolve(blob);
+                    else reject(new Error('Görsel sıkıştırılamadı'));
+                }, 'image/jpeg', quality);
+            };
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+if (attachBtn && imageInput) {
+    attachBtn.addEventListener('click', () => imageInput.click());
+
+    imageInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file || !currentUser || !currentChatId) return;
+        imageInput.value = ''; // aynı dosyayı tekrar seçebilmek için sıfırla
+
+        if (!file.type.startsWith('image/')) {
+            alert("Lütfen bir görsel dosyası seç kanka!");
+            return;
+        }
+
+        attachBtn.classList.add('opacity-40', 'pointer-events-none');
+        const originalIcon = attachBtn.className;
+        attachBtn.className = attachBtn.className.replace('fa-plus', 'fa-spinner fa-spin');
+
+        try {
+            const blob = await compressImage(file);
+            const path = `chat-media/${currentChatId}/${Date.now()}_${currentUser.uid}.jpg`;
+            const storageRef = ref(storage, path);
+            await uploadBytes(storageRef, blob);
+            const url = await getDownloadURL(storageRef);
+
+            await addDoc(collection(db, "chats", currentChatId, "messages"), {
+                type: 'image',
+                imageUrl: url,
+                text: '',
+                senderUid: currentUser.uid,
+                senderName: currentUser.name,
+                senderAvatar: currentUser.avatar || '',
+                createdAt: serverTimestamp(),
+                read: false
+            });
+
+            scrollToBottom();
+        } catch (err) {
+            console.error("Görsel gönderilemedi:", err);
+            alert("Görsel gönderilirken hata oluştu!");
+        } finally {
+            attachBtn.className = originalIcon;
+            attachBtn.classList.remove('opacity-40', 'pointer-events-none');
+        }
+    });
+}
