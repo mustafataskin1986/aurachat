@@ -113,7 +113,7 @@ export async function loadContacts() {
         onSnapshot(query(collection(db, "chats", "global", "messages"), orderBy("createdAt", "desc")), (msgSnap) => {
             if (!msgSnap.empty) {
                 const lastMsg = msgSnap.docs[0].data();
-                globalPreview.textContent = lastMsg.text;
+                globalPreview.textContent = (lastMsg.type === 'image') ? '📷 Fotoğraf' : lastMsg.text;
                 if (lastMsg.createdAt) {
                     globalTimeSpan.textContent = formatTimestamp(lastMsg.createdAt.toDate());
                 }
@@ -204,7 +204,7 @@ export async function loadContacts() {
 
                 if (hasMessages) {
                     const latestMsg = msgSnapshot.docs[0].data();
-                    lastText = latestMsg.text;
+                    lastText = (latestMsg.type === 'image') ? '📷 Fotoğraf' : latestMsg.text;
                     isLastMsgMine = latestMsg.senderUid
                         ? latestMsg.senderUid === currentUser.uid
                         : latestMsg.senderName === currentUser.name;
