@@ -6,12 +6,11 @@
 // selectChat({ uid, name, avatar }) çağıracak.
 // ==========================================
 
-import { db, storage } from "./firebase-init.js";
+import { db } from "./firebase-init.js";
 import {
     collection, addDoc, onSnapshot, query, orderBy,
     serverTimestamp, doc, setDoc, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 
 // DOM elementleri
@@ -264,33 +263,56 @@ messageInput.addEventListener('input', () => {
 
 // ------------------------------------------
 // GÖRSEL GÖNDERME
-// Yükleme öncesi görseli tarayıcıda sıkıştırır (max 1280px, JPEG %80)
+// Storage kullanmadan, avatar ile aynı yöntemle base64 olarak
+// doğrudan Firestore mesaj dokümanına gömülür.
+// Hedef: ~200-300KB - önce boyutu küçültür, olmazsa kaliteyi düşürür,
+// yine olmazsa boyutu daha da küçültüp tekrar dener.
 // ------------------------------------------
-function compressImage(file, maxDim = 1280, quality = 0.8) {
+function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const img = new Image();
             img.onload = () => {
-                let { width, height } = img;
-                if (width > maxDim || height > maxDim) {
-                    if (width > height) {
-                        height = Math.round(height * (maxDim / width));
-                        width = maxDim;
-                    } else {
-                        width = Math.round(width * (maxDim / height));
-                        height = maxDim;
+                const dimensionSteps = [900, 700, 500];
+                const qualitySteps = [0.7, 0.55, 0.4, 0.3];
+                let bestResult = null;
+
+                outer:
+                for (const maxDim of dimensionSteps) {
+                    let { width, height } = img;
+                    if (width > maxDim || height > maxDim) {
+                        if (width > height) {
+                            height = Math.round(height * (maxDim / width));
+                            width = maxDim;
+                        } else {
+                            width = Math.round(width * (maxDim / height));
+                            height = maxDim;
+                        }
+                    } else if (maxDim !== dimensionSteps[0]) {
+                        // Görsel zaten bu boyuttan küçük, daha fazla küçültmenin anlamı yok
+                        break;
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    for (const q of qualitySteps) {
+                        const dataUrl = canvas.toDataURL('image/jpeg', q);
+                        bestResult = dataUrl; // elimizdeki en küçük denemeyi sakla
+                        const approxBytes = dataUrl.length * 0.75; // base64 -> yaklaşık byte
+                        if (approxBytes <= targetBytes) {
+                            resolve(dataUrl);
+                            break outer;
+                        }
                     }
                 }
-                const canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                canvas.toBlob((blob) => {
-                    if (blob) resolve(blob);
-                    else reject(new Error('Görsel sıkıştırılamadı'));
-                }, 'image/jpeg', quality);
+
+                if (bestResult) resolve(bestResult);
+                else reject(new Error('Görsel sıkıştırılamadı'));
             };
             img.onerror = reject;
             img.src = e.target.result;
@@ -318,15 +340,17 @@ if (attachBtn && imageInput) {
         attachBtn.className = attachBtn.className.replace('fa-plus', 'fa-spinner fa-spin');
 
         try {
-            const blob = await compressImage(file);
-            const path = `chat-media/${currentChatId}/${Date.now()}_${currentUser.uid}.jpg`;
-            const storageRef = ref(storage, path);
-            await uploadBytes(storageRef, blob);
-            const url = await getDownloadURL(storageRef);
+            const dataUrl = await compressImageToDataUrl(file);
+
+            // Firestore doküman limiti 1MB - güvenli pay bırak
+            if (dataUrl.length * 0.75 > 900 * 1024) {
+                alert("Bu görsel çok büyük kanka, daha düşük çözünürlüklü bir fotoğraf dene.");
+                return;
+            }
 
             await addDoc(collection(db, "chats", currentChatId, "messages"), {
                 type: 'image',
-                imageUrl: url,
+                imageUrl: dataUrl,
                 text: '',
                 senderUid: currentUser.uid,
                 senderName: currentUser.name,
