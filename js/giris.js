@@ -1,21 +1,6 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, doc, setDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-
-const firebaseConfig = {
-    apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
-    authDomain: "aurachat-99f69.firebaseapp.com",
-    projectId: "aurachat-99f69",
-    storageBucket: "aurachat-99f69.firebasestorage.app",
-    messagingSenderId: "447747395966",
-    appId: "1:447747395966:web:7db71f9f912a188d17632f"
-};
-
-const app = initializeApp(firebaseConfig, "loginApp");
-const db = getFirestore(app);
-const auth = getAuth(app);
-
-auth.languageCode = 'tr';
+import { db, auth } from "./firebase-init.js";
+import { doc, setDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 let base64Image = '';
 let verifyCheckInterval = null;
@@ -179,10 +164,12 @@ if (btnStep1Next) {
                 // KULLANICI VAR -> Giriş Yapmayı Dene
                 try {
                     await signInWithEmailAndPassword(auth, email, password);
-                    
-                    const userData = querySnapshot.docs[0].data();
+
+                    const userDoc = querySnapshot.docs[0];
+                    const userData = userDoc.data();
                     const userObj = {
-                        name: userData.name || querySnapshot.docs[0].id,
+                        uid: userData.uid || userDoc.id,
+                        name: userData.name || userDoc.id,
                         email: userData.email,
                         phone: userData.phone || '',
                         avatar: userData.avatar || ''
@@ -234,10 +221,10 @@ if (btnStep1Next) {
                     verifyCheckInterval = setInterval(async () => {
                         if (auth.currentUser) {
                             await auth.currentUser.reload();
-                            
+
                             if (auth.currentUser.emailVerified) {
                                 clearInterval(verifyCheckInterval);
-                                
+
                                 if (verifyModal) verifyModal.classList.add('hidden');
 
                                 if (emailStatus) {
@@ -280,7 +267,7 @@ if (loginForm) {
         const username = usernameInput ? usernameInput.value.trim() : '';
         const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
         const rawPhone = phoneInput ? phoneInput.value.trim() : '';
-        
+
         // Sadece rakamları ayıkla ve son 10 haneyi al
         const digits = rawPhone.replace(/\D/g, '');
         const cleanPhone = digits.length >= 10 ? digits.slice(-10) : '';
@@ -327,9 +314,15 @@ if (loginForm) {
                 lastSeen: serverTimestamp()
             });
 
-            const userObj = { name: username, email: email, phone: formattedPhone, avatar: base64Image || '' };
+            const userObj = {
+                uid: currentUserAuth.uid,
+                name: username,
+                email: email,
+                phone: formattedPhone,
+                avatar: base64Image || ''
+            };
             localStorage.setItem('aurachat_user', JSON.stringify(userObj));
-            
+
             if (loginOverlay) loginOverlay.classList.add('hidden');
             if (window.initApp) window.initApp(); else location.reload();
 
