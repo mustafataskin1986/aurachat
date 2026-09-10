@@ -267,15 +267,16 @@
         </div>
 
         <div class="flex-1 overflow-y-auto p-6 flex flex-col items-center">
-       <label for="profile-avatar-input" class="cursor-pointer group relative mb-6">
-    <div id="profile-avatar" class="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg overflow-hidden flex-shrink-0"></div>
-    <div class="absolute bottom-1 right-1 bg-emerald-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-xs shadow-md">
-        <i class="fa-solid fa-camera"></i>
-    </div>
-</label>
-<input type="file" id="profile-avatar-input" accept="image/*" class="hidden">
+            <label for="profile-avatar-input" class="cursor-pointer group relative mb-6">
+                <div id="profile-avatar" class="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg overflow-hidden flex-shrink-0"></div>
+                <div class="absolute bottom-1 right-1 bg-emerald-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-xs shadow-md">
+                    <i class="fa-solid fa-camera"></i>
+                </div>
+            </label>
+            <input type="file" id="profile-avatar-input" accept="image/*" class="hidden">
+
             <div class="w-full max-w-sm space-y-4">
-            <div class="bg-[#111b21] rounded-xl p-4">
+                <div class="bg-[#111b21] rounded-xl p-4">
                     <span class="text-[11px] text-gray-500 uppercase tracking-wide">İsim</span>
                     <input id="profile-name" type="text" maxlength="40" class="w-full bg-transparent text-white text-base mt-1 focus:outline-none border-b border-transparent focus:border-emerald-500/50 transition">
                 </div>
@@ -293,7 +294,7 @@
                 </div>
             </div>
 
-         <button id="profile-save-btn" class="w-full max-w-sm mt-6 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2">
+            <button id="profile-save-btn" class="w-full max-w-sm mt-6 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2">
                 <i class="fa-solid fa-check"></i>
                 <span>Kaydet</span>
             </button>
@@ -306,7 +307,7 @@
     </div>
 
     <!-- GÖRSEL BÜYÜTME (LIGHTBOX) -->
-    <div id="image-lightbox" class="fixed inset-0 z-[60] bg-black/90 hidden items-center justify-center p-4" onclick="this.classList.add('hidden'); this.classList.remove('flex');">
+    <div id="image-lightbox" class="fixed inset-0 z-[60] bg-black/90 hidden items-center justify-center p-4" onclick="closeImageLightboxUI()">
         <img id="lightbox-img" src="" class="max-w-full max-h-full rounded-lg object-contain">
     </div>
 
