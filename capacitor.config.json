@@ -6,5 +6,12 @@
   "server": {
     "url": "https://aurachat-amber.vercel.app",
     "cleartext": true
+  },
+  "plugins": {
+    "GoogleAuth": {
+      "scopes": ["profile", "email"],
+      "serverClientId": "447747395966-3shresouu36769er1b9656oec8vd13aa.apps.googleusercontent.com",
+      "forceCodeForRefreshToken": true
+    }
   }
 }
