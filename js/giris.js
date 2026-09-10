@@ -1,9 +1,16 @@
 import { db, auth } from "./firebase-init.js";
 import { doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, GoogleAuthProvider, signInWithPopup, signInWithCredential } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 let base64Image = '';
 let verifyCheckInterval = null;
+
+// GOOGLE CLIENT ID VE NATIVE ALGILAMA
+const GOOGLE_CLIENT_ID = "447747395966-3shresouu36769er1b9656oec8vd13aa.apps.googleusercontent.com";
+
+const isCapacitorNative = () => {
+    return typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform();
+};
 
 // DOM ELEMENTLERİ
 const loginOverlay = document.getElementById('login-overlay');
@@ -81,7 +88,7 @@ if (emailInput && emailStatus) {
     });
 }
 
-// 1. ŞİFREMİ UNUTTUM MODAL İŞLEMLERİ
+// ŞİFREMİ UNUTTUM MODAL İŞLEMLERİ
 if (btnForgotPassword) {
     btnForgotPassword.addEventListener('click', () => {
         if (forgotEmailInput && emailInput) {
@@ -146,9 +153,6 @@ function validateStep1() {
     return true;
 }
 
-// 2. ADIM 1 DEVAM ET: Önce giriş dener (Firestore'a dokunmadan, sadece Auth üzerinden).
-// Başarısız olursa kayıt dener - email zaten var mı yok mu diye
-// auth olmadan Firestore sorgusu atmaya gerek kalmıyor (izin hatasının sebebi buydu).
 if (btnStep1Next) {
     btnStep1Next.addEventListener('click', async () => {
         if (!validateStep1()) return;
@@ -167,7 +171,6 @@ if (btnStep1Next) {
             try {
                 userCred = await signInWithEmailAndPassword(auth, email, password);
             } catch (signInErr) {
-                // Giriş başarısız: ya hesap yok ya şifre yanlış. Kayıt denemesi ayırt eder.
                 try {
                     userCred = await createUserWithEmailAndPassword(auth, email, password);
                     isNewAccount = true;
@@ -205,8 +208,6 @@ if (btnStep1Next) {
                 return;
             }
 
-            // Doğrulanmış - şimdi authenticated olduğumuz için Firestore'dan
-            // profili güvenle okuyabiliriz
             const userDocSnap = await getDoc(doc(db, "users", userCred.user.uid));
 
             if (userDocSnap.exists()) {
@@ -222,7 +223,6 @@ if (btnStep1Next) {
                 if (loginOverlay) loginOverlay.classList.add('hidden');
                 if (window.initApp) window.initApp(); else location.reload();
             } else {
-                // Doğrulanmış ama profil hiç tamamlanmamış - adım 2'ye geç
                 if (emailStatus) {
                     emailStatus.textContent = '✓ Onaylandı';
                     emailStatus.className = 'text-xs font-semibold text-emerald-400';
@@ -261,10 +261,27 @@ function startVerifyPolling() {
     }, 3000);
 }
 
-// GOOGLE İLE GİRİŞ YAP
-// Firestore'da profili varsa direkt içeri alır; yoksa email/isim/foto
-// Google'dan otomatik doldurulup adım 2'ye (telefon + onay) geçirir.
-// E-posta doğrulamasına hiç gerek yok çünkü Google hesabı zaten doğrulanmış sayılır.
+// HİBRİT GOOGLE GİRİŞ FONKSİYONU
+async function executeGoogleSignIn() {
+    if (isCapacitorNative()) {
+        const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
+        if (!GoogleAuth) {
+            throw new Error("Capacitor GoogleAuth eklentisi bulunamadı.");
+        }
+        await GoogleAuth.initialize({
+            clientId: GOOGLE_CLIENT_ID,
+            scopes: ['profile', 'email'],
+            grantOfflineAccess: true
+        });
+        const googleUser = await GoogleAuth.signIn();
+        const credential = GoogleAuthProvider.credential(googleUser.authentication.idToken);
+        return await signInWithCredential(auth, credential);
+    } else {
+        return await signInWithPopup(auth, googleProvider);
+    }
+}
+
+// GOOGLE İLE GİRİŞ BUTONU
 if (btnGoogleSignIn) {
     btnGoogleSignIn.addEventListener('click', async () => {
         btnGoogleSignIn.disabled = true;
@@ -272,13 +289,12 @@ if (btnGoogleSignIn) {
         btnGoogleSignIn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Bağlanıyor...</span>`;
 
         try {
-            const result = await signInWithPopup(auth, googleProvider);
-            const user = result.user;
+            const userCred = await executeGoogleSignIn();
+            const user = userCred.user;
 
             const userDocSnap = await getDoc(doc(db, "users", user.uid));
 
             if (userDocSnap.exists()) {
-                // Zaten kayıtlı - direkt içeri al
                 const userData = userDocSnap.data();
                 const userObj = {
                     uid: userData.uid || user.uid,
@@ -291,7 +307,6 @@ if (btnGoogleSignIn) {
                 if (loginOverlay) loginOverlay.classList.add('hidden');
                 if (window.initApp) window.initApp(); else location.reload();
             } else {
-                // Yeni kullanıcı - Google bilgileriyle adım 2'yi (telefon + profil tamamlama) doldur
                 if (emailInput) emailInput.value = user.email || '';
                 if (usernameInput) usernameInput.value = user.displayName || '';
                 if (user.photoURL) {
@@ -310,7 +325,7 @@ if (btnGoogleSignIn) {
             }
         } catch (err) {
             if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-                // kullanıcı popup'ı kendi kapattı, sessizce geç
+                // Kullanıcı kapattı
             } else if (err.code === 'auth/popup-blocked') {
                 alert("Tarayıcı popup'ı engelledi kanka. Popup izni verip tekrar dene.");
             } else {
@@ -332,7 +347,7 @@ if (btnStep2Back) {
     });
 }
 
-// 3. ADIM 2 PROFİL KAYIT FORMU
+// ADIM 2 PROFİL KAYIT FORMU
 if (loginForm) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -341,7 +356,6 @@ if (loginForm) {
         const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
         const rawPhone = phoneInput ? phoneInput.value.trim() : '';
 
-        // Sadece rakamları ayıkla ve son 10 haneyi al
         const digits = rawPhone.replace(/\D/g, '');
         const cleanPhone = digits.length >= 10 ? digits.slice(-10) : '';
         const formattedPhone = '+90' + cleanPhone;
@@ -360,7 +374,6 @@ if (loginForm) {
         }
 
         try {
-            // Numarayı veritabanında 3 farklı olası formatta kontrol et (mükerrer kaydı önler)
             const phoneFormats = [cleanPhone, formattedPhone, '0' + cleanPhone];
             const phoneQuery = query(collection(db, "users"), where("phone", "in", phoneFormats));
             const phoneSnap = await getDocs(phoneQuery);
@@ -382,7 +395,7 @@ if (loginForm) {
                 uid: currentUserAuth.uid,
                 name: username,
                 email: email,
-                phone: formattedPhone, // Veritabanına uluslararası standartta (+905XXXXXXXXX) kaydet
+                phone: formattedPhone,
                 avatar: base64Image || '',
                 lastSeen: serverTimestamp()
             });
