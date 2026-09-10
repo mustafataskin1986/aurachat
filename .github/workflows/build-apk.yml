@@ -75,12 +75,20 @@ jobs:
           npx cap copy android
           npx cap sync android
 
-      - name: Android İzinlerini Manifest'e Ekle
+      - name: Android İzinlerini ve Native Stringleri Ekle
         run: |
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
+          STRINGS_PATH="android/app/src/main/res/values/strings.xml"
+          
           if [ -f "$MANIFEST_PATH" ]; then
             if ! grep -q "READ_CONTACTS" "$MANIFEST_PATH"; then
               sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.READ_CONTACTS" \/>' "$MANIFEST_PATH"
+            fi
+          fi
+
+          if [ -f "$STRINGS_PATH" ]; then
+            if ! grep -q "server_client_id" "$STRINGS_PATH"; then
+              sed -i '/<\/resources>/i \    <string name="server_client_id">447747395966-3shresouu36769er1b9656oec8vd13aa.apps.googleusercontent.com<\/string>' "$STRINGS_PATH"
             fi
           fi
 
