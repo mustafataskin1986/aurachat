@@ -10,6 +10,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
 import { selectChat, getCurrentUser } from "./chat-core.js";
+import { pushBackState, popBackState } from "./back-handler.js";
 
 const contactList = document.getElementById('contact-list');
 const searchContact = document.getElementById('search-contact');
@@ -308,6 +309,7 @@ if (adminBtn) {
                 <p class="text-xs">Veritabanından tüm kullanıcılar çekiliyor...</p>
             </div>`;
         adminModal.classList.remove('hidden');
+        pushBackState(closeAdminModal);
 
         try {
             const snapshot = await getDocs(collection(db, "users"));
@@ -358,7 +360,8 @@ if (adminBtn) {
                 if (!isMe) {
                     const chatBtn = userDiv.querySelector('.btn-admin-chat');
                     chatBtn.addEventListener('click', () => {
-                        adminModal.classList.add('hidden');
+                        closeAdminModal();
+                        popBackState();
                         selectChat({ uid: user.uid, name: user.name, avatar: user.avatar || '' });
                     });
                 }
@@ -371,8 +374,14 @@ if (adminBtn) {
     });
 }
 
+function closeAdminModal() {
+    if (!adminModal) return;
+    adminModal.classList.add('hidden');
+}
+
 if (adminModalClose) {
     adminModalClose.addEventListener('click', () => {
-        adminModal.classList.add('hidden');
+        closeAdminModal();
+        popBackState();
     });
 }
