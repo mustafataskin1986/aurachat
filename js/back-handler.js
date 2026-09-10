@@ -39,3 +39,28 @@ window.addEventListener('popstate', () => {
     const closeFn = backStack.pop();
     if (closeFn) closeFn();
 });
+
+// ------------------------------------------
+// CAPACITOR NATIVE GERİ TUŞU KÖPRÜSÜ
+// TWA'da (gerçek Chrome) donanım geri tuşu otomatik olarak
+// tarayıcı geçmişine bağlıdır. Capacitor'de ise DEĞİLDİR - native
+// "App" eklentisi kendi backButton olayını fırlatır, bizim
+// history/popstate sistemimizden habersizdir. Burada o olayı
+// yakalayıp history.back()'e yönlendiriyoruz; böylece backStack'imiz
+// hem TWA'da hem Capacitor APK'sında aynı şekilde çalışır.
+// ------------------------------------------
+if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+    const CapApp = window.Capacitor.Plugins.App;
+
+    CapApp.addListener('backButton', ({ canGoBack }) => {
+        if (backStack.length > 0) {
+            // Bizim açtığımız bir panel/görünüm var - normal history.back() akışına sok,
+            // popstate listener'ımız zaten yukarıda bunu yakalayıp kapatacak.
+            history.back();
+        } else if (canGoBack) {
+            history.back();
+        } else {
+            CapApp.exitApp();
+        }
+    });
+}
