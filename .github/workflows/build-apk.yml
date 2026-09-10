@@ -32,12 +32,16 @@ jobs:
             keytool -genkeypair -alias androiddebugkey -keypass android -keystore ~/.android/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12
           fi
 
+      - name: SHA-1 Parmak İzinizi Ekrana Yazdır
+        run: |
+          keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep "SHA1:" || true
+
       - name: Bağımlılıkları Yükle
         run: |
           if [ ! -f package.json ]; then
             npm init -y
           fi
-          npm install --legacy-peer-deps @capacitor/core@5.7.0 @capacitor/cli@5.7.0 @capacitor/android@5.7.0 @capacitor-community/contacts@5.0.5
+          npm install --legacy-peer-deps @capacitor/core@5.7.0 @capacitor/cli@5.7.0 @capacitor/android@5.7.0 @capacitor-community/contacts@5.0.5 @codetrix-studio/capacitor-google-auth@3.3.0
 
       - name: Web Dosyalarını Hazırla ve Konfigüre Et
         run: |
@@ -54,6 +58,13 @@ jobs:
             "server": {
               "url": "https://aurachat-amber.vercel.app",
               "cleartext": true
+            },
+            "plugins": {
+              "GoogleAuth": {
+                "scopes": ["profile", "email"],
+                "serverClientId": "447747395966-3shresouu36769er1b9656oec8vd13aa.apps.googleusercontent.com",
+                "forceCodeForRefreshToken": true
+              }
             }
           }
           EOF
