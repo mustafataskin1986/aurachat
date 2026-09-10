@@ -11,7 +11,6 @@ import { loadContacts, initAdminPanel } from "./contacts.js";
 
 const sidebar = document.getElementById('sidebar');
 const chatArea = document.getElementById('chat-area');
-const logoutBtn = document.getElementById('logout-btn');
 
 // Bu güncellemeden ÖNCE giriş yapmış hesaplarda localStorage'daki
 // kullanıcı objesinde uid alanı yoktur (eski giris.js yazmıyordu).
@@ -58,12 +57,4 @@ window.initApp = async function () {
 const existingUser = JSON.parse(localStorage.getItem('aurachat_user'));
 if (existingUser) {
     window.initApp();
-}
-
-if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
-        localStorage.removeItem('aurachat_user');
-        localStorage.removeItem('aurachat_contacts_cache');
-        location.reload();
-    });
 }
