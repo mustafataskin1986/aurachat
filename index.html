@@ -179,7 +179,7 @@
                     <i class="fa-solid fa-user-shield cursor-pointer text-amber-400 hover:text-amber-300 transition hidden" id="admin-btn" title="Admin Paneli"></i>
                     <i class="fa-solid fa-circle-notch cursor-pointer hover:text-white transition"></i>
                     <i class="fa-solid fa-comment-alt cursor-pointer hover:text-white transition"></i>
-                    <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition" id="logout-btn" title="Çıkış Yap"></i>
+                    <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition" id="profile-btn" title="Profil"></i>
                 </div>
             </div>
 
@@ -257,6 +257,40 @@
 
     </div>
 
+    <!-- PROFİL PANELİ -->
+    <div id="profile-panel" class="fixed inset-0 z-50 bg-[#0b141a] hidden flex-col">
+        <div class="bg-[#202c33] px-4 py-3.5 flex items-center space-x-4 border-b border-gray-800 flex-shrink-0">
+            <button id="profile-back-btn" class="text-gray-400 hover:text-white transition text-lg px-1">
+                <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <h2 class="text-white font-medium text-base">Profil</h2>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6 flex flex-col items-center">
+            <div id="profile-avatar" class="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg mb-6 overflow-hidden flex-shrink-0"></div>
+
+            <div class="w-full max-w-sm space-y-4">
+                <div class="bg-[#111b21] rounded-xl p-4">
+                    <span class="text-[11px] text-gray-500 uppercase tracking-wide">İsim</span>
+                    <p id="profile-name" class="text-white text-base mt-1 break-words"></p>
+                </div>
+                <div class="bg-[#111b21] rounded-xl p-4">
+                    <span class="text-[11px] text-gray-500 uppercase tracking-wide">E-posta</span>
+                    <p id="profile-email" class="text-white text-base mt-1 break-words"></p>
+                </div>
+                <div class="bg-[#111b21] rounded-xl p-4">
+                    <span class="text-[11px] text-gray-500 uppercase tracking-wide">Telefon</span>
+                    <p id="profile-phone" class="text-white text-base mt-1 break-words"></p>
+                </div>
+            </div>
+
+            <button id="profile-logout-btn" class="w-full max-w-sm mt-8 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2 border border-rose-600/20">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <span>Çıkış Yap</span>
+            </button>
+        </div>
+    </div>
+
     <!-- GÖRSEL BÜYÜTME (LIGHTBOX) -->
     <div id="image-lightbox" class="fixed inset-0 z-[60] bg-black/90 hidden items-center justify-center p-4" onclick="this.classList.add('hidden'); this.classList.remove('flex');">
         <img id="lightbox-img" src="" class="max-w-full max-h-full rounded-lg object-contain">
@@ -267,6 +301,7 @@
 
     <!-- UYGULAMA MANTIĞI (chat-core.js ve contacts.js'i başlatır) -->
     <script type="module" src="js/app-init.js"></script>
+    <script type="module" src="js/profile.js"></script>
 
     <script>
         function syncViewport() {
