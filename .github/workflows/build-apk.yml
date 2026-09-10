@@ -25,8 +25,27 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Temiz Dijital İmza (Keystore) Oluştur
+      - name: Keystore Secret Var mı Kontrol Et
+        id: checksecret
         run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Kayıtlı Keystore'u Secret'tan Yükle (SABİT SHA-1)
+        if: steps.checksecret.outputs.exists == 'true'
+        run: |
+          mkdir -p ~/.android
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
+          echo "Kayıtlı keystore kullanılıyor, SHA-1 sabit kalacak."
+
+      - name: Geçici Keystore Üret (secret henüz yok)
+        if: steps.checksecret.outputs.exists == 'false'
+        run: |
+          echo "UYARI: ANDROID_KEYSTORE_BASE64 secret'ı henüz ayarlanmamış."
+          echo "Bu derlemenin SHA-1'i, secret'ı eklediğinde DEĞİŞECEK - build bitince inen 'keystore-backup' dosyasını indirip secret olarak ekle."
           rm -rf ~/.android/debug.keystore
           mkdir -p ~/.android
           keytool -genkeypair -alias androiddebugkey -keypass android -keystore ~/.android/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12
@@ -35,12 +54,24 @@ jobs:
         run: |
           keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep "SHA1:" || true
 
+      - name: Keystore'u Yedek Olarak Hazırla (secret henüz yoksa)
+        if: steps.checksecret.outputs.exists == 'false'
+        run: |
+          base64 -w 0 ~/.android/debug.keystore > keystore-base64.txt
+
+      - name: Keystore Yedeğini Artifact Olarak Yükle (secret henüz yoksa)
+        if: steps.checksecret.outputs.exists == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: keystore-backup-SET-AS-SECRET-ANDROID_KEYSTORE_BASE64
+          path: keystore-base64.txt
+
       - name: Bağımlılıkları Yükle
         run: |
           if [ ! -f package.json ]; then
             npm init -y
           fi
-          npm install --legacy-peer-deps @capacitor/core@5.7.0 @capacitor/cli@5.7.0 @capacitor/android@5.7.0 @capacitor-community/contacts@5.0.5 @codetrix-studio/capacitor-google-auth@3.3.0
+          npm install --legacy-peer-deps @capacitor/core@5.7.0 @capacitor/cli@5.7.0 @capacitor/android@5.7.0 @capacitor/app@5.0.7 @capacitor-community/contacts@5.0.5 @codetrix-studio/capacitor-google-auth@3.3.0
 
       - name: Web Dosyalarını Hazırla ve Konfigüre Et
         run: |
