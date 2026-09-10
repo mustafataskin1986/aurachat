@@ -53,6 +53,17 @@
                         <span>Devam Et</span>
                         <i class="fa-solid fa-arrow-right text-sm"></i>
                     </button>
+
+                    <div class="flex items-center gap-3 my-1">
+                        <div class="flex-1 h-px bg-gray-700"></div>
+                        <span class="text-[11px] text-gray-500">veya</span>
+                        <div class="flex-1 h-px bg-gray-700"></div>
+                    </div>
+
+                    <button type="button" id="btn-google-signin" class="w-full bg-white hover:bg-gray-100 text-gray-800 font-medium py-3 rounded-xl transition shadow-lg flex items-center justify-center space-x-2">
+                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-5 h-5" alt="">
+                        <span>Google ile Giriş Yap</span>
+                    </button>
                 </div>
 
                 <!-- 2. ADIM: KULLANICI ADI, TELEFON VE AVATAR -->
@@ -125,10 +136,13 @@
             <h3 class="text-white font-bold text-lg mb-1">E-Postanı Kontrol Et!</h3>
             <p class="text-gray-300 text-xs mb-2"><span id="verify-email-text" class="text-emerald-400 font-semibold"></span> adresine bir doğrulama bağlantısı gönderdik.</p>
             <p class="text-gray-400 text-[11px] mb-4">Lütfen e-postandaki linke tıkla. Onayladığında bu ekran otomatik kapanacak kanka.</p>
-            <div class="flex items-center justify-center space-x-2 text-emerald-400 text-xs font-medium">
+            <div class="flex items-center justify-center space-x-2 text-emerald-400 text-xs font-medium mb-3">
                 <i class="fa-solid fa-spinner fa-spin"></i>
                 <span>Onay bekleniyor...</span>
             </div>
+            <button type="button" id="btn-resend-verify" disabled class="text-xs text-gray-400 hover:text-emerald-400 underline disabled:opacity-40 disabled:no-underline transition">
+                Tekrar gönder (<span id="resend-countdown">60</span>sn)
+            </button>
         </div>
     </div>
 
