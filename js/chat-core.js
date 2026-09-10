@@ -12,6 +12,7 @@ import {
     serverTimestamp, doc, setDoc, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
+import { pushBackState, popBackState } from "./back-handler.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
@@ -95,6 +96,7 @@ export function selectChat(otherUser) {
     if (window.innerWidth < 768) {
         sidebar.classList.add('-translate-x-full');
         chatArea.classList.remove('translate-x-full');
+        pushBackState(doCloseChatView);
     }
 
     loadMessages(currentChatId);
@@ -118,8 +120,9 @@ function listenToChatDoc(chatId, otherUid) {
     });
 }
 
-// Mobilde geri tuşu
-backBtn.addEventListener('click', () => {
+// Sohbet görünümünü kapatır (sadece arayüz - history'ye dokunmaz).
+// Hem hardware geri tuşundan hem "geri" butonundan çağrılır.
+function doCloseChatView() {
     if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
     if (unsubscribeChatDoc) { unsubscribeChatDoc(); unsubscribeChatDoc = null; }
 
@@ -132,6 +135,12 @@ backBtn.addEventListener('click', () => {
         sidebar.classList.remove('-translate-x-full');
         chatArea.classList.add('translate-x-full');
     }
+}
+
+// Mobilde "geri" butonu (UI üzerinden kapatma - history'yi de senkron tutar)
+backBtn.addEventListener('click', () => {
+    doCloseChatView();
+    popBackState();
 });
 
 // ------------------------------------------
@@ -211,6 +220,20 @@ window.openImageLightbox = function (src) {
     lightboxImg.src = src;
     lightbox.classList.remove('hidden');
     lightbox.classList.add('flex');
+    pushBackState(doCloseLightbox);
+};
+
+function doCloseLightbox() {
+    const lightbox = document.getElementById('image-lightbox');
+    if (!lightbox) return;
+    lightbox.classList.add('hidden');
+    lightbox.classList.remove('flex');
+}
+
+// Dışına tıklayınca kapatma (UI üzerinden - history'yi de senkron tutar)
+window.closeImageLightboxUI = function () {
+    doCloseLightbox();
+    popBackState();
 };
 
 // ------------------------------------------
