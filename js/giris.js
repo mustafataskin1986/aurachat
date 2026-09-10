@@ -1,6 +1,6 @@
 import { db, auth } from "./firebase-init.js";
 import { doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 let base64Image = '';
 let verifyCheckInterval = null;
@@ -21,6 +21,7 @@ const btnStep1Next = document.getElementById('btn-step-1-next');
 const btnStep2Back = document.getElementById('btn-step-2-back');
 const btnForgotPassword = document.getElementById('btn-forgot-password');
 const emailStatus = document.getElementById('email-status');
+const btnGoogleSignIn = document.getElementById('btn-google-signin');
 
 const profileImageInput = document.getElementById('profile-image-input');
 const profilePreview = document.getElementById('profile-preview');
@@ -33,6 +34,8 @@ const btnForgotSubmit = document.getElementById('btn-forgot-submit');
 
 const verifyModal = document.getElementById('verify-modal');
 const verifyEmailText = document.getElementById('verify-email-text');
+
+const googleProvider = new GoogleAuthProvider();
 
 // Oturum kontrolü
 const currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
@@ -256,6 +259,68 @@ function startVerifyPolling() {
             }
         }
     }, 3000);
+}
+
+// GOOGLE İLE GİRİŞ YAP
+// Firestore'da profili varsa direkt içeri alır; yoksa email/isim/foto
+// Google'dan otomatik doldurulup adım 2'ye (telefon + onay) geçirir.
+// E-posta doğrulamasına hiç gerek yok çünkü Google hesabı zaten doğrulanmış sayılır.
+if (btnGoogleSignIn) {
+    btnGoogleSignIn.addEventListener('click', async () => {
+        btnGoogleSignIn.disabled = true;
+        const originalContent = btnGoogleSignIn.innerHTML;
+        btnGoogleSignIn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Bağlanıyor...</span>`;
+
+        try {
+            const result = await signInWithPopup(auth, googleProvider);
+            const user = result.user;
+
+            const userDocSnap = await getDoc(doc(db, "users", user.uid));
+
+            if (userDocSnap.exists()) {
+                // Zaten kayıtlı - direkt içeri al
+                const userData = userDocSnap.data();
+                const userObj = {
+                    uid: userData.uid || user.uid,
+                    name: userData.name || user.uid,
+                    email: userData.email,
+                    phone: userData.phone || '',
+                    avatar: userData.avatar || ''
+                };
+                localStorage.setItem('aurachat_user', JSON.stringify(userObj));
+                if (loginOverlay) loginOverlay.classList.add('hidden');
+                if (window.initApp) window.initApp(); else location.reload();
+            } else {
+                // Yeni kullanıcı - Google bilgileriyle adım 2'yi (telefon + profil tamamlama) doldur
+                if (emailInput) emailInput.value = user.email || '';
+                if (usernameInput) usernameInput.value = user.displayName || '';
+                if (user.photoURL) {
+                    base64Image = user.photoURL;
+                    if (profilePreview) {
+                        profilePreview.innerHTML = `<img src="${user.photoURL}" class="w-full h-full object-cover rounded-full">`;
+                    }
+                }
+                if (emailStatus) {
+                    emailStatus.textContent = '✓ Google ile onaylandı';
+                    emailStatus.className = 'text-xs font-semibold text-emerald-400';
+                }
+                step1.classList.add('hidden');
+                step2.classList.remove('hidden');
+                if (stepSubtitle) stepSubtitle.textContent = 'Google ile bağlandın! Telefon numaranı ekleyip profilini tamamla kanka.';
+            }
+        } catch (err) {
+            if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+                // kullanıcı popup'ı kendi kapattı, sessizce geç
+            } else if (err.code === 'auth/popup-blocked') {
+                alert("Tarayıcı popup'ı engelledi kanka. Popup izni verip tekrar dene.");
+            } else {
+                alert("Google ile giriş yapılamadı: " + err.message);
+            }
+        } finally {
+            btnGoogleSignIn.disabled = false;
+            btnGoogleSignIn.innerHTML = originalContent;
+        }
+    });
 }
 
 if (btnStep2Back) {
