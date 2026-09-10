@@ -71,7 +71,18 @@ jobs:
           if [ ! -f package.json ]; then
             npm init -y
           fi
-          npm install --legacy-peer-deps @capacitor/core@5.7.0 @capacitor/cli@5.7.0 @capacitor/android@5.7.0 @capacitor/app@5.0.7 @capacitor-community/contacts@5.0.5 @codetrix-studio/capacitor-google-auth@3.3.0
+          npm install --legacy-peer-deps \
+            @capacitor/core@5.7.0 \
+            @capacitor/cli@5.7.0 \
+            @capacitor/android@5.7.0 \
+            @capacitor/app@5.0.7 \
+            @capacitor-community/contacts@5.0.5 \
+            @codetrix-studio/capacitor-google-auth@3.3.0 \
+            @capacitor/push-notifications@5.1.0 \
+            @capacitor/camera@5.0.7 \
+            @capacitor/filesystem@5.2.1 \
+            @capacitor/share@5.0.7 \
+            @capacitor/haptics@5.0.6
 
       - name: Web Dosyalarını Hazırla ve Konfigüre Et
         run: |
@@ -94,6 +105,9 @@ jobs:
                 "scopes": ["profile", "email"],
                 "serverClientId": "447747395966-3shresouu36769er1b9656oec8vd13aa.apps.googleusercontent.com",
                 "forceCodeForRefreshToken": true
+              },
+              "PushNotifications": {
+                "presentationOptions": ["badge", "sound", "alert"]
               }
             }
           }
@@ -111,9 +125,22 @@ jobs:
           STRINGS_PATH="android/app/src/main/res/values/strings.xml"
 
           if [ -f "$MANIFEST_PATH" ]; then
-            if ! grep -q "READ_CONTACTS" "$MANIFEST_PATH"; then
-              sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.READ_CONTACTS" \/>' "$MANIFEST_PATH"
-            fi
+            add_perm() {
+              if ! grep -q "$1" "$MANIFEST_PATH"; then
+                sed -i "/<\/manifest>/i \    <uses-permission android:name=\"$1\" \/>" "$MANIFEST_PATH"
+              fi
+            }
+
+            add_perm "android.permission.READ_CONTACTS"
+            add_perm "android.permission.POST_NOTIFICATIONS"
+            add_perm "android.permission.CAMERA"
+            add_perm "android.permission.RECORD_AUDIO"
+            add_perm "android.permission.MODIFY_AUDIO_SETTINGS"
+            add_perm "android.permission.READ_MEDIA_IMAGES"
+            add_perm "android.permission.READ_MEDIA_VIDEO"
+            add_perm "android.permission.READ_EXTERNAL_STORAGE"
+            add_perm "android.permission.WRITE_EXTERNAL_STORAGE"
+            add_perm "android.permission.VIBRATE"
           fi
 
           if [ -f "$STRINGS_PATH" ]; then
