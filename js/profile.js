@@ -9,6 +9,7 @@ import { db } from "./firebase-init.js";
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getCurrentUser, setCurrentUser } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
+import { pushBackState, popBackState } from "./back-handler.js";
 
 const profileBtn = document.getElementById('profile-btn');
 const profilePanel = document.getElementById('profile-panel');
@@ -51,6 +52,7 @@ function openProfilePanel() {
 
     profilePanel.classList.remove('hidden');
     profilePanel.classList.add('flex');
+    pushBackState(closeProfilePanel);
 }
 
 function closeProfilePanel() {
@@ -60,7 +62,12 @@ function closeProfilePanel() {
 }
 
 if (profileBtn) profileBtn.addEventListener('click', openProfilePanel);
-if (profileBackBtn) profileBackBtn.addEventListener('click', closeProfilePanel);
+if (profileBackBtn) {
+    profileBackBtn.addEventListener('click', () => {
+        closeProfilePanel();
+        popBackState();
+    });
+}
 
 // Avatara tıklayınca yeni fotoğraf seç - sadece önizleme, kaydet'e basınca yazılır
 if (profileAvatarInput) {
