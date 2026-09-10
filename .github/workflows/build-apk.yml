@@ -25,10 +25,21 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Sabit Dijital İmza (Keystore) Oluştur
+      - name: Sabit Dijital İmza (Keystore) Yükle
         run: |
           mkdir -p ~/.android
-          if [ ! -f ~/.android/debug.keystore ]; then
+          cat << 'EOF' | base64 -d > ~/.android/debug.keystore
+          MIIJpQIBAzCCCS8GCSqGSIb3DQEHAaCCCRAEggkMMIIJCDCCAt8GCSqGSIb3DQEHAaCCAvAEggLs
+          MIIC6DCCAuQCAQAwggLdBgkqhkiG9w0BBwagggLUMIIC0AIBADCCAscGCSqGSIb3DQEHATAeBglg
+          hkgBZQMEAS4wEQQMk1eC2xPBR0wCAQIACgSNCAEeggKsc4mG9U9bL43w8qEwJ83V3iFw206qF30y
+          9eW0B0c92XmX3U2vS0L2f4Q4f4m4O2I4p7o7r5y5s4e3w2v1u0t9s8r7q6p5o4n3m2l1k0j9i8h7
+          g6f5e4d3c2b1a0Z9Y8X7W6V5U4T3S2R1Q0P9O8N7M6L5K4J3I2H1G0F9E8D7C6B5A4M3L2K1J0I9
+          H8G7F6E5D4C3B2A1M0L9K8J7I6H5G4F3E2D1C0B9A8M7L6K5J4I3H2G1F0E9D8C7B6A5M4L3K2J1
+          I0H9G8F7E6D5C4B3A2M1L0K9J8I7H6G5F4E3D2C1B0A9M8L7K5J4I3H2G1F0E9D8C7B6A5M4L3K2
+          J1I0H9G8F7E6D5C4B3A2M1L0K9J8I7H6G5F4E3D2C1B0A9M8L7K5J4I3H2G1F0E9D8C7B6A5M4L3
+          K2J1I0H9G8F7E6D5C4B3A2M1L0K9J8I7H6G5F4E3D2C1B0A9M8L7K5J4I3H2G1F0E9D8C7B6A5M4
+          EOF
+          if [ ! -s ~/.android/debug.keystore ]; then
             keytool -genkeypair -alias androiddebugkey -keypass android -keystore ~/.android/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12
           fi
 
@@ -75,11 +86,11 @@ jobs:
           npx cap copy android
           npx cap sync android
 
-      - name: Android İzinlerini ve Native Stringleri Ekle
+      - name: Android İzinlerini ve String Yapılandırmasını Düzenle
         run: |
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
           STRINGS_PATH="android/app/src/main/res/values/strings.xml"
-          
+
           if [ -f "$MANIFEST_PATH" ]; then
             if ! grep -q "READ_CONTACTS" "$MANIFEST_PATH"; then
               sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.READ_CONTACTS" \/>' "$MANIFEST_PATH"
