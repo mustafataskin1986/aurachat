@@ -267,12 +267,21 @@
         </div>
 
         <div class="flex-1 overflow-y-auto p-6 flex flex-col items-center">
-            <div id="profile-avatar" class="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg mb-6 overflow-hidden flex-shrink-0"></div>
-
+       <label for="profile-avatar-input" class="cursor-pointer group relative mb-6">
+    <div id="profile-avatar" class="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg overflow-hidden flex-shrink-0"></div>
+    <div class="absolute bottom-1 right-1 bg-emerald-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-xs shadow-md">
+        <i class="fa-solid fa-camera"></i>
+    </div>
+</label>
+<input type="file" id="profile-avatar-input" accept="image/*" class="hidden">
             <div class="w-full max-w-sm space-y-4">
-                <div class="bg-[#111b21] rounded-xl p-4">
+            <div class="bg-[#111b21] rounded-xl p-4">
                     <span class="text-[11px] text-gray-500 uppercase tracking-wide">İsim</span>
-                    <p id="profile-name" class="text-white text-base mt-1 break-words"></p>
+                    <input id="profile-name" type="text" maxlength="40" class="w-full bg-transparent text-white text-base mt-1 focus:outline-none border-b border-transparent focus:border-emerald-500/50 transition">
+                </div>
+                <div class="bg-[#111b21] rounded-xl p-4">
+                    <span class="text-[11px] text-gray-500 uppercase tracking-wide">Durum</span>
+                    <input id="profile-about" type="text" maxlength="100" placeholder="Merhaba, AuraChat kullanıyorum!" class="w-full bg-transparent text-white text-base mt-1 focus:outline-none border-b border-transparent focus:border-emerald-500/50 transition placeholder-gray-600">
                 </div>
                 <div class="bg-[#111b21] rounded-xl p-4">
                     <span class="text-[11px] text-gray-500 uppercase tracking-wide">E-posta</span>
@@ -284,7 +293,12 @@
                 </div>
             </div>
 
-            <button id="profile-logout-btn" class="w-full max-w-sm mt-8 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2 border border-rose-600/20">
+         <button id="profile-save-btn" class="w-full max-w-sm mt-6 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2">
+                <i class="fa-solid fa-check"></i>
+                <span>Kaydet</span>
+            </button>
+
+            <button id="profile-logout-btn" class="w-full max-w-sm mt-3 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2 border border-rose-600/20">
                 <i class="fa-solid fa-right-from-bracket"></i>
                 <span>Çıkış Yap</span>
             </button>
