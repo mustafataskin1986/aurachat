@@ -1,5 +1,5 @@
 import { db, auth } from "./firebase-init.js";
-import { doc, setDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 let base64Image = '';
@@ -143,7 +143,9 @@ function validateStep1() {
     return true;
 }
 
-// 2. ADIM 1 DEVAM ET VE CANLI DOĞRULAMA KONTROLÜ
+// 2. ADIM 1 DEVAM ET: Önce giriş dener (Firestore'a dokunmadan, sadece Auth üzerinden).
+// Başarısız olursa kayıt dener - email zaten var mı yok mu diye
+// auth olmadan Firestore sorgusu atmaya gerek kalmıyor (izin hatasının sebebi buydu).
 if (btnStep1Next) {
     btnStep1Next.addEventListener('click', async () => {
         if (!validateStep1()) return;
@@ -156,89 +158,75 @@ if (btnStep1Next) {
         btnStep1Next.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-sm"></i> <span>Kontrol Ediliyor...</span>`;
 
         try {
-            // Önce bu mail veritabanımızda zaten kayıtlı mı kontrol et
-            const q = query(collection(db, "users"), where("email", "==", email));
-            const querySnapshot = await getDocs(q);
+            let userCred;
+            let isNewAccount = false;
 
-            if (!querySnapshot.empty) {
-                // KULLANICI VAR -> Giriş Yapmayı Dene
-                try {
-                    await signInWithEmailAndPassword(auth, email, password);
-
-                    const userDoc = querySnapshot.docs[0];
-                    const userData = userDoc.data();
-                    const userObj = {
-                        uid: userData.uid || userDoc.id,
-                        name: userData.name || userDoc.id,
-                        email: userData.email,
-                        phone: userData.phone || '',
-                        avatar: userData.avatar || ''
-                    };
-                    localStorage.setItem('aurachat_user', JSON.stringify(userObj));
-                    if (loginOverlay) loginOverlay.classList.add('hidden');
-                    if (window.initApp) window.initApp(); else location.reload();
-
-                } catch (authErr) {
-                    if (authErr.code === 'auth/wrong-password' || authErr.code === 'auth/invalid-credential') {
-                        alert("Şifren hatalı kanka! Lütfen doğru şifre gir veya 'Şifremi Unuttum?' bağlantısını kullan.");
-                    } else if (authErr.code === 'auth/too-many-requests') {
-                        alert("Çok fazla hatalı giriş yapıldı. Lütfen biraz bekleyin veya internet bağlantınızı değiştirin.");
-                    } else {
-                        alert("Giriş yapılamadı: " + authErr.message);
-                    }
-                }
-            } else {
-                // KULLANICI YOK -> Mail Doğrulama Sürecini Başlat
-                let userCred;
+            try {
+                userCred = await signInWithEmailAndPassword(auth, email, password);
+            } catch (signInErr) {
+                // Giriş başarısız: ya hesap yok ya şifre yanlış. Kayıt denemesi ayırt eder.
                 try {
                     userCred = await createUserWithEmailAndPassword(auth, email, password);
+                    isNewAccount = true;
                 } catch (createErr) {
                     if (createErr.code === 'auth/email-already-in-use') {
-                        // Eğer mail auth sisteminde var ama Firestore kaydı yoksa giriş yapmayı dene
-                        try {
-                            userCred = await signInWithEmailAndPassword(auth, email, password);
-                        } catch (loginErr) {
-                            alert("Bu e-posta adresi sistemde kayıtlı ancak girdiğin şifre hatalı kanka!");
-                            return;
-                        }
+                        alert("Şifren hatalı kanka! Lütfen doğru şifre gir veya 'Şifremi Unuttum?' bağlantısını kullan.");
                     } else if (createErr.code === 'auth/too-many-requests') {
-                        alert("Çok fazla deneme yapıldı kanka. Lütfen internetini (IP) değiştirip tekrar dene.");
-                        return;
+                        alert("Çok fazla deneme yapıldı kanka. Lütfen biraz bekleyin veya internetinizi (IP) değiştirip tekrar deneyin.");
+                    } else if (createErr.code === 'auth/weak-password') {
+                        alert("Şifren çok zayıf kanka, en az 6 karakter olmalı.");
                     } else {
-                        throw createErr;
+                        alert("İşlem hatası: " + createErr.message);
                     }
+                    return;
                 }
+            }
 
-                if (userCred && userCred.user) {
-                    // Doğrulama maili gönder
-                    await sendEmailVerification(userCred.user);
+            if (!userCred || !userCred.user) return;
 
-                    if (verifyEmailText) verifyEmailText.textContent = email;
-                    if (verifyModal) verifyModal.classList.remove('hidden');
+            if (isNewAccount) {
+                await sendEmailVerification(userCred.user);
+                if (verifyEmailText) verifyEmailText.textContent = email;
+                if (verifyModal) verifyModal.classList.remove('hidden');
+                startVerifyPolling();
+                return;
+            }
 
-                    if (verifyCheckInterval) clearInterval(verifyCheckInterval);
+            await userCred.user.reload();
 
-                    verifyCheckInterval = setInterval(async () => {
-                        if (auth.currentUser) {
-                            await auth.currentUser.reload();
+            if (!userCred.user.emailVerified) {
+                await sendEmailVerification(userCred.user);
+                if (verifyEmailText) verifyEmailText.textContent = email;
+                if (verifyModal) verifyModal.classList.remove('hidden');
+                startVerifyPolling();
+                return;
+            }
 
-                            if (auth.currentUser.emailVerified) {
-                                clearInterval(verifyCheckInterval);
+            // Doğrulanmış - şimdi authenticated olduğumuz için Firestore'dan
+            // profili güvenle okuyabiliriz
+            const userDocSnap = await getDoc(doc(db, "users", userCred.user.uid));
 
-                                if (verifyModal) verifyModal.classList.add('hidden');
-
-                                if (emailStatus) {
-                                    emailStatus.textContent = '✓ Onaylandı';
-                                    emailStatus.className = 'text-xs font-semibold text-emerald-400';
-                                }
-
-                                step1.classList.add('hidden');
-                                step2.classList.remove('hidden');
-                                if (stepSubtitle) stepSubtitle.textContent = 'E-posta Onaylandı! Profilini tamamla kanka.';
-                            }
-                        }
-                    }, 3000);
+            if (userDocSnap.exists()) {
+                const userData = userDocSnap.data();
+                const userObj = {
+                    uid: userData.uid || userCred.user.uid,
+                    name: userData.name || userCred.user.uid,
+                    email: userData.email,
+                    phone: userData.phone || '',
+                    avatar: userData.avatar || ''
+                };
+                localStorage.setItem('aurachat_user', JSON.stringify(userObj));
+                if (loginOverlay) loginOverlay.classList.add('hidden');
+                if (window.initApp) window.initApp(); else location.reload();
+            } else {
+                // Doğrulanmış ama profil hiç tamamlanmamış - adım 2'ye geç
+                if (emailStatus) {
+                    emailStatus.textContent = '✓ Onaylandı';
+                    emailStatus.className = 'text-xs font-semibold text-emerald-400';
                 }
+                step1.classList.add('hidden');
+                step2.classList.remove('hidden');
+                if (stepSubtitle) stepSubtitle.textContent = 'E-posta Onaylandı! Profilini tamamla kanka.';
             }
 
         } catch (err) {
@@ -248,6 +236,26 @@ if (btnStep1Next) {
             btnStep1Next.innerHTML = originalBtnContent;
         }
     });
+}
+
+function startVerifyPolling() {
+    if (verifyCheckInterval) clearInterval(verifyCheckInterval);
+    verifyCheckInterval = setInterval(async () => {
+        if (auth.currentUser) {
+            await auth.currentUser.reload();
+            if (auth.currentUser.emailVerified) {
+                clearInterval(verifyCheckInterval);
+                if (verifyModal) verifyModal.classList.add('hidden');
+                if (emailStatus) {
+                    emailStatus.textContent = '✓ Onaylandı';
+                    emailStatus.className = 'text-xs font-semibold text-emerald-400';
+                }
+                step1.classList.add('hidden');
+                step2.classList.remove('hidden');
+                if (stepSubtitle) stepSubtitle.textContent = 'E-posta Onaylandı! Profilini tamamla kanka.';
+            }
+        }
+    }, 3000);
 }
 
 if (btnStep2Back) {
