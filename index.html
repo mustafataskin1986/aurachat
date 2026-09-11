@@ -15,6 +15,15 @@
         ::-webkit-scrollbar-track { background: #0b141a; }
         ::-webkit-scrollbar-thumb { background: #202c33; border-radius: 4px; }
         html, body { height: 100%; margin: 0; overflow: hidden; position: fixed; width: 100%; background-color: #050b14; }
+        * {
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            user-select: none;
+        }
+        input, textarea {
+            -webkit-user-select: text;
+            user-select: text;
+        }
     </style>
 </head>
 <body class="bg-[#050b14] w-screen font-sans flex items-center justify-center p-0 md:p-4">
@@ -181,6 +190,19 @@
                     <i class="fa-solid fa-comment-alt cursor-pointer hover:text-white transition"></i>
                     <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition" id="profile-btn" title="Profil"></i>
                 </div>
+            </div>
+
+            <!-- SOHBET LİSTESİ SEÇİM TOOLBAR'I (silme modu) -->
+            <div id="chat-selection-toolbar" class="hidden absolute top-0 left-0 right-0 bg-[#2a3942] px-4 py-3.5 items-center justify-between border-b border-gray-800 flex-shrink-0 z-30">
+                <div class="flex items-center space-x-4">
+                    <button id="chat-selection-cancel-btn" class="text-gray-300 hover:text-white text-lg px-1">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <span id="chat-selection-count" class="text-white font-medium text-sm">0 seçildi</span>
+                </div>
+                <button id="chat-selection-delete-btn" class="text-gray-300 hover:text-rose-400 text-lg px-1">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
             </div>
 
             <!-- SABİT ARAMA BAR (Görseldeki Gibi Oval & Sor Butonlu) -->
