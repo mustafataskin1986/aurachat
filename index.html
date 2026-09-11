@@ -389,72 +389,92 @@
     <script type="module" src="js/profile.js"></script>
     <script type="module" src="js/video-call.js"></script>
 
-    <!-- PUSH NOTIFICATION (FCM / CAPACITOR) ENTEGRASYONU -->
+    <!-- PUSH NOTIFICATION (FCM / CAPACITOR / WEB PWA) ENTEGRASYONU -->
     <script type="module">
         import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getMessaging, getToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging.js";
 
-        async function initCapacitorPush(user) {
-            if (!user) return;
-
-            // Capacitor Android/iOS Native ortamında mıyız kontrol et
-            const Capacitor = window.Capacitor;
-            if (!Capacitor || (typeof Capacitor.isNativePlatform === 'function' && !Capacitor.isNativePlatform())) {
-                console.log('Web tarayıcı ortamındasınız. Native Push Bildirimleri devre dışı.');
-                return;
+        // Firestore'a Token Kaydeden Ortak Fonksiyon
+        async function saveFcmTokenToFirestore(user, tokenValue, platformName) {
+            try {
+                const db = getFirestore();
+                const userRef = doc(db, 'users', user.uid);
+                await setDoc(userRef, {
+                    fcmToken: tokenValue,
+                    lastTokenUpdate: new Date().toISOString(),
+                    platform: platformName
+                }, { merge: true });
+                console.log(`🚀 [${platformName}] FCM Token Firestore kullanıcı profiline başarıyla kaydedildi:`, tokenValue);
+            } catch (err) {
+                console.error('FCM Token Firestore kaydı hatası:', err);
             }
+        }
 
-            const PushNotifications = Capacitor.Plugins ? Capacitor.Plugins.PushNotifications : null;
-            if (!PushNotifications) {
-                console.warn('Capacitor PushNotifications eklentisi bulunamadı.');
+        // Web / PWA Ortamı İçin FCM Token Alma
+        async function initWebPush(user) {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                console.warn('Bu tarayıcı ortamı bildirimleri desteklemiyor.');
                 return;
             }
 
             try {
-                // 1. Bildirim İzinlerini İste
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    console.warn('Web bildirim izni reddedildi kanka.');
+                    return;
+                }
+
+                const messaging = getMessaging();
+                
+                // Firebase Console > Project Settings > Cloud Messaging > Web Configuration altındaki VAPID Key:
+                const vapidKey = 'BInsdaxUR8evOPjrEaH95C5dQ12uoEDTePiyv3xxBB1-AY_K7hNJxmaP7rM5wNcSL7lY1k9pMCb5D0XfTxbMSVI'; 
+ 
+                const token = await getToken(messaging, { 
+                    vapidKey: vapidKey,
+                    serviceWorkerRegistration: await navigator.serviceWorker.ready
+                });
+
+                if (token) {
+                    await saveFcmTokenToFirestore(user, token, 'pwa-web');
+                } else {
+                    console.warn('Web FCM Token alınamadı.');
+                }
+            } catch (error) {
+                console.error('Web Push Notification hatası:', error);
+            }
+        }
+
+        // Native Capacitor Ortamı İçin Push
+        async function initCapacitorPush(user) {
+            const Capacitor = window.Capacitor;
+            const PushNotifications = Capacitor.Plugins ? Capacitor.Plugins.PushNotifications : null;
+
+            if (!PushNotifications) return;
+
+            try {
                 let permStatus = await PushNotifications.checkPermissions();
                 if (permStatus.receive === 'prompt' || permStatus.receive === 'prompt-with-rationale') {
                     permStatus = await PushNotifications.requestPermissions();
                 }
 
-                if (permStatus.receive !== 'granted') {
-                    console.warn('Bildirim izni reddedildi kanka.');
-                    return;
-                }
+                if (permStatus.receive !== 'granted') return;
 
-                // 2. Firebase Cloud Messaging (FCM) Kaydını Başlat
                 await PushNotifications.register();
 
-                // 3. FCM Token Alındığında Firestore'a Yaz
                 PushNotifications.addListener('registration', async (token) => {
-                    console.log('✅ FCM Token Alındı:', token.value);
-                    try {
-                        const db = getFirestore();
-                        const userRef = doc(db, 'users', user.uid);
-                        await setDoc(userRef, {
-                            fcmToken: token.value,
-                            lastTokenUpdate: new Date().toISOString(),
-                            platform: Capacitor.getPlatform ? Capacitor.getPlatform() : 'android'
-                        }, { merge: true });
-                        console.log('🚀 FCM Token Firestore kullanıcı profiline başarıyla kaydedildi.');
-                    } catch (err) {
-                        console.error('FCM Token Firestore kaydı hatası:', err);
-                    }
+                    await saveFcmTokenToFirestore(user, token.value, Capacitor.getPlatform ? Capacitor.getPlatform() : 'android');
                 });
 
-                // 4. Kayıt Hatası
                 PushNotifications.addListener('registrationError', (error) => {
                     console.error('Push Notification Kayıt Hatası:', error);
                 });
 
-                // 5. Uygulama Açıkken Bildirim Geldiğinde
                 PushNotifications.addListener('pushNotificationReceived', (notification) => {
                     console.log('Uygulama açıkken bildirim düştü:', notification);
                 });
 
-                // 6. Bildirime Tıklandığında Yapılacak İşlem
                 PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-                    console.log('Bildirime tıklandı:', notification);
                     const data = notification.notification ? notification.notification.data : null;
                     if (data && data.chatId) {
                         window.location.hash = `#chat/${data.chatId}`;
@@ -462,16 +482,25 @@
                 });
 
             } catch (error) {
-                console.error('Push Notification yapılandırılırken hata:', error);
+                console.error('Capacitor Push yapılandırılırken hata:', error);
             }
         }
 
-        // Firebase Auth Dinleyicisi
+        // Ana Başlatıcı
         try {
             const auth = getAuth();
             onAuthStateChanged(auth, (user) => {
                 if (user) {
-                    initCapacitorPush(user);
+                    const Capacitor = window.Capacitor;
+                    const isNative = Capacitor && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+
+                    if (isNative) {
+                        console.log('📱 Native Capacitor ortamı algılandı.');
+                        initCapacitorPush(user);
+                    } else {
+                        console.log('🌐 Web / PWA ortamı algılandı.');
+                        initWebPush(user);
+                    }
                 }
             });
         } catch (e) {
