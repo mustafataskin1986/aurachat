@@ -2,6 +2,7 @@
 // KİŞİ LİSTESİ + ADMİN PANEL
 // Kullanıcıları Firestore'dan çeker, sohbet önizlemelerini
 // canlı günceller, tıklanınca chat-core.js'deki selectChat()'i çağırır.
+// Uzun basınca çoklu seçip silme (sadece kendi listenden kaldırır).
 // ==========================================
 
 import { db, ADMIN_EMAIL } from "./firebase-init.js";
@@ -21,7 +22,34 @@ const adminModal = document.getElementById('admin-modal');
 const adminModalClose = document.getElementById('admin-modal-close');
 const adminUserList = document.getElementById('admin-user-list');
 
+const chatSelectionToolbar = document.getElementById('chat-selection-toolbar');
+const chatSelectionCancelBtn = document.getElementById('chat-selection-cancel-btn');
+const chatSelectionCountEl = document.getElementById('chat-selection-count');
+const chatSelectionDeleteBtn = document.getElementById('chat-selection-delete-btn');
+
 const contactElementsMap = new Map();
+
+// Sohbet listesi seçme (silme) modu
+let chatSelectionMode = false;
+const selectedChatIds = new Set();
+
+// ------------------------------------------
+// GİZLİ (SİLİNMİŞ) SOHBETLER - sadece bu cihazda/kullanıcıda geçerli.
+// Karşı tarafı etkilemez; o sohbete yeni mesaj gelirse otomatik geri gelir.
+// ------------------------------------------
+function getHiddenChats() {
+    try {
+        return JSON.parse(localStorage.getItem('aurachat_hidden_chats') || '{}');
+    } catch {
+        return {};
+    }
+}
+
+function hideChat(chatId) {
+    const hidden = getHiddenChats();
+    hidden[chatId] = Date.now();
+    localStorage.setItem('aurachat_hidden_chats', JSON.stringify(hidden));
+}
 
 // ------------------------------------------
 // İSKELET (LOADING) LİSTESİ
@@ -89,8 +117,9 @@ export async function loadContacts() {
     onSnapshot(collection(db, "users"), (snapshot) => {
         contactList.innerHTML = '';
         contactElementsMap.clear();
+        exitChatSelectionMode();
 
-        // Genel Oda Elementi
+        // Genel Oda Elementi (seçilemez - kalıcı ortak oda)
         const globalDiv = document.createElement('div');
         globalDiv.className = "flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30";
         globalDiv.innerHTML = `
@@ -105,7 +134,9 @@ export async function loadContacts() {
                 <p class="text-xs text-gray-400 truncate mt-0.5 global-preview">Ortak sohbet alanı</p>
             </div>
         `;
-        globalDiv.addEventListener('click', () => selectChat('global'));
+        globalDiv.addEventListener('click', () => {
+            if (!chatSelectionMode) selectChat('global');
+        });
         contactList.appendChild(globalDiv);
 
         const globalTimeSpan = globalDiv.querySelector('.global-time');
@@ -139,7 +170,21 @@ export async function loadContacts() {
             onSnapshot(query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc")), (msgSnapshot) => {
                 const hasMessages = !msgSnapshot.empty;
 
-                if (!isInContacts && !hasMessages) {
+                // Gizlenmiş (silinmiş) mi kontrol et - gizlendikten SONRA yeni mesaj gelmediyse gizli kalır
+                const hiddenChats = getHiddenChats();
+                const hiddenAt = hiddenChats[chatId];
+                let isHiddenNow = false;
+                if (hiddenAt) {
+                    if (!hasMessages) {
+                        isHiddenNow = true;
+                    } else {
+                        const latestMsg = msgSnapshot.docs[0].data();
+                        const latestTime = latestMsg.createdAt ? latestMsg.createdAt.toDate().getTime() : 0;
+                        isHiddenNow = latestTime <= hiddenAt;
+                    }
+                }
+
+                if ((!isInContacts && !hasMessages) || isHiddenNow) {
                     if (contactElementsMap.has(chatId)) {
                         const item = contactElementsMap.get(chatId);
                         if (item.element && item.element.parentNode) {
@@ -153,6 +198,7 @@ export async function loadContacts() {
                 if (!contactElementsMap.has(chatId)) {
                     const userDiv = document.createElement('div');
                     userDiv.className = "flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
+                    userDiv.dataset.chatId = chatId;
 
                     let avatarContent = '';
                     if (user.avatar) {
@@ -181,8 +227,12 @@ export async function loadContacts() {
                     `;
 
                     userDiv.addEventListener('click', () => {
-                        selectChat({ uid: user.uid, name: user.name, avatar: user.avatar || '' });
+                        if (!chatSelectionMode) {
+                            selectChat({ uid: user.uid, name: user.name, avatar: user.avatar || '' });
+                        }
                     });
+
+                    attachChatSelectionHandlers(userDiv, chatId);
 
                     contactElementsMap.set(chatId, { element: userDiv, lastTimeObj: null });
                     contactList.appendChild(userDiv);
@@ -257,6 +307,131 @@ function sortContactList() {
         return b.lastTimeObj - a.lastTimeObj;
     });
     itemsArray.forEach(item => contactList.appendChild(item.element));
+}
+
+// ------------------------------------------
+// SOHBET LİSTESİ SEÇME MODU (silmek için)
+// ------------------------------------------
+function enterChatSelectionMode(firstChatId) {
+    chatSelectionMode = true;
+    selectedChatIds.clear();
+    if (firstChatId) toggleChatSelectionInternal(firstChatId);
+    updateChatSelectionUI();
+    pushBackState(exitChatSelectionModeFromBack);
+}
+
+function exitChatSelectionModeFromBack() {
+    chatSelectionMode = false;
+    selectedChatIds.forEach((id) => {
+        const item = contactElementsMap.get(id);
+        if (item) item.element.classList.remove('bg-emerald-900/40');
+    });
+    selectedChatIds.clear();
+    updateChatSelectionUI();
+}
+
+function exitChatSelectionMode() {
+    if (!chatSelectionMode) return;
+    exitChatSelectionModeFromBack();
+    popBackState();
+}
+
+function toggleChatSelectionInternal(chatId) {
+    if (selectedChatIds.has(chatId)) {
+        selectedChatIds.delete(chatId);
+    } else {
+        selectedChatIds.add(chatId);
+    }
+    const item = contactElementsMap.get(chatId);
+    if (item) item.element.classList.toggle('bg-emerald-900/40', selectedChatIds.has(chatId));
+}
+
+function toggleChatSelection(chatId) {
+    toggleChatSelectionInternal(chatId);
+    if (selectedChatIds.size === 0) {
+        exitChatSelectionMode();
+    } else {
+        updateChatSelectionUI();
+    }
+}
+
+function updateChatSelectionUI() {
+    if (!chatSelectionToolbar) return;
+    if (chatSelectionMode) {
+        chatSelectionToolbar.classList.remove('hidden');
+        chatSelectionToolbar.classList.add('flex');
+        if (chatSelectionCountEl) chatSelectionCountEl.textContent = `${selectedChatIds.size} seçildi`;
+    } else {
+        chatSelectionToolbar.classList.add('hidden');
+        chatSelectionToolbar.classList.remove('flex');
+    }
+}
+
+if (chatSelectionCancelBtn) {
+    chatSelectionCancelBtn.addEventListener('click', () => exitChatSelectionMode());
+}
+
+if (chatSelectionDeleteBtn) {
+    chatSelectionDeleteBtn.addEventListener('click', () => {
+        if (selectedChatIds.size === 0) return;
+
+        const count = selectedChatIds.size;
+        const proceed = confirm(`${count} sohbet listenden silinsin mi?\n\n(Karşı taraf etkilenmez, yeni mesaj gelirse sohbet geri gelir.)`);
+        if (!proceed) return;
+
+        selectedChatIds.forEach((chatId) => {
+            hideChat(chatId);
+            const item = contactElementsMap.get(chatId);
+            if (item && item.element && item.element.parentNode) {
+                item.element.parentNode.removeChild(item.element);
+            }
+            contactElementsMap.delete(chatId);
+        });
+
+        selectedChatIds.clear();
+        exitChatSelectionMode();
+    });
+}
+
+// Uzun basınca seçim moduna girer / seçer. Seçim modu açıkken tek
+// dokunuş da seçime ekler-çıkarır (ve normal sohbet açmayı engeller).
+function attachChatSelectionHandlers(el, chatId) {
+    let pressTimer = null;
+    let longPressTriggered = false;
+
+    const startPress = () => {
+        longPressTriggered = false;
+        pressTimer = setTimeout(() => {
+            longPressTriggered = true;
+            if (!chatSelectionMode) {
+                enterChatSelectionMode(chatId);
+            } else {
+                toggleChatSelection(chatId);
+            }
+            if (navigator.vibrate) navigator.vibrate(30);
+        }, 450);
+    };
+
+    const cancelPress = () => {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    };
+
+    el.addEventListener('pointerdown', startPress);
+    el.addEventListener('pointerup', cancelPress);
+    el.addEventListener('pointerleave', cancelPress);
+    el.addEventListener('pointercancel', cancelPress);
+
+    el.addEventListener('click', (e) => {
+        if (longPressTriggered) {
+            e.stopPropagation();
+            longPressTriggered = false;
+            return;
+        }
+        if (chatSelectionMode) {
+            e.stopPropagation();
+            toggleChatSelection(chatId);
+        }
+    }, true);
 }
 
 // ------------------------------------------
