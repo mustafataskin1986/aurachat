@@ -31,7 +31,7 @@
     <!-- GİRİŞ EKRANI (OVERLAY - 2 ADIMLI MODAL) -->
     <div id="login-overlay" class="fixed inset-0 z-50 bg-[#0b141a] flex items-center justify-center p-4 hidden">
         <div class="bg-[#111b21] border border-gray-800 rounded-2xl p-6 md:p-8 w-full max-w-md shadow-2xl text-center relative">
-            
+
             <div class="w-16 h-16 bg-gradient-to-tr from-cyan-600 to-emerald-500 rounded-full flex items-center justify-center text-white text-2xl font-bold mx-auto mb-3 shadow-lg">
                 <i class="fa-solid fa-comments"></i>
             </div>
@@ -39,7 +39,7 @@
             <p id="step-subtitle" class="text-gray-400 text-xs mb-5">Giriş yapmak için bilgilerinizi girin kanka.</p>
 
             <form id="login-form" class="space-y-4 text-left" autocomplete="off">
-                
+
                 <!-- 1. ADIM: E-POSTA VE ŞİFRE -->
                 <div id="step-1" class="space-y-4">
                     <div>
@@ -124,9 +124,9 @@
             </div>
             <h3 class="text-white font-bold text-lg mb-1">Şifreni mi Unuttun?</h3>
             <p class="text-gray-400 text-xs mb-4">E-posta adresini gir, sana şifre sıfırlama bağlantısı gönderelim kanka.</p>
-            
+
             <input type="email" id="forgot-email-input" placeholder="E-posta adresin" class="w-full bg-[#202c33] text-white text-sm px-4 py-3 rounded-xl border border-transparent focus:border-emerald-500/50 focus:outline-none mb-4">
-            
+
             <div class="flex space-x-2">
                 <button type="button" id="btn-forgot-cancel" class="w-1/2 bg-[#202c33] hover:bg-gray-700 text-gray-300 font-medium py-2.5 rounded-xl text-sm transition">İptal</button>
                 <button type="button" id="btn-forgot-submit" class="w-1/2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-xl text-sm transition flex items-center justify-center space-x-1">
@@ -175,10 +175,10 @@
 
     <!-- Ana Konteyner -->
     <div class="bg-[#111b21] w-full max-w-6xl h-full md:h-[92vh] flex shadow-2xl rounded-none md:rounded-2xl overflow-hidden border border-gray-800/80 relative">
-        
+
         <!-- SOL TARAF: Sohbet ve Kişi Listesi -->
         <div id="sidebar" class="w-full md:w-[38%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute md:relative inset-y-0 left-0 z-20 transition-transform duration-300">
-            
+
             <!-- SABİT ÜST BAR (WhatsApp gibi sadece başlık) -->
             <div class="bg-[#202c33] px-4 py-3.5 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
@@ -281,9 +281,9 @@
                 <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition" id="attach-btn"></i>
                 <input type="file" id="image-input" accept="image/*" class="hidden">
-                
+
                 <textarea id="message-input" name="aura_chat_msg_input_no_autofill" rows="1" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="true" data-lpignore="true" data-form-type="other" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition resize-none overflow-hidden leading-tight" style="height:42px; max-height:42px;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
-                
+
                 <button id="send-btn" class="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-500 transition shadow flex-shrink-0">
                     <i class="fa-solid fa-paper-plane text-sm"></i>
                 </button>
@@ -386,6 +386,96 @@
     <script type="module" src="js/app-init.js"></script>
     <script type="module" src="js/profile.js"></script>
     <script type="module" src="js/video-call.js"></script>
+
+    <!-- PUSH NOTIFICATION (FCM / CAPACITOR) ENTEGRASYONU -->
+    <script type="module">
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        async function initCapacitorPush(user) {
+            if (!user) return;
+
+            // Capacitor Android/iOS Native ortamında mıyız kontrol et
+            const Capacitor = window.Capacitor;
+            if (!Capacitor || (typeof Capacitor.isNativePlatform === 'function' && !Capacitor.isNativePlatform())) {
+                console.log('Web tarayıcı ortamındasınız. Native Push Bildirimleri devre dışı.');
+                return;
+            }
+
+            const PushNotifications = Capacitor.Plugins ? Capacitor.Plugins.PushNotifications : null;
+            if (!PushNotifications) {
+                console.warn('Capacitor PushNotifications eklentisi bulunamadı.');
+                return;
+            }
+
+            try {
+                // 1. Bildirim İzinlerini İste
+                let permStatus = await PushNotifications.checkPermissions();
+                if (permStatus.receive === 'prompt' || permStatus.receive === 'prompt-with-rationale') {
+                    permStatus = await PushNotifications.requestPermissions();
+                }
+
+                if (permStatus.receive !== 'granted') {
+                    console.warn('Bildirim izni reddedildi kanka.');
+                    return;
+                }
+
+                // 2. Firebase Cloud Messaging (FCM) Kaydını Başlat
+                await PushNotifications.register();
+
+                // 3. FCM Token Alındığında Firestore'a Yaz
+                PushNotifications.addListener('registration', async (token) => {
+                    console.log('✅ FCM Token Alındı:', token.value);
+                    try {
+                        const db = getFirestore();
+                        const userRef = doc(db, 'users', user.uid);
+                        await setDoc(userRef, {
+                            fcmToken: token.value,
+                            lastTokenUpdate: new Date().toISOString(),
+                            platform: Capacitor.getPlatform ? Capacitor.getPlatform() : 'android'
+                        }, { merge: true });
+                        console.log('🚀 FCM Token Firestore kullanıcı profiline başarıyla kaydedildi.');
+                    } catch (err) {
+                        console.error('FCM Token Firestore kaydı hatası:', err);
+                    }
+                });
+
+                // 4. Kayıt Hatası
+                PushNotifications.addListener('registrationError', (error) => {
+                    console.error('Push Notification Kayıt Hatası:', error);
+                });
+
+                // 5. Uygulama Açıkken Bildirim Geldiğinde
+                PushNotifications.addListener('pushNotificationReceived', (notification) => {
+                    console.log('Uygulama açıkken bildirim düştü:', notification);
+                });
+
+                // 6. Bildirime Tıklandığında Yapılacak İşlem
+                PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
+                    console.log('Bildirime tıklandı:', notification);
+                    const data = notification.notification ? notification.notification.data : null;
+                    if (data && data.chatId) {
+                        window.location.hash = `#chat/${data.chatId}`;
+                    }
+                });
+
+            } catch (error) {
+                console.error('Push Notification yapılandırılırken hata:', error);
+            }
+        }
+
+        // Firebase Auth Dinleyicisi
+        try {
+            const auth = getAuth();
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    initCapacitorPush(user);
+                }
+            });
+        } catch (e) {
+            console.error('Auth push dinleyicisi başlatılamadı:', e);
+        }
+    </script>
 
     <script>
         function syncViewport() {
