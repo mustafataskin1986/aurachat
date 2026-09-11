@@ -45,26 +45,9 @@ jobs:
         if: steps.checksecret.outputs.exists == 'false'
         run: |
           echo "UYARI: ANDROID_KEYSTORE_BASE64 secret'ı henüz ayarlanmamış."
-          echo "Bu derlemenin SHA-1'i, secret'ı eklediğinde DEĞİŞECEK - build bitince inen 'keystore-backup' dosyasını indirip secret olarak ekle."
           rm -rf ~/.android/debug.keystore
           mkdir -p ~/.android
           keytool -genkeypair -alias androiddebugkey -keypass android -keystore ~/.android/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12
-
-      - name: SHA-1 Parmak İzinizi Ekrana Yazdır
-        run: |
-          keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep "SHA1:" || true
-
-      - name: Keystore'u Yedek Olarak Hazırla (secret henüz yoksa)
-        if: steps.checksecret.outputs.exists == 'false'
-        run: |
-          base64 -w 0 ~/.android/debug.keystore > keystore-base64.txt
-
-      - name: Keystore Yedeğini Artifact Olarak Yükle (secret henüz yoksa)
-        if: steps.checksecret.outputs.exists == 'false'
-        uses: actions/upload-artifact@v4
-        with:
-          name: keystore-backup-SET-AS-SECRET-ANDROID_KEYSTORE_BASE64
-          path: keystore-base64.txt
 
       - name: Bağımlılıkları Yükle
         run: |
@@ -119,18 +102,29 @@ jobs:
           npx cap copy android
           npx cap sync android
 
-      - name: Android İzinlerini ve String Yapılandırmasını Düzenle
+      - name: Firebase google-services.json Dosyasını Ekle
+        run: |
+          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+            echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+            echo "google-services.json başarıyla oluşturuldu."
+          else
+            echo "UYARI: GOOGLE_SERVICES_JSON secret'ı bulunamadı!"
+          fi
+
+      - name: Android İzinlerini ve Gradle Bağımlılıklarını Düzenle
         run: |
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
           STRINGS_PATH="android/app/src/main/res/values/strings.xml"
+          BUILD_GRADLE="android/build.gradle"
+          APP_BUILD_GRADLE="android/app/build.gradle"
 
+          # Manifest İzinleri
           if [ -f "$MANIFEST_PATH" ]; then
             add_perm() {
               if ! grep -q "$1" "$MANIFEST_PATH"; then
                 sed -i "/<\/manifest>/i \    <uses-permission android:name=\"$1\" \/>" "$MANIFEST_PATH"
               fi
             }
-
             add_perm "android.permission.READ_CONTACTS"
             add_perm "android.permission.POST_NOTIFICATIONS"
             add_perm "android.permission.CAMERA"
@@ -141,6 +135,19 @@ jobs:
             add_perm "android.permission.READ_EXTERNAL_STORAGE"
             add_perm "android.permission.WRITE_EXTERNAL_STORAGE"
             add_perm "android.permission.VIBRATE"
+          fi
+
+          # Google Services Gradle eklentileri
+          if [ -f "$BUILD_GRADLE" ]; then
+            if ! grep -q "com.google.gms:google-services" "$BUILD_GRADLE"; then
+              sed -i 's/dependencies {/dependencies {\n        classpath "com.google.gms:google-services:4.4.0"/' "$BUILD_GRADLE"
+            fi
+          fi
+
+          if [ -f "$APP_BUILD_GRADLE" ]; then
+            if ! grep -q "com.google.gms.google-services" "$APP_BUILD_GRADLE"; then
+              echo 'apply plugin: "com.google.gms.google-services"' >> "$APP_BUILD_GRADLE"
+            fi
           fi
 
           if [ -f "$STRINGS_PATH" ]; then
