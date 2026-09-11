@@ -82,7 +82,8 @@ async function sendPushToUser(receiverUid, title, body) {
             return;
         }
 
-        const response = await fetch('/api/send-notification', {
+        // Tam Vercel adresi kullanıyoruz:
+        const response = await fetch('https://aurachat-amber.vercel.app/api/send-notification', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -92,7 +93,15 @@ async function sendPushToUser(receiverUid, title, body) {
             })
         });
 
-        const resData = await response.json();
+        const textResponse = await response.text();
+        let resData;
+        try {
+            resData = JSON.parse(textResponse);
+        } catch (e) {
+            console.error("❌ Vercel backend JSON yerine metin/HTML döndürdü:", textResponse);
+            return;
+        }
+
         if (response.ok && resData.success) {
             console.log("🚀 Bildirim başarıyla fırlatıldı! Yanıt:", resData);
         } else {
@@ -102,6 +111,7 @@ async function sendPushToUser(receiverUid, title, body) {
         console.error("❌ Bildirim fırlatma hatası:", err);
     }
 }
+
 
 // ------------------------------------------
 // SOHBET SEÇİMİ
