@@ -13,6 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
+import { watchCallForChat } from "./video-call.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
@@ -110,6 +111,7 @@ export function selectChat(otherUser) {
     }
 
     loadMessages(currentChatId);
+    watchCallForChat(currentChatId);
 }
 
 // "yazıyor..." durumunu dinler (uid bazlı alan adıyla)
