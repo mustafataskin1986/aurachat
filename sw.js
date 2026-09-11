@@ -65,12 +65,12 @@ importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js'
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-    apiKey: "SENIN_API_KEY",
-    authDomain: "SENIN_AUTH_DOMAIN",
-    projectId: "SENIN_PROJECT_ID",
-    storageBucket: "SENIN_STORAGE_BUCKET",
-    messagingSenderId: "SENIN_MESSAGING_SENDER_ID",
-    appId: "SENIN_APP_ID"
+    apiKey: "AIzaSyDTOmajjZsfnikrJLM1UVmXMlUobFNyJGs",
+    authDomain: "aurachat-99f69.firebaseapp.com",
+    projectId: "aurachat-99f69",
+    storageBucket: "aurachat-99f69.firebasestorage.app",
+    messagingSenderId: "447747395966",
+    appId: "1:447747395966:web:7db71f9f912a188d17632f"
 });
 
 const messaging = firebase.messaging();
@@ -86,4 +86,3 @@ messaging.onBackgroundMessage((payload) => {
     };
     self.registration.showNotification(title, options);
 });
-
