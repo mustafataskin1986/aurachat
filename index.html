@@ -254,7 +254,7 @@
                     </div>
                 </div>
                 <div class="flex space-x-5 text-gray-400 text-lg">
-                    <i class="fa-solid fa-video cursor-pointer hover:text-white transition"></i>
+                    <i class="fa-solid fa-video cursor-pointer hover:text-white transition" id="video-call-btn"></i>
                     <i class="fa-solid fa-paperclip cursor-pointer hover:text-white transition"></i>
                     <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition"></i>
                 </div>
@@ -346,12 +346,46 @@
         <img id="lightbox-img" src="" class="max-w-full max-h-full rounded-lg object-contain">
     </div>
 
+    <!-- GELEN ARAMA EKRANI -->
+    <div id="incoming-call-overlay" class="fixed inset-0 z-[70] bg-black/95 hidden flex-col items-center justify-center p-6 text-center">
+        <div id="incoming-caller-avatar" class="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg mb-4 overflow-hidden flex-shrink-0"></div>
+        <p class="text-gray-400 text-sm mb-1">Görüntülü arama</p>
+        <h3 id="incoming-caller-name" class="text-white text-xl font-semibold mb-10"></h3>
+        <div class="flex items-center space-x-12">
+            <button id="btn-decline-call" class="w-16 h-16 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-2xl flex items-center justify-center shadow-lg transition">
+                <i class="fa-solid fa-phone-slash"></i>
+            </button>
+            <button id="btn-accept-call" class="w-16 h-16 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-2xl flex items-center justify-center shadow-lg transition animate-pulse">
+                <i class="fa-solid fa-video"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- AKTİF ARAMA EKRANI -->
+    <div id="active-call-overlay" class="fixed inset-0 z-[70] bg-black hidden flex-col">
+        <video id="remote-video" autoplay playsinline class="absolute inset-0 w-full h-full object-cover bg-black"></video>
+        <video id="local-video" autoplay playsinline muted class="absolute bottom-24 right-4 w-28 h-40 rounded-xl object-cover shadow-lg border border-white/20 z-10 bg-gray-900"></video>
+        <p id="call-status-text" class="absolute top-6 left-0 right-0 text-center text-white text-sm font-medium z-10"></p>
+        <div class="absolute bottom-6 left-0 right-0 flex items-center justify-center space-x-6 z-10">
+            <button id="btn-toggle-mic" class="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 text-white text-lg flex items-center justify-center transition">
+                <i class="fa-solid fa-microphone"></i>
+            </button>
+            <button id="btn-hangup" class="w-16 h-16 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-2xl flex items-center justify-center shadow-lg transition">
+                <i class="fa-solid fa-phone-slash"></i>
+            </button>
+            <button id="btn-toggle-cam" class="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 text-white text-lg flex items-center justify-center transition">
+                <i class="fa-solid fa-video"></i>
+            </button>
+        </div>
+    </div>
+
     <!-- GİRİŞ MODÜLÜ -->
     <script type="module" src="js/giris.js"></script>
 
     <!-- UYGULAMA MANTIĞI (chat-core.js ve contacts.js'i başlatır) -->
     <script type="module" src="js/app-init.js"></script>
     <script type="module" src="js/profile.js"></script>
+    <script type="module" src="js/video-call.js"></script>
 
     <script>
         function syncViewport() {
