@@ -9,7 +9,7 @@
 import { db } from "./firebase-init.js";
 import {
     collection, addDoc, onSnapshot, query, orderBy,
-    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion
+    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, getDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
@@ -57,6 +57,36 @@ export function getCurrentChatId() {
 
 export function getCurrentUser() {
     return currentUser;
+}
+
+// ------------------------------------------
+// BİLDİRİM GÖNDERME YARDIMCI FONKSİYONU
+// ------------------------------------------
+async function sendPushToUser(receiverUid, title, body) {
+    if (!receiverUid) return;
+    try {
+        const userDoc = await getDoc(doc(db, "users", receiverUid));
+        if (!userDoc.exists()) return;
+
+        const receiverToken = userDoc.data()?.fcmToken;
+        if (!receiverToken) {
+            console.log("Alıcının fcmToken bilgisi bulunamadı.");
+            return;
+        }
+
+        await fetch('/api/send-notification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                token: receiverToken,
+                title: title,
+                body: body
+            })
+        });
+        console.log("🚀 Bildirim fırlatıldı!");
+    } catch (err) {
+        console.error("Bildirim fırlatma hatası:", err);
+    }
 }
 
 // ------------------------------------------
@@ -281,7 +311,7 @@ function loadMessages(chatId) {
 
             const isMine = currentUser && msg.senderUid
                 ? msg.senderUid === currentUser.uid
-                : (currentUser && msg.senderName === currentUser.name); // eski mesajlarla geriye dönük uyumluluk
+                : (currentUser && msg.senderName === currentUser.name);
 
             if (currentChatId === chatId && chatId !== 'global' && !isMine && msg.read === false) {
                 updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), { read: true });
@@ -338,8 +368,6 @@ function renderMessage(msg, isMine, msgId) {
     messageContainer.appendChild(msgDiv);
 }
 
-// Uzun basınca seçim moduna girer / seçer. Seçim modu açıkken tek
-// dokunuş da seçime ekler-çıkarır (ve resim büyütmeyi engeller).
 function attachSelectionHandlers(el, msgId) {
     let pressTimer = null;
     let longPressTriggered = false;
@@ -366,8 +394,6 @@ function attachSelectionHandlers(el, msgId) {
     el.addEventListener('pointerleave', cancelPress);
     el.addEventListener('pointercancel', cancelPress);
 
-    // capture:true - resmin kendi onclick'inden ÖNCE çalışsın ki
-    // seçim modundayken resme tıklamak lightbox açmasın
     el.addEventListener('click', (e) => {
         if (longPressTriggered) {
             e.stopPropagation();
@@ -387,7 +413,6 @@ function scrollToBottom() {
     }, 50);
 }
 
-// Resme tıklayınca sayfa içi büyütme (data: URI'lerde window.open engellendiği için)
 window.openImageLightbox = function (src) {
     const lightbox = document.getElementById('image-lightbox');
     const lightboxImg = document.getElementById('lightbox-img');
@@ -405,7 +430,6 @@ function doCloseLightbox() {
     lightbox.classList.remove('flex');
 }
 
-// Dışına tıklayınca kapatma (UI üzerinden - history'yi de senkron tutar)
 window.closeImageLightboxUI = function () {
     doCloseLightbox();
     popBackState();
@@ -435,6 +459,11 @@ async function sendMessage() {
             createdAt: serverTimestamp(),
             read: false
         });
+
+        // ALICIYA PUSH BİLDİRİM GÖNDER
+        if (currentChatId !== 'global' && currentOtherUid) {
+            sendPushToUser(currentOtherUid, `${currentUser.name}`, text);
+        }
 
         scrollToBottom();
     } catch (e) {
@@ -471,10 +500,6 @@ messageInput.addEventListener('input', () => {
 
 // ------------------------------------------
 // GÖRSEL GÖNDERME
-// Storage kullanmadan, avatar ile aynı yöntemle base64 olarak
-// doğrudan Firestore mesaj dokümanına gömülür.
-// Hedef: ~200-300KB - önce boyutu küçültür, olmazsa kaliteyi düşürür,
-// yine olmazsa boyutu daha da küçültüp tekrar dener.
 // ------------------------------------------
 function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
     return new Promise((resolve, reject) => {
@@ -498,7 +523,6 @@ function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
                             height = maxDim;
                         }
                     } else if (maxDim !== dimensionSteps[0]) {
-                        // Görsel zaten bu boyuttan küçük, daha fazla küçültmenin anlamı yok
                         break;
                     }
 
@@ -510,8 +534,8 @@ function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
 
                     for (const q of qualitySteps) {
                         const dataUrl = canvas.toDataURL('image/jpeg', q);
-                        bestResult = dataUrl; // elimizdeki en küçük denemeyi sakla
-                        const approxBytes = dataUrl.length * 0.75; // base64 -> yaklaşık byte
+                        bestResult = dataUrl;
+                        const approxBytes = dataUrl.length * 0.75;
                         if (approxBytes <= targetBytes) {
                             resolve(dataUrl);
                             break outer;
@@ -536,7 +560,7 @@ if (attachBtn && imageInput) {
     imageInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file || !currentUser || !currentChatId) return;
-        imageInput.value = ''; // aynı dosyayı tekrar seçebilmek için sıfırla
+        imageInput.value = '';
 
         if (!file.type.startsWith('image/')) {
             alert("Lütfen bir görsel dosyası seç kanka!");
@@ -550,7 +574,6 @@ if (attachBtn && imageInput) {
         try {
             const dataUrl = await compressImageToDataUrl(file);
 
-            // Firestore doküman limiti 1MB - güvenli pay bırak
             if (dataUrl.length * 0.75 > 900 * 1024) {
                 alert("Bu görsel çok büyük kanka, daha düşük çözünürlüklü bir fotoğraf dene.");
                 return;
@@ -566,6 +589,11 @@ if (attachBtn && imageInput) {
                 createdAt: serverTimestamp(),
                 read: false
             });
+
+            // ALICIYA PUSH BİLDİRİM GÖNDER (Görsel için)
+            if (currentChatId !== 'global' && currentOtherUid) {
+                sendPushToUser(currentOtherUid, `${currentUser.name}`, "📷 Bir fotoğraf gönderdi");
+            }
 
             scrollToBottom();
         } catch (err) {
