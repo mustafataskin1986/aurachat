@@ -238,6 +238,19 @@
                 </div>
             </div>
 
+            <!-- MESAJ SEÇİM TOOLBAR'I (silme modu) -->
+            <div id="selection-toolbar" class="hidden absolute top-0 left-0 right-0 bg-[#2a3942] px-4 py-3 items-center justify-between border-b border-gray-800 flex-shrink-0 z-20">
+                <div class="flex items-center space-x-4">
+                    <button id="selection-cancel-btn" class="text-gray-300 hover:text-white text-lg px-1">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <span id="selection-count" class="text-white font-medium text-sm">0 seçildi</span>
+                </div>
+                <button id="selection-delete-btn" class="text-gray-300 hover:text-rose-400 text-lg px-1">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+
             <!-- Mesajların Akış Alanı -->
             <div id="message-container" class="flex-1 min-h-0 p-4 md:p-6 pb-10 overflow-y-auto space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat opacity-95"></div>
 
