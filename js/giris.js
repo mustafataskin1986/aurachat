@@ -214,7 +214,7 @@ if (btnStep1Next) {
                 const userData = userDocSnap.data();
                 const userObj = {
                     uid: userData.uid || userCred.user.uid,
-                    name: userData.name || userCred.user.uid,
+                    name: userData.name || '',
                     email: userData.email,
                     phone: userData.phone || '',
                     avatar: userData.avatar || ''
@@ -298,7 +298,7 @@ if (btnGoogleSignIn) {
                 const userData = userDocSnap.data();
                 const userObj = {
                     uid: userData.uid || user.uid,
-                    name: userData.name || user.uid,
+                    name: userData.name || '',
                     email: userData.email,
                     phone: userData.phone || '',
                     avatar: userData.avatar || ''
