@@ -63,18 +63,26 @@ export function getCurrentUser() {
 // BİLDİRİM GÖNDERME YARDIMCI FONKSİYONU
 // ------------------------------------------
 async function sendPushToUser(receiverUid, title, body) {
-    if (!receiverUid) return;
+    if (!receiverUid) {
+        console.warn("⚠️ sendPushToUser: receiverUid eksik.");
+        return;
+    }
     try {
         const userDoc = await getDoc(doc(db, "users", receiverUid));
-        if (!userDoc.exists()) return;
-
-        const receiverToken = userDoc.data()?.fcmToken;
-        if (!receiverToken) {
-            console.log("Alıcının fcmToken bilgisi bulunamadı.");
+        if (!userDoc.exists()) {
+            console.warn(`⚠️ sendPushToUser: '${receiverUid}' ID'li kullanıcı dokümanı bulunamadı.`);
             return;
         }
 
-        await fetch('/api/send-notification', {
+        const userData = userDoc.data();
+        const receiverToken = userData?.fcmToken || userData?.fcm_token || userData?.pushToken;
+
+        if (!receiverToken) {
+            console.warn("⚠️ sendPushToUser: Alıcının veritabanında fcmToken bilgisi yok.");
+            return;
+        }
+
+        const response = await fetch('/api/send-notification', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -83,9 +91,15 @@ async function sendPushToUser(receiverUid, title, body) {
                 body: body
             })
         });
-        console.log("🚀 Bildirim fırlatıldı!");
+
+        const resData = await response.json();
+        if (response.ok && resData.success) {
+            console.log("🚀 Bildirim başarıyla fırlatıldı! Yanıt:", resData);
+        } else {
+            console.error("❌ Bildirim API hatası:", resData);
+        }
     } catch (err) {
-        console.error("Bildirim fırlatma hatası:", err);
+        console.error("❌ Bildirim fırlatma hatası:", err);
     }
 }
 
@@ -112,8 +126,8 @@ export function selectChat(otherUser) {
             console.warn("selectChat: currentUser.uid yok, önce setCurrentUser çağrılmalı");
             return;
         }
-        currentOtherUid = otherUser.uid;
-        currentChatId = getChatId(currentUser.uid, otherUser.uid);
+        currentOtherUid = otherUser.uid || otherUser.id;
+        currentChatId = getChatId(currentUser.uid, currentOtherUid);
         currentChatName = otherUser.name;
 
         activeChatName.textContent = currentChatName;
@@ -163,7 +177,6 @@ function listenToChatDoc(chatId, otherUid) {
 }
 
 // Sohbet görünümünü kapatır (sadece arayüz - history'ye dokunmaz).
-// Hem hardware geri tuşundan hem "geri" butonundan çağrılır.
 function doCloseChatView() {
     if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
     if (unsubscribeChatDoc) { unsubscribeChatDoc(); unsubscribeChatDoc = null; }
@@ -180,7 +193,7 @@ function doCloseChatView() {
     }
 }
 
-// Mobilde "geri" butonu (UI üzerinden kapatma - history'yi de senkron tutar)
+// Mobilde "geri" butonu
 backBtn.addEventListener('click', () => {
     doCloseChatView();
     popBackState();
@@ -197,7 +210,6 @@ function enterSelectionMode(firstMsgId) {
     pushBackState(exitSelectionModeFromBack);
 }
 
-// Hardware geri tuşundan çağrılır (history'ye tekrar dokunmaz)
 function exitSelectionModeFromBack() {
     selectionMode = false;
     selectedMessageIds.clear();
@@ -205,7 +217,6 @@ function exitSelectionModeFromBack() {
     updateSelectionUI();
 }
 
-// UI'dan (X butonu, hepsi silindiğinde vb.) çağrılır
 function exitSelectionMode() {
     if (!selectionMode) return;
     exitSelectionModeFromBack();
@@ -309,11 +320,11 @@ function loadMessages(chatId) {
                 return;
             }
 
-            const isMine = currentUser && msg.senderUid
-                ? msg.senderUid === currentUser.uid
-                : (currentUser && msg.senderName === currentUser.name);
+            // Güvenli isMine kontrolü
+            const isMine = !!(currentUser && currentUser.uid && msg.senderUid && msg.senderUid === currentUser.uid);
 
-            if (currentChatId === chatId && chatId !== 'global' && !isMine && msg.read === false) {
+            // Sadece ALICI sohbet alanındaysa ve mesaj okunmamışsa OKUNDU yap
+            if (currentUser && currentUser.uid && currentChatId === chatId && chatId !== 'global' && !isMine && msg.read === false) {
                 updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), { read: true });
             }
 
