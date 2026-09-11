@@ -5,8 +5,9 @@
 // Çıkış yap burada.
 // ==========================================
 
-import { db } from "./firebase-init.js";
-import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { db, auth } from "./firebase-init.js";
+import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { getCurrentUser, setCurrentUser } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
@@ -38,12 +39,13 @@ function renderAvatar(user) {
     }
 }
 
-function openProfilePanel() {
-    const user = getCurrentUser();
+async function openProfilePanel() {
+    let user = getCurrentUser();
     if (!user || !profilePanel) return;
 
     pendingAvatarBase64 = null;
 
+    // 1. Önce geçici verileri temiz bir şekilde göster
     if (profileName) profileName.value = user.name || '';
     if (profileAbout) profileAbout.value = user.about || '';
     if (profileEmail) profileEmail.textContent = user.email || '-';
@@ -53,6 +55,39 @@ function openProfilePanel() {
     profilePanel.classList.remove('hidden');
     profilePanel.classList.add('flex');
     pushBackState(closeProfilePanel);
+
+    // 2. Firestore'dan güncel ve taze kullanıcı dokümanını çek
+    try {
+        const userDocRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userDocRef);
+
+        if (userSnap.exists()) {
+            const freshData = userSnap.data();
+
+            // Güncel bilgileri objeye ve ekrana yansıt
+            user = {
+                ...user,
+                name: freshData.name || user.name || '',
+                about: freshData.about || user.about || '',
+                email: freshData.email || user.email || '',
+                phone: freshData.phone || user.phone || '',
+                avatar: freshData.avatar || user.avatar || null
+            };
+
+            // Önbellekleri ve state'i tazele
+            localStorage.setItem('aurachat_user', JSON.stringify(user));
+            setCurrentUser(user);
+
+            // Arayüz elemanlarını taze veriyle doldur
+            if (profileName) profileName.value = user.name;
+            if (profileAbout) profileAbout.value = user.about;
+            if (profileEmail) profileEmail.textContent = user.email || '-';
+            if (profilePhone) profilePhone.textContent = user.phone || '-';
+            renderAvatar(user);
+        }
+    } catch (err) {
+        console.error("Taze profil verisi alınamadı:", err);
+    }
 }
 
 function closeProfilePanel() {
@@ -131,10 +166,19 @@ if (profileSaveBtn) {
     });
 }
 
+// Çıkış yaparken hem Firebase oturumunu hem tüm önbelleği temizle
 if (profileLogoutBtn) {
-    profileLogoutBtn.addEventListener('click', () => {
-        localStorage.removeItem('aurachat_user');
-        localStorage.removeItem('aurachat_contacts_cache');
-        location.reload();
+    profileLogoutBtn.addEventListener('click', async () => {
+        try {
+            if (auth) await signOut(auth);
+            localStorage.clear();
+            sessionStorage.clear();
+            location.reload();
+        } catch (err) {
+            console.error("Çıkış yapılırken hata oluştu:", err);
+            localStorage.clear();
+            sessionStorage.clear();
+            location.reload();
+        }
     });
 }
