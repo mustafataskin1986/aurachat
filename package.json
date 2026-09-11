@@ -5,7 +5,8 @@
   "main": "index.html",
   "dependencies": {
     "@capacitor/core": "^5.0.0",
-    "@codetrix-studio/capacitor-google-auth": "^3.3.0"
+    "@codetrix-studio/capacitor-google-auth": "^3.3.0",
+    "firebase-admin": "^12.0.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^5.0.0",
