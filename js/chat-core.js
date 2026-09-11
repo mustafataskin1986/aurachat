@@ -9,7 +9,7 @@
 import { db } from "./firebase-init.js";
 import {
     collection, addDoc, onSnapshot, query, orderBy,
-    serverTimestamp, doc, setDoc, updateDoc
+    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
@@ -26,6 +26,10 @@ const backBtn = document.getElementById('back-btn');
 const activeChatName = document.getElementById('active-chat-name');
 const activeChatAvatar = document.getElementById('active-chat-avatar');
 const activeChatStatus = document.getElementById('active-chat-status');
+const selectionToolbar = document.getElementById('selection-toolbar');
+const selectionCancelBtn = document.getElementById('selection-cancel-btn');
+const selectionCountEl = document.getElementById('selection-count');
+const selectionDeleteBtn = document.getElementById('selection-delete-btn');
 
 // Modül durumu
 let currentUser = null;       // { uid, name, email, phone, avatar }
@@ -35,6 +39,11 @@ let currentOtherUid = null;   // 'global' sohbetinde null
 let unsubscribeMessages = null;
 let unsubscribeChatDoc = null;
 let typingTimeout = null;
+
+// Mesaj seçme (silme) modu
+let selectionMode = false;
+const selectedMessageIds = new Set();
+const messageElementsById = new Map();
 
 // index.html / giris sonrası bir kere çağrılır
 export function setCurrentUser(user) {
@@ -55,6 +64,7 @@ export function getCurrentUser() {
 // ------------------------------------------
 export function selectChat(otherUser) {
     if (unsubscribeChatDoc) { unsubscribeChatDoc(); unsubscribeChatDoc = null; }
+    exitSelectionMode();
 
     if (otherUser === 'global') {
         currentChatId = 'global';
@@ -130,6 +140,7 @@ function doCloseChatView() {
     currentChatName = '';
     currentOtherUid = null;
     messageContainer.innerHTML = '';
+    exitSelectionMode();
 
     if (window.innerWidth < 768) {
         sidebar.classList.remove('-translate-x-full');
@@ -144,6 +155,109 @@ backBtn.addEventListener('click', () => {
 });
 
 // ------------------------------------------
+// MESAJ SEÇME MODU (silmek için)
+// ------------------------------------------
+function enterSelectionMode(firstMsgId) {
+    selectionMode = true;
+    selectedMessageIds.clear();
+    if (firstMsgId) toggleMessageSelectionInternal(firstMsgId);
+    updateSelectionUI();
+    pushBackState(exitSelectionModeFromBack);
+}
+
+// Hardware geri tuşundan çağrılır (history'ye tekrar dokunmaz)
+function exitSelectionModeFromBack() {
+    selectionMode = false;
+    selectedMessageIds.clear();
+    messageElementsById.forEach((el) => el.classList.remove('bg-emerald-900/40'));
+    updateSelectionUI();
+}
+
+// UI'dan (X butonu, hepsi silindiğinde vb.) çağrılır
+function exitSelectionMode() {
+    if (!selectionMode) return;
+    exitSelectionModeFromBack();
+    popBackState();
+}
+
+function toggleMessageSelectionInternal(msgId) {
+    if (selectedMessageIds.has(msgId)) {
+        selectedMessageIds.delete(msgId);
+    } else {
+        selectedMessageIds.add(msgId);
+    }
+    const el = messageElementsById.get(msgId);
+    if (el) el.classList.toggle('bg-emerald-900/40', selectedMessageIds.has(msgId));
+}
+
+function toggleMessageSelection(msgId) {
+    toggleMessageSelectionInternal(msgId);
+    if (selectedMessageIds.size === 0) {
+        exitSelectionMode();
+    } else {
+        updateSelectionUI();
+    }
+}
+
+function updateSelectionUI() {
+    if (!selectionToolbar) return;
+    if (selectionMode) {
+        selectionToolbar.classList.remove('hidden');
+        selectionToolbar.classList.add('flex');
+        if (selectionCountEl) selectionCountEl.textContent = `${selectedMessageIds.size} seçildi`;
+    } else {
+        selectionToolbar.classList.add('hidden');
+        selectionToolbar.classList.remove('flex');
+    }
+}
+
+if (selectionCancelBtn) {
+    selectionCancelBtn.addEventListener('click', () => exitSelectionMode());
+}
+
+if (selectionDeleteBtn) {
+    selectionDeleteBtn.addEventListener('click', async () => {
+        if (selectedMessageIds.size === 0 || !currentChatId || !currentUser) return;
+
+        const ids = Array.from(selectedMessageIds);
+        const allMine = ids.every((id) => {
+            const el = messageElementsById.get(id);
+            return el && el.dataset.mine === 'true';
+        });
+
+        let deleteForEveryone = false;
+
+        if (allMine) {
+            deleteForEveryone = confirm(
+                `${ids.length} mesajı herkesten mi silmek istiyorsun?\n\nTamam = Herkesten Sil\nİptal = Sadece Kendimden Sil`
+            );
+        } else {
+            const proceed = confirm(`${ids.length} mesaj sohbetinden (sadece senden) silinsin mi?`);
+            if (!proceed) return;
+        }
+
+        try {
+            for (const id of ids) {
+                const el = messageElementsById.get(id);
+                const isMine = el && el.dataset.mine === 'true';
+
+                if (deleteForEveryone && isMine) {
+                    await deleteDoc(doc(db, "chats", currentChatId, "messages", id));
+                } else {
+                    await updateDoc(doc(db, "chats", currentChatId, "messages", id), {
+                        deletedFor: arrayUnion(currentUser.uid)
+                    });
+                }
+            }
+        } catch (err) {
+            alert("Mesajlar silinemedi: " + err.message);
+        }
+
+        exitSelectionMode();
+    });
+}
+
+// ------------------------------------------
 // MESAJ YÜKLEME / DİNLEME
 // ------------------------------------------
 function loadMessages(chatId) {
@@ -153,8 +267,15 @@ function loadMessages(chatId) {
 
     unsubscribeMessages = onSnapshot(q, (snapshot) => {
         messageContainer.innerHTML = '';
+        messageElementsById.clear();
+
         snapshot.forEach((docSnap) => {
             const msg = docSnap.data();
+
+            // Sadece benden silinmiş mesajları atla
+            if (currentUser && Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) {
+                return;
+            }
 
             const isMine = currentUser && msg.senderUid
                 ? msg.senderUid === currentUser.uid
@@ -164,7 +285,7 @@ function loadMessages(chatId) {
                 updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), { read: true });
             }
 
-            renderMessage(msg, isMine);
+            renderMessage(msg, isMine, docSnap.id);
         });
         scrollToBottom();
     }, (error) => {
@@ -172,8 +293,10 @@ function loadMessages(chatId) {
     });
 }
 
-function renderMessage(msg, isMine) {
+function renderMessage(msg, isMine, msgId) {
     const msgDiv = document.createElement('div');
+    msgDiv.dataset.msgId = msgId;
+    msgDiv.dataset.mine = isMine ? 'true' : 'false';
     const timeStr = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi';
     const isImage = msg.type === 'image' && msg.imageUrl;
 
@@ -183,7 +306,7 @@ function renderMessage(msg, isMine) {
 
     if (isMine) {
         const tickColor = msg.read ? 'text-[#53bdeb]' : 'text-gray-400';
-        msgDiv.className = "flex justify-end";
+        msgDiv.className = "flex justify-end rounded-lg transition-colors";
         msgDiv.innerHTML = `
             <div class="bg-[#005c4b] text-white ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
                 ${bodyHtml}
@@ -194,7 +317,7 @@ function renderMessage(msg, isMine) {
             </div>
         `;
     } else {
-        msgDiv.className = "flex justify-start";
+        msgDiv.className = "flex justify-start rounded-lg transition-colors";
         msgDiv.innerHTML = `
             <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
                 ${currentChatId === 'global' ? `<span class="text-[11px] font-bold text-amber-400 block mb-0.5 ${isImage ? 'px-2 pt-1' : ''}">${escapeHtml(msg.senderName)}</span>` : ''}
@@ -203,7 +326,57 @@ function renderMessage(msg, isMine) {
             </div>
         `;
     }
+
+    if (selectedMessageIds.has(msgId)) {
+        msgDiv.classList.add('bg-emerald-900/40');
+    }
+
+    attachSelectionHandlers(msgDiv, msgId);
+    messageElementsById.set(msgId, msgDiv);
     messageContainer.appendChild(msgDiv);
+}
+
+// Uzun basınca seçim moduna girer / seçer. Seçim modu açıkken tek
+// dokunuş da seçime ekler-çıkarır (ve resim büyütmeyi engeller).
+function attachSelectionHandlers(el, msgId) {
+    let pressTimer = null;
+    let longPressTriggered = false;
+
+    const startPress = () => {
+        longPressTriggered = false;
+        pressTimer = setTimeout(() => {
+            longPressTriggered = true;
+            if (!selectionMode) {
+                enterSelectionMode(msgId);
+            } else {
+                toggleMessageSelection(msgId);
+            }
+            if (navigator.vibrate) navigator.vibrate(30);
+        }, 450);
+    };
+
+    const cancelPress = () => {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    };
+
+    el.addEventListener('pointerdown', startPress);
+    el.addEventListener('pointerup', cancelPress);
+    el.addEventListener('pointerleave', cancelPress);
+    el.addEventListener('pointercancel', cancelPress);
+
+    // capture:true - resmin kendi onclick'inden ÖNCE çalışsın ki
+    // seçim modundayken resme tıklamak lightbox açmasın
+    el.addEventListener('click', (e) => {
+        if (longPressTriggered) {
+            e.stopPropagation();
+            longPressTriggered = false;
+            return;
+        }
+        if (selectionMode) {
+            e.stopPropagation();
+            toggleMessageSelection(msgId);
+        }
+    }, true);
 }
 
 function scrollToBottom() {
