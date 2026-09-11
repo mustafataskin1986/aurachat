@@ -59,3 +59,31 @@ self.addEventListener('fetch', (e) => {
       })
   );
 });
+
+// --- FIREBASE PUSH NOTIFICATION DİNLEYİCİSİ ---
+importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+    apiKey: "SENIN_API_KEY",
+    authDomain: "SENIN_AUTH_DOMAIN",
+    projectId: "SENIN_PROJECT_ID",
+    storageBucket: "SENIN_STORAGE_BUCKET",
+    messagingSenderId: "SENIN_MESSAGING_SENDER_ID",
+    appId: "SENIN_APP_ID"
+});
+
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage((payload) => {
+    console.log('[sw.js] Arka planda bildirim geldi:', payload);
+    const title = payload.notification?.title || 'Yeni Mesaj';
+    const options = {
+        body: payload.notification?.body || 'AuraChat yeni bir mesajınız var.',
+        icon: '/icon.png',
+        badge: '/icon.png',
+        data: payload.data
+    };
+    self.registration.showNotification(title, options);
+});
+
