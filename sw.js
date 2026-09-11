@@ -32,13 +32,11 @@ self.addEventListener('activate', (e) => {
 
 // 3. Yakalama (Fetch) Aşaması: Önce ağdan dene, internet yoksa önbellekten sun
 self.addEventListener('fetch', (e) => {
-  // Sadece GET isteklerini işleme al
   if (e.request.method !== 'GET') return;
 
   e.respondWith(
     fetch(e.request)
       .then((response) => {
-        // Ağdan başarılı yanıt gelirse, bunu kopyalayıp önbelleğe de kaydet (Dış CDN'ler dahil)
         const responseClone = response.clone();
         caches.open(CACHE_NAME).then((cache) => {
           cache.put(e.request, responseClone);
@@ -46,12 +44,10 @@ self.addEventListener('fetch', (e) => {
         return response;
       })
       .catch(() => {
-        // İnternet yoksa (çevrimdışıysan) önbellekten getir
         return caches.match(e.request).then((cachedResponse) => {
           if (cachedResponse) {
             return cachedResponse;
           }
-          // Sayfa istekleri için (çevrimdışı yönlendirmelerde) ana sayfayı sun
           if (e.request.mode === 'navigate') {
             return caches.match('./index.html');
           }
@@ -77,12 +73,25 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
     console.log('[sw.js] Arka planda bildirim geldi:', payload);
-    const title = payload.notification?.title || 'Yeni Mesaj';
+
+    // Otomatik bildirim ekran basımını kontrol et:
+    // Eğer payload.notification varsa Firebase Web SDK bazı durumlarda bildirimi kendi basar.
+    // Çift bildirimi önlemek için tag ve veri önceliklendirmesi ekliyoruz.
+    const title = payload.notification?.title || payload.data?.title || 'Yeni Mesaj';
+    const body = payload.notification?.body || payload.data?.body || 'AuraChat yeni bir mesajınız var.';
+    
+    // Gönderenin avatarı data paketiyle gelmişse onu kullan, yoksa ikon dosyasını bas
+    const iconUrl = payload.data?.senderAvatar || payload.notification?.icon || './icon.png';
+
     const options = {
-        body: payload.notification?.body || 'AuraChat yeni bir mesajınız var.',
-        icon: '/icon.png',
-        badge: '/icon.png',
-        data: payload.data
+        body: body,
+        icon: iconUrl,
+        badge: './icon.png',
+        // tag parametresi aynı sohbetten gelen bildirimleri tekilleştirerek üst üste binmeyi engeller
+        tag: payload.data?.chatId ? `aurachat-${payload.data.chatId}` : 'aurachat-general',
+        renotify: true,
+        data: payload.data || {}
     };
+
     self.registration.showNotification(title, options);
 });
