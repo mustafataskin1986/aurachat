@@ -301,7 +301,7 @@ if (selectionDeleteBtn) {
 }
 
 // ------------------------------------------
-// MESAJ YÜKLEME / DİNLEME
+// MESAJ YÜKLEME / DİNLEME (GÜNCELLENDİ)
 // ------------------------------------------
 function loadMessages(chatId) {
     if (unsubscribeMessages) unsubscribeMessages();
@@ -315,16 +315,15 @@ function loadMessages(chatId) {
         snapshot.forEach((docSnap) => {
             const msg = docSnap.data();
 
-            // Sadece benden silinmiş mesajları atla
             if (currentUser && Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) {
                 return;
             }
 
-            // Güvenli isMine kontrolü
             const isMine = !!(currentUser && currentUser.uid && msg.senderUid && msg.senderUid === currentUser.uid);
 
-            // Sadece ALICI sohbet alanındaysa ve mesaj okunmamışsa OKUNDU yap
-            if (currentUser && currentUser.uid && currentChatId === chatId && chatId !== 'global' && !isMine && msg.read === false) {
+            // KRİTİK DÜZELTME: Sadece alıcı sohbet alanındaysa VE UYGULAMA EKRANDA AÇIKSA (Arka planda değilse) okundu yap
+            const isAppVisible = document.visibilityState === 'visible';
+            if (currentUser && currentUser.uid && currentChatId === chatId && chatId !== 'global' && !isMine && msg.read === false && isAppVisible) {
                 updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), { read: true });
             }
 
@@ -335,6 +334,14 @@ function loadMessages(chatId) {
         console.error("Mesajlar yüklenirken hata:", error);
     });
 }
+
+// Kullanıcı arka plandan uygulamaya tekrar odaklandığında okunmamış mesajları okundu yap
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && currentChatId && currentChatId !== 'global') {
+        loadMessages(currentChatId);
+    }
+});
+
 
 function renderMessage(msg, isMine, msgId) {
     const msgDiv = document.createElement('div');
