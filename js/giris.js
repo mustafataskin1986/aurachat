@@ -210,7 +210,7 @@ if (btnStep1Next) {
 
             const userDocSnap = await getDoc(doc(db, "users", userCred.user.uid));
 
-            if (userDocSnap.exists()) {
+       if (userDocSnap.exists() && userDocSnap.data().name) {
                 const userData = userDocSnap.data();
                 const userObj = {
                     uid: userData.uid || userCred.user.uid,
@@ -294,7 +294,7 @@ if (btnGoogleSignIn) {
 
             const userDocSnap = await getDoc(doc(db, "users", user.uid));
 
-            if (userDocSnap.exists()) {
+         if (userDocSnap.exists() && userDocSnap.data().name) {
                 const userData = userDocSnap.data();
                 const userObj = {
                     uid: userData.uid || user.uid,
