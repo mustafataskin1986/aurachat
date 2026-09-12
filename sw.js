@@ -93,5 +93,7 @@ messaging.onBackgroundMessage((payload) => {
         data: payload.data || {}
     };
 
-    self.registration.showNotification(title, options);
+    if (!payload.notification) {
+        self.registration.showNotification(title, options);
+    }
 });
