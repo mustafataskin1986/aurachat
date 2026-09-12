@@ -102,9 +102,31 @@ jobs:
           npx cap copy android
           npx cap sync android
 
-      - name: DEBUG - MainActivity.java İçeriğini Göster
+     - name: MainActivity.java - WebView Önbellek Ayarı Ekle
         run: |
-          find android -name "MainActivity.java" -exec echo "--- {} ---" \; -exec cat {} \;
+          MAIN_ACTIVITY=$(find android -name "MainActivity.java" | head -n 1)
+          if [ -n "$MAIN_ACTIVITY" ]; then
+            cat > "$MAIN_ACTIVITY" << 'EOF'
+          package com.aurachat.app;
+
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  WebSettings settings = this.bridge.getWebView().getSettings();
+                  settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+                  this.bridge.getWebView().clearCache(true);
+              }
+          }
+          EOF
+            echo "MainActivity.java güncellendi."
+          else
+            echo "UYARI: MainActivity.java bulunamadı!"
+          fi
 
       - name: Firebase google-services.json Dosyasını Ekle
         run: |
