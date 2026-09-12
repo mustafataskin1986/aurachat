@@ -453,6 +453,14 @@
             if (!PushNotifications) return;
 
             try {
+                await PushNotifications.createChannel({
+                    id: 'aurachat-high',
+                    name: 'Mesaj Bildirimleri',
+                    importance: 5,
+                    visibility: 1,
+                    sound: 'default'
+                });
+
                 let permStatus = await PushNotifications.checkPermissions();
                 if (permStatus.receive === 'prompt' || permStatus.receive === 'prompt-with-rationale') {
                     permStatus = await PushNotifications.requestPermissions();
