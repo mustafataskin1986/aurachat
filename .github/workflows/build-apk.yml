@@ -102,7 +102,7 @@ jobs:
           npx cap copy android
           npx cap sync android
 
-     - name: MainActivity.java - WebView Önbellek Ayarı Ekle
+      - name: MainActivity.java - WebView Önbellek Ayarı Ekle
         run: |
           MAIN_ACTIVITY=$(find android -name "MainActivity.java" | head -n 1)
           if [ -n "$MAIN_ACTIVITY" ]; then
