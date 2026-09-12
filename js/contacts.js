@@ -172,12 +172,22 @@ export async function loadContacts() {
 
         const hiddenChats = getHiddenChats();
 
-        // 1) Gerçek sohbet özetleri (mesajlaşılmış olanlar)
+       // 1) Gerçek sohbet özetleri (mesajlaşılmış olanlar)
+        // İsim/avatar özet dokümanından DEĞİL, her zaman taze users
+        // koleksiyonundan alınıyor - karşı taraf profilini değiştirdiğinde
+        // liste anında güncellensin diye.
         myChats.forEach((chatData, chatId) => {
             const hiddenAt = hiddenChats[chatId];
             const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
             if (hiddenAt && lastTimeMs <= hiddenAt) return;
-            renderChatItem(chatId, chatData);
+
+            const liveUser = allUsersById.get(chatData.otherUid);
+            const mergedChatData = {
+                ...chatData,
+                otherName: liveUser ? liveUser.name : chatData.otherName,
+                otherAvatar: liveUser ? (liveUser.avatar || '') : chatData.otherAvatar
+            };
+            renderChatItem(chatId, mergedChatData);
         });
 
         // 2) Rehberde kayıtlı ama henüz mesajlaşılmamış kullanıcılar
