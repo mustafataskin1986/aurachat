@@ -43,7 +43,11 @@ window.initApp = async function () {
 
     setCurrentUser(currentUser);
     initAdminPanel();
-    loadContacts();
+    await loadContacts();
+
+    if (window.initPushForUser) {
+        window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
+    }
 
     if (window.innerWidth >= 768) {
         selectChat('global');
