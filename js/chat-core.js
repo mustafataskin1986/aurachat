@@ -89,7 +89,8 @@ async function sendPushToUser(receiverUid, title, body) {
             body: JSON.stringify({
                 token: receiverToken,
                 title: title,
-                body: body
+                body: body,
+                platform: userData?.platform || ''
             })
         });
 
