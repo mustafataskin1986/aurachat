@@ -30,17 +30,29 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
-// 3. Yakalama (Fetch) Aşaması: Önce ağdan dene, internet yoksa önbellekten sun
+// 3. Yakalama (Fetch) Aşaması: Sadece kendi sitemizin dosyalarını cache'liyoruz.
+// Firestore, Firebase Auth, CDN'ler (Tailwind, FontAwesome) gibi dış/sık-değişen
+// istekler asla cache'e yazılmaz - depolamanın sınırsız şişmesini önler.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+
+  const url = new URL(e.request.url);
+  const isSameOrigin = url.origin === self.location.origin;
+
+  if (!isSameOrigin) {
+    e.respondWith(fetch(e.request));
+    return;
+  }
 
   e.respondWith(
     fetch(e.request)
       .then((response) => {
-        const responseClone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(e.request, responseClone);
-        });
+        if (response.ok) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(e.request, responseClone);
+          });
+        }
         return response;
       })
       .catch(() => {
