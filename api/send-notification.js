@@ -24,11 +24,8 @@ export default async function handler(req, res) {
 
   try {
     const message = {
-      notification: { title, body },
-      android: {
-        priority: 'high',
-        notification: { sound: 'default', channelId: 'default' }
-      },
+      data: { title, body },
+      android: { priority: 'high' },
       token: token,
     };
 
