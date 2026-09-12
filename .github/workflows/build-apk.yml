@@ -102,6 +102,10 @@ jobs:
           npx cap copy android
           npx cap sync android
 
+      - name: DEBUG - MainActivity.java İçeriğini Göster
+        run: |
+          find android -name "MainActivity.java" -exec echo "--- {} ---" \; -exec cat {} \;
+
       - name: Firebase google-services.json Dosyasını Ekle
         run: |
           if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
