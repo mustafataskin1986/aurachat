@@ -494,26 +494,21 @@
             }
         }
 
-        // Ana Başlatıcı
-        try {
-            const auth = getAuth();
-            onAuthStateChanged(auth, (user) => {
-                if (user) {
-                    const Capacitor = window.Capacitor;
-                    const isNative = Capacitor && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+       // Push başlatmayı dışarıya (app-init.js'e) açıyoruz - böylece rehber izni
+        // tamamen bittikten SONRA bildirim izni isteniyor, ikisi üst üste çakışmıyor.
+        window.initPushForUser = function (user) {
+            if (!user) return;
+            const Capacitor = window.Capacitor;
+            const isNative = Capacitor && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
 
-                    if (isNative) {
-                        console.log('📱 Native Capacitor ortamı algılandı.');
-                        initCapacitorPush(user);
-                    } else {
-                        console.log('🌐 Web / PWA ortamı algılandı.');
-                        initWebPush(user);
-                    }
-                }
-            });
-        } catch (e) {
-            console.error('Auth push dinleyicisi başlatılamadı:', e);
-        }
+            if (isNative) {
+                console.log('📱 Native Capacitor ortamı algılandı.');
+                initCapacitorPush(user);
+            } else {
+                console.log('🌐 Web / PWA ortamı algılandı.');
+                initWebPush(user);
+            }
+        };
     </script>
 
     <script>
