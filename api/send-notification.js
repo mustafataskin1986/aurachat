@@ -34,7 +34,10 @@ export default async function handler(req, res) {
       : {
           notification: { title, body },
           data: { title, body },
-          android: { priority: 'high' },
+          android: {
+            priority: 'high',
+            notification: { channelId: 'aurachat-high' }
+          },
           token: token,
         };
 
