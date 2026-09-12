@@ -146,7 +146,9 @@ jobs:
 
           # Manifest İzinleri
           if [ -f "$MANIFEST_PATH" ]; then
-            if ! grep -q 'android:allowBackup' "$MANIFEST_PATH"; then
+            if grep -q 'android:allowBackup="true"' "$MANIFEST_PATH"; then
+              sed -i 's/android:allowBackup="true"/android:allowBackup="false"/' "$MANIFEST_PATH"
+            elif ! grep -q 'android:allowBackup' "$MANIFEST_PATH"; then
               sed -i 's/<application/<application android:allowBackup="false"/' "$MANIFEST_PATH"
             fi
             add_perm() {
