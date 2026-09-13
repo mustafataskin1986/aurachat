@@ -365,6 +365,12 @@ if (selectionDeleteBtn) {
 function loadMessages(chatId) {
     if (unsubscribeMessages) unsubscribeMessages();
 
+    messageContainer.innerHTML = `
+        <div class="flex items-center justify-center h-full">
+            <i class="fa-solid fa-spinner fa-spin text-2xl text-gray-600"></i>
+        </div>
+    `;
+
     const q = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"));
 
     unsubscribeMessages = onSnapshot(q, (snapshot) => {
