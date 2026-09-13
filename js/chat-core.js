@@ -4,18 +4,12 @@
 // chatId artık İSİM değil UID bazlı üretiliyor (getChatId).
 // contacts.js, kişi listesinden bir kullanıcıya tıklanınca
 // selectChat({ uid, name, avatar }) çağıracak.
-//
-// PERFORMANS GÜNCELLEMESİ: Artık her mesajda, gönderen ve alıcının
-// users/{uid}/chats/{chatId} altında bir "özet" dokümanı güncelleniyor
-// (son mesaj, zaman, okundu durumu, okunmamış sayısı). contacts.js bu
-// sayede kullanıcı başına ayrı onSnapshot açmak yerine tek bir
-// koleksiyonu dinleyebiliyor.
 // ==========================================
 
 import { db } from "./firebase-init.js";
 import {
     collection, addDoc, onSnapshot, query, orderBy,
-    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, getDoc, increment
+    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, getDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
@@ -43,7 +37,6 @@ let currentUser = null;       // { uid, name, email, phone, avatar }
 let currentChatId = null;
 let currentChatName = '';
 let currentOtherUid = null;   // 'global' sohbetinde null
-let currentOtherAvatar = '';  // 'global' sohbetinde ''
 let unsubscribeMessages = null;
 let unsubscribeChatDoc = null;
 let typingTimeout = null;
@@ -89,14 +82,14 @@ async function sendPushToUser(receiverUid, title, body) {
             return;
         }
 
+        // Tam Vercel adresi kullanıyoruz:
         const response = await fetch('https://aurachat-amber.vercel.app/api/send-notification', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 token: receiverToken,
                 title: title,
-                body: body,
-                platform: userData?.platform || ''
+                body: body
             })
         });
 
@@ -119,45 +112,6 @@ async function sendPushToUser(receiverUid, title, body) {
     }
 }
 
-// ------------------------------------------
-// ÖZET DOKÜMANI (users/{uid}/chats/{chatId}) GÜNCELLEME
-// Hem gönderenin hem alıcının özet kaydını günceller.
-// contacts.js kişi listesini bu koleksiyondan okuyor.
-// ------------------------------------------
-async function updateChatSummaries(lastMessageText) {
-    if (currentChatId === 'global' || !currentOtherUid || !currentUser) return;
-
-    try {
-        const myChatRef = doc(db, "users", currentUser.uid, "chats", currentChatId);
-        const otherChatRef = doc(db, "users", currentOtherUid, "chats", currentChatId);
-
-        await setDoc(myChatRef, {
-            otherUid: currentOtherUid,
-            otherName: currentChatName,
-            otherAvatar: currentOtherAvatar || '',
-            lastMessage: lastMessageText,
-            lastMessageTime: serverTimestamp(),
-            lastSenderUid: currentUser.uid,
-            lastMessageRead: false,
-            unreadCount: 0,
-            updatedAt: serverTimestamp()
-        }, { merge: true });
-
-        await setDoc(otherChatRef, {
-            otherUid: currentUser.uid,
-            otherName: currentUser.name,
-            otherAvatar: currentUser.avatar || '',
-            lastMessage: lastMessageText,
-            lastMessageTime: serverTimestamp(),
-            lastSenderUid: currentUser.uid,
-            lastMessageRead: false,
-            unreadCount: increment(1),
-            updatedAt: serverTimestamp()
-        }, { merge: true });
-    } catch (err) {
-        console.error("Özet dokümanları güncellenemedi:", err);
-    }
-}
 
 // ------------------------------------------
 // SOHBET SEÇİMİ
@@ -171,7 +125,6 @@ export function selectChat(otherUser) {
         currentChatId = 'global';
         currentChatName = 'Genel Kanka Odası 🌍';
         currentOtherUid = null;
-        currentOtherAvatar = '';
 
         activeChatName.textContent = currentChatName;
         activeChatAvatar.style.backgroundColor = '';
@@ -184,7 +137,6 @@ export function selectChat(otherUser) {
             return;
         }
         currentOtherUid = otherUser.uid || otherUser.id;
-        currentOtherAvatar = otherUser.avatar || '';
         currentChatId = getChatId(currentUser.uid, currentOtherUid);
         currentChatName = otherUser.name;
 
@@ -242,7 +194,6 @@ function doCloseChatView() {
     currentChatId = null;
     currentChatName = '';
     currentOtherUid = null;
-    currentOtherAvatar = '';
     messageContainer.innerHTML = '';
     exitSelectionMode();
 
@@ -360,7 +311,7 @@ if (selectionDeleteBtn) {
 }
 
 // ------------------------------------------
-// MESAJ YÜKLEME / DİNLEME
+// MESAJ YÜKLEME / DİNLEME (GÜNCELLENDİ)
 // ------------------------------------------
 function loadMessages(chatId) {
     if (unsubscribeMessages) unsubscribeMessages();
@@ -371,9 +322,6 @@ function loadMessages(chatId) {
         messageContainer.innerHTML = '';
         messageElementsById.clear();
 
-        let markedAnyRead = false;
-        const isAppVisible = document.visibilityState === 'visible';
-
         snapshot.forEach((docSnap) => {
             const msg = docSnap.data();
 
@@ -383,26 +331,14 @@ function loadMessages(chatId) {
 
             const isMine = !!(currentUser && currentUser.uid && msg.senderUid && msg.senderUid === currentUser.uid);
 
+            // KRİTİK DÜZELTME: Sadece alıcı sohbet alanındaysa VE UYGULAMA EKRANDA AÇIKSA (Arka planda değilse) okundu yap
+            const isAppVisible = document.visibilityState === 'visible';
             if (currentUser && currentUser.uid && currentChatId === chatId && chatId !== 'global' && !isMine && msg.read === false && isAppVisible) {
                 updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), { read: true });
-                markedAnyRead = true;
             }
 
             renderMessage(msg, isMine, docSnap.id);
         });
-
-        // Bu sohbeti gerçekten okuduysak (en az bir mesaj okundu işaretlendiyse),
-        // özet dokümanlarını da güncelle: benim okunmamış sayım sıfırlansın,
-        // karşı tarafın "okundu" çift tiki görünsün.
-        if (markedAnyRead && currentUser && chatId !== 'global' && currentOtherUid) {
-            updateDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
-                unreadCount: 0
-            }).catch(() => {});
-            updateDoc(doc(db, "users", currentOtherUid, "chats", chatId), {
-                lastMessageRead: true
-            }).catch(() => {});
-        }
-
         scrollToBottom();
     }, (error) => {
         console.error("Mesajlar yüklenirken hata:", error);
@@ -415,6 +351,7 @@ document.addEventListener('visibilitychange', () => {
         loadMessages(currentChatId);
     }
 });
+
 
 function renderMessage(msg, isMine, msgId) {
     const msgDiv = document.createElement('div');
@@ -551,8 +488,7 @@ async function sendMessage() {
             read: false
         });
 
-        await updateChatSummaries(text);
-
+        // ALICIYA PUSH BİLDİRİM GÖNDER
         if (currentChatId !== 'global' && currentOtherUid) {
             sendPushToUser(currentOtherUid, `${currentUser.name}`, text);
         }
@@ -682,8 +618,7 @@ if (attachBtn && imageInput) {
                 read: false
             });
 
-            await updateChatSummaries('📷 Fotoğraf');
-
+            // ALICIYA PUSH BİLDİRİM GÖNDER (Görsel için)
             if (currentChatId !== 'global' && currentOtherUid) {
                 sendPushToUser(currentOtherUid, `${currentUser.name}`, "📷 Bir fotoğraf gönderdi");
             }
