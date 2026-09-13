@@ -1,8 +1,14 @@
 // ==========================================
 // KİŞİ LİSTESİ + ADMİN PANEL
-// Kullanıcıları Firestore'dan çeker, sohbet önizlemelerini
-// canlı günceller, tıklanınca chat-core.js'deki selectChat()'i çağırır.
-// Uzun basınca çoklu seçip silme (sadece kendi listenden kaldırır).
+//
+// PERFORMANS GÜNCELLEMESİ: Artık her kullanıcı için ayrı ayrı
+// onSnapshot açmıyoruz. Kişi listesi iki sabit dinleyiciden besleniyor:
+//   1) users koleksiyonu (telefon rehberiyle eşleşen ama henüz hiç
+//      mesajlaşılmamış kişileri bulmak için)
+//   2) users/{benim_uid}/chats alt koleksiyonu (gerçek sohbet özetleri:
+//      son mesaj, zaman, okundu durumu, okunmamış sayısı - bunlar artık
+//      chat-core.js tarafından her mesajda otomatik güncelleniyor)
+// Kullanıcı sayısı ne olursa olsun bağlantı sayısı sabit kalıyor.
 // ==========================================
 
 import { db, ADMIN_EMAIL } from "./firebase-init.js";
@@ -35,7 +41,6 @@ const selectedChatIds = new Set();
 
 // ------------------------------------------
 // GİZLİ (SİLİNMİŞ) SOHBETLER - sadece bu cihazda/kullanıcıda geçerli.
-// Karşı tarafı etkilemez; o sohbete yeni mesaj gelirse otomatik geri gelir.
 // ------------------------------------------
 function getHiddenChats() {
     try {
@@ -71,7 +76,7 @@ function renderSkeletonList() {
 }
 
 // ------------------------------------------
-// KİŞİLERİ YÜKLE (rehber + Firestore users)
+// KİŞİLERİ YÜKLE
 // ------------------------------------------
 export async function loadContacts() {
     renderSkeletonList();
@@ -114,188 +119,208 @@ export async function loadContacts() {
         console.warn("Rehber okunurken bir durum oluştu:", err);
     }
 
-    onSnapshot(collection(db, "users"), (snapshot) => {
-        contactList.innerHTML = '';
+    // --- Sabit DOM iskeleti kuruluyor: Genel Oda (kalıcı) + dinamik liste kabı ---
+    contactList.innerHTML = '';
+
+    const globalDiv = document.createElement('div');
+    globalDiv.className = "contact-list-item flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30";
+    globalDiv.innerHTML = `
+        <div class="w-12 h-12 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
+            <i class="fa-solid fa-globe"></i>
+        </div>
+        <div class="flex-1 overflow-hidden">
+            <div class="flex justify-between items-baseline">
+                <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
+                <span class="text-[11px] text-gray-400 global-time"></span>
+            </div>
+            <p class="text-xs text-gray-400 truncate mt-0.5 global-preview">Ortak sohbet alanı</p>
+        </div>
+    `;
+    globalDiv.addEventListener('click', () => {
+        if (!chatSelectionMode) selectChat('global');
+    });
+    contactList.appendChild(globalDiv);
+
+    const globalTimeSpan = globalDiv.querySelector('.global-time');
+    const globalPreview = globalDiv.querySelector('.global-preview');
+
+    onSnapshot(query(collection(db, "chats", "global", "messages"), orderBy("createdAt", "desc")), (msgSnap) => {
+        if (!msgSnap.empty) {
+            const lastMsg = msgSnap.docs[0].data();
+            globalPreview.textContent = (lastMsg.type === 'image') ? '📷 Fotoğraf' : lastMsg.text;
+            if (lastMsg.createdAt) {
+                globalTimeSpan.textContent = formatTimestamp(lastMsg.createdAt.toDate());
+            }
+        }
+    });
+
+    const dynamicListContainer = document.createElement('div');
+    contactList.appendChild(dynamicListContainer);
+
+    // --- İki sabit dinleyici: tüm kullanıcılar + benim sohbet özetlerim ---
+    let allUsersById = new Map();
+    let myChats = new Map();
+    let usersLoaded = false;
+    let chatsLoaded = false;
+
+    function renderAll() {
+        if (!usersLoaded || !chatsLoaded) return;
+
+        dynamicListContainer.innerHTML = '';
         contactElementsMap.clear();
         exitChatSelectionMode();
 
-        // Genel Oda Elementi (seçilemez - kalıcı ortak oda)
-        const globalDiv = document.createElement('div');
-        globalDiv.className = "flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30";
-        globalDiv.innerHTML = `
-            <div class="w-12 h-12 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
-                <i class="fa-solid fa-globe"></i>
-            </div>
-            <div class="flex-1 overflow-hidden">
+        const hiddenChats = getHiddenChats();
+
+       // 1) Gerçek sohbet özetleri (mesajlaşılmış olanlar)
+        // İsim/avatar özet dokümanından DEĞİL, her zaman taze users
+        // koleksiyonundan alınıyor - karşı taraf profilini değiştirdiğinde
+        // liste anında güncellensin diye.
+        myChats.forEach((chatData, chatId) => {
+            const hiddenAt = hiddenChats[chatId];
+            const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
+            if (hiddenAt && lastTimeMs <= hiddenAt) return;
+
+            const liveUser = allUsersById.get(chatData.otherUid);
+            const mergedChatData = {
+                ...chatData,
+                otherName: liveUser ? liveUser.name : chatData.otherName,
+                otherAvatar: liveUser ? (liveUser.avatar || '') : chatData.otherAvatar
+            };
+            renderChatItem(chatId, mergedChatData);
+        });
+
+        // 2) Rehberde kayıtlı ama henüz mesajlaşılmamış kullanıcılar
+        allUsersById.forEach((user, uid) => {
+            if (uid === currentUser.uid) return;
+            const chatId = getChatId(currentUser.uid, uid);
+            if (myChats.has(chatId)) return;
+
+            const targetPhoneLast10 = getPhoneLast10(user.phone);
+            const isInContacts = targetPhoneLast10 && (localPhoneNumbers.has(targetPhoneLast10) || localPhoneNumbers.has('+90' + targetPhoneLast10));
+            if (!isInContacts) return;
+
+            renderEmptyContactItem(chatId, user);
+        });
+
+        sortContactList();
+    }
+
+    function renderChatItem(chatId, chatData) {
+        const userDiv = document.createElement('div');
+        userDiv.className = "contact-list-item flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
+        userDiv.dataset.chatId = chatId;
+
+        let avatarContent = '';
+        if (chatData.otherAvatar) {
+            avatarContent = `<img src="${chatData.otherAvatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
+        } else {
+            const initials = getInitials(chatData.otherName || '?');
+            const color = getUserColor(chatData.otherName || '?');
+            avatarContent = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color: ${color};">${initials}</div>`;
+        }
+
+        const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
+        const lastText = chatData.lastMessage || "Henüz mesaj yok";
+        const lastTime = chatData.lastMessageTime ? formatTimestamp(chatData.lastMessageTime.toDate()) : '';
+        const unreadCount = isLastMsgMine ? 0 : (chatData.unreadCount || 0);
+
+        let tickHtml = '';
+        if (isLastMsgMine) {
+            const tickColor = chatData.lastMessageRead ? 'text-[#53bdeb]' : 'text-gray-400';
+            tickHtml = `<span class="tick-container mr-1 flex-shrink-0"><i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i></span>`;
+        }
+
+        userDiv.innerHTML = `
+            ${avatarContent}
+            <div class="flex-1 overflow-hidden ml-3">
                 <div class="flex justify-between items-baseline">
-                    <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
-                    <span class="text-[11px] text-gray-400 global-time"></span>
+                    <h4 class="text-white font-medium text-sm">${escapeHtml(chatData.otherName || '')}</h4>
+                    <span class="text-[11px] text-gray-400">${lastTime}</span>
                 </div>
-                <p class="text-xs text-gray-400 truncate mt-0.5 global-preview">Ortak sohbet alanı</p>
+                <div class="flex justify-between items-center mt-0.5">
+                    <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
+                        ${tickHtml}
+                        <span class="preview-text truncate">${isLastMsgMine ? 'Siz: ' : ''}${escapeHtml(lastText)}</span>
+                    </p>
+                    ${unreadCount > 0 ? `<div class="unread-badge bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2">${unreadCount}</div>` : ''}
+                </div>
             </div>
         `;
-        globalDiv.addEventListener('click', () => {
-            if (!chatSelectionMode) selectChat('global');
-        });
-        contactList.appendChild(globalDiv);
 
-        const globalTimeSpan = globalDiv.querySelector('.global-time');
-        const globalPreview = globalDiv.querySelector('.global-preview');
-
-        onSnapshot(query(collection(db, "chats", "global", "messages"), orderBy("createdAt", "desc")), (msgSnap) => {
-            if (!msgSnap.empty) {
-                const lastMsg = msgSnap.docs[0].data();
-                globalPreview.textContent = (lastMsg.type === 'image') ? '📷 Fotoğraf' : lastMsg.text;
-                if (lastMsg.createdAt) {
-                    globalTimeSpan.textContent = formatTimestamp(lastMsg.createdAt.toDate());
-                }
+        userDiv.addEventListener('click', () => {
+            if (!chatSelectionMode) {
+                selectChat({ uid: chatData.otherUid, name: chatData.otherName, avatar: chatData.otherAvatar || '' });
             }
         });
 
-        const myPhoneLast10 = getPhoneLast10(currentUser.phone);
+        attachChatSelectionHandlers(userDiv, chatId);
+        contactElementsMap.set(chatId, {
+            element: userDiv,
+            lastTimeObj: chatData.lastMessageTime ? chatData.lastMessageTime.toDate() : null
+        });
+        dynamicListContainer.appendChild(userDiv);
+    }
 
+    function renderEmptyContactItem(chatId, user) {
+        const userDiv = document.createElement('div');
+        userDiv.className = "contact-list-item flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
+        userDiv.dataset.chatId = chatId;
+
+        let avatarContent = '';
+        if (user.avatar) {
+            avatarContent = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
+        } else {
+            const initials = getInitials(user.name);
+            const color = getUserColor(user.name);
+            avatarContent = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color: ${color};">${initials}</div>`;
+        }
+
+        userDiv.innerHTML = `
+            ${avatarContent}
+            <div class="flex-1 overflow-hidden ml-3">
+                <div class="flex justify-between items-baseline">
+                    <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
+                    <span class="text-[11px] text-gray-400"></span>
+                </div>
+                <div class="flex justify-between items-center mt-0.5">
+                    <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
+                        <span class="preview-text truncate">Henüz mesaj yok</span>
+                    </p>
+                </div>
+            </div>
+        `;
+
+        userDiv.addEventListener('click', () => {
+            if (!chatSelectionMode) {
+                selectChat({ uid: user.uid, name: user.name, avatar: user.avatar || '' });
+            }
+        });
+
+        attachChatSelectionHandlers(userDiv, chatId);
+        contactElementsMap.set(chatId, { element: userDiv, lastTimeObj: null });
+        dynamicListContainer.appendChild(userDiv);
+    }
+
+    onSnapshot(collection(db, "users"), (snapshot) => {
+        allUsersById.clear();
         snapshot.forEach((docSnap) => {
             let user = docSnap.data();
             if (!user || !user.name || !user.uid) return;
-
             user = formatAdminUser(user, ADMIN_EMAIL);
-
-            // Kendimi listeleme
-            if (user.uid === currentUser.uid) return;
-
-            const targetPhoneLast10 = getPhoneLast10(user.phone);
-            const chatId = getChatId(currentUser.uid, user.uid);
-            const isInContacts = targetPhoneLast10 && (localPhoneNumbers.has(targetPhoneLast10) || localPhoneNumbers.has('+90' + targetPhoneLast10));
-
-            onSnapshot(query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc")), (msgSnapshot) => {
-                const hasMessages = !msgSnapshot.empty;
-
-                // Gizlenmiş (silinmiş) mi kontrol et - gizlendikten SONRA yeni mesaj gelmediyse gizli kalır
-                const hiddenChats = getHiddenChats();
-                const hiddenAt = hiddenChats[chatId];
-                let isHiddenNow = false;
-                if (hiddenAt) {
-                    if (!hasMessages) {
-                        isHiddenNow = true;
-                    } else {
-                        const latestMsg = msgSnapshot.docs[0].data();
-                        const latestTime = latestMsg.createdAt ? latestMsg.createdAt.toDate().getTime() : 0;
-                        isHiddenNow = latestTime <= hiddenAt;
-                    }
-                }
-
-                if ((!isInContacts && !hasMessages) || isHiddenNow) {
-                    if (contactElementsMap.has(chatId)) {
-                        const item = contactElementsMap.get(chatId);
-                        if (item.element && item.element.parentNode) {
-                            item.element.parentNode.removeChild(item.element);
-                        }
-                        contactElementsMap.delete(chatId);
-                    }
-                    return;
-                }
-
-                if (!contactElementsMap.has(chatId)) {
-                    const userDiv = document.createElement('div');
-                    userDiv.className = "flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
-                    userDiv.dataset.chatId = chatId;
-
-                    let avatarContent = '';
-                    if (user.avatar) {
-                        avatarContent = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
-                    } else {
-                        const initials = getInitials(user.name);
-                        const color = getUserColor(user.name);
-                        avatarContent = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color: ${color};">${initials}</div>`;
-                    }
-
-                    userDiv.innerHTML = `
-                        ${avatarContent}
-                        <div class="flex-1 overflow-hidden ml-3">
-                            <div class="flex justify-between items-baseline">
-                                <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
-                                <span class="text-[11px] text-gray-400 time-span"></span>
-                            </div>
-                            <div class="flex justify-between items-center mt-0.5">
-                                <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
-                                    <span class="tick-container hidden mr-1 flex-shrink-0"></span>
-                                    <span class="preview-text truncate">Henüz mesaj yok</span>
-                                </p>
-                                <div class="unread-badge hidden bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2"></div>
-                            </div>
-                        </div>
-                    `;
-
-                    userDiv.addEventListener('click', () => {
-                        if (!chatSelectionMode) {
-                            selectChat({ uid: user.uid, name: user.name, avatar: user.avatar || '' });
-                        }
-                    });
-
-                    attachChatSelectionHandlers(userDiv, chatId);
-
-                    contactElementsMap.set(chatId, { element: userDiv, lastTimeObj: null });
-                    contactList.appendChild(userDiv);
-                }
-
-                const itemData = contactElementsMap.get(chatId);
-                if (!itemData) return;
-
-                const timeSpan = itemData.element.querySelector('.time-span');
-                const previewText = itemData.element.querySelector('.preview-text');
-                const tickContainer = itemData.element.querySelector('.tick-container');
-                const unreadBadge = itemData.element.querySelector('.unread-badge');
-
-                let lastText = "Henüz mesaj yok";
-                let lastTime = "";
-                let lastTimeObj = null;
-                let unreadCount = 0;
-                let isLastMsgMine = false;
-                let lastMsgRead = false;
-
-                if (hasMessages) {
-                    const latestMsg = msgSnapshot.docs[0].data();
-                    lastText = (latestMsg.type === 'image') ? '📷 Fotoğraf' : latestMsg.text;
-                    isLastMsgMine = latestMsg.senderUid
-                        ? latestMsg.senderUid === currentUser.uid
-                        : latestMsg.senderName === currentUser.name;
-                    lastMsgRead = latestMsg.read;
-                    if (latestMsg.createdAt) {
-                        lastTimeObj = latestMsg.createdAt.toDate();
-                        lastTime = formatTimestamp(lastTimeObj);
-                    }
-                }
-
-                msgSnapshot.forEach((mDoc) => {
-                    const mData = mDoc.data();
-                    const isMine = mData.senderUid ? mData.senderUid === currentUser.uid : mData.senderName === currentUser.name;
-                    if (!isMine && mData.read === false) {
-                        unreadCount++;
-                    }
-                });
-
-                previewText.textContent = isLastMsgMine ? `Siz: ${lastText}` : lastText;
-                timeSpan.textContent = lastTime;
-
-                if (isLastMsgMine) {
-                    const tickColor = lastMsgRead ? 'text-[#53bdeb]' : 'text-gray-400';
-                    tickContainer.innerHTML = `<i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>`;
-                    tickContainer.classList.remove('hidden');
-                } else {
-                    tickContainer.classList.add('hidden');
-                }
-
-                if (unreadCount > 0) {
-                    unreadBadge.textContent = unreadCount;
-                    unreadBadge.classList.remove('hidden');
-                } else {
-                    unreadBadge.classList.add('hidden');
-                }
-
-                itemData.lastTimeObj = lastTimeObj;
-                sortContactList();
-            });
+            allUsersById.set(user.uid, user);
         });
+        usersLoaded = true;
+        renderAll();
+    });
+
+    onSnapshot(query(collection(db, "users", currentUser.uid, "chats"), orderBy("updatedAt", "desc")), (snapshot) => {
+        myChats.clear();
+        snapshot.forEach((docSnap) => {
+            myChats.set(docSnap.id, docSnap.data());
+        });
+        chatsLoaded = true;
+        renderAll();
     });
 }
 
@@ -306,7 +331,10 @@ function sortContactList() {
         if (!b.lastTimeObj) return -1;
         return b.lastTimeObj - a.lastTimeObj;
     });
-    itemsArray.forEach(item => contactList.appendChild(item.element));
+    const dynamicListContainer = contactList.children[1];
+    if (dynamicListContainer) {
+        itemsArray.forEach(item => dynamicListContainer.appendChild(item.element));
+    }
 }
 
 // ------------------------------------------
@@ -393,8 +421,6 @@ if (chatSelectionDeleteBtn) {
     });
 }
 
-// Uzun basınca seçim moduna girer / seçer. Seçim modu açıkken tek
-// dokunuş da seçime ekler-çıkarır (ve normal sohbet açmayı engeller).
 function attachChatSelectionHandlers(el, chatId) {
     let pressTimer = null;
     let longPressTriggered = false;
@@ -446,11 +472,11 @@ searchContact.addEventListener('input', (e) => {
         searchIcon.className = "fa-solid fa-magnifying-glass text-gray-400 text-sm mr-2.5 ml-0.5 flex-shrink-0";
     }
 
-    const items = contactList.children;
-    for (let item of items) {
+    const items = contactList.querySelectorAll('.contact-list-item');
+    items.forEach((item) => {
         const text = item.textContent.toLowerCase();
         item.style.display = text.includes(term) ? 'flex' : 'none';
-    }
+    });
 });
 
 searchIcon.addEventListener('click', () => {
