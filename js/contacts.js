@@ -1,14 +1,11 @@
 // ==========================================
 // KİŞİ LİSTESİ + ADMİN PANEL
 //
-// PERFORMANS GÜNCELLEMESİ: Artık her kullanıcı için ayrı ayrı
-// onSnapshot açmıyoruz. Kişi listesi iki sabit dinleyiciden besleniyor:
-//   1) users koleksiyonu (telefon rehberiyle eşleşen ama henüz hiç
-//      mesajlaşılmamış kişileri bulmak için)
-//   2) users/{benim_uid}/chats alt koleksiyonu (gerçek sohbet özetleri:
-//      son mesaj, zaman, okundu durumu, okunmamış sayısı - bunlar artık
-//      chat-core.js tarafından her mesajda otomatik güncelleniyor)
-// Kullanıcı sayısı ne olursa olsun bağlantı sayısı sabit kalıyor.
+// GÜNCELLEME: Sohbet silme artık localStorage yerine Firestore'daki
+// clearedAt alanına yazılıyor (chat-core.js -> clearChatForMe). Bu
+// sayede cihaz değişse/uygulama silinip kurulsa bile silme kalıcı
+// kalıyor, ve chat-core.js o tarihten önceki mesajları bir daha hiç
+// yüklemiyor.
 // ==========================================
 
 import { db, ADMIN_EMAIL } from "./firebase-init.js";
@@ -16,7 +13,7 @@ import {
     collection, onSnapshot, query, orderBy, doc, getDocs
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
-import { selectChat, getCurrentUser } from "./chat-core.js";
+import { selectChat, getCurrentUser, clearChatForMe } from "./chat-core.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
 const contactList = document.getElementById('contact-list');
@@ -35,26 +32,8 @@ const chatSelectionDeleteBtn = document.getElementById('chat-selection-delete-bt
 
 const contactElementsMap = new Map();
 
-// Sohbet listesi seçme (silme) modu
 let chatSelectionMode = false;
 const selectedChatIds = new Set();
-
-// ------------------------------------------
-// GİZLİ (SİLİNMİŞ) SOHBETLER - sadece bu cihazda/kullanıcıda geçerli.
-// ------------------------------------------
-function getHiddenChats() {
-    try {
-        return JSON.parse(localStorage.getItem('aurachat_hidden_chats') || '{}');
-    } catch {
-        return {};
-    }
-}
-
-function hideChat(chatId) {
-    const hidden = getHiddenChats();
-    hidden[chatId] = Date.now();
-    localStorage.setItem('aurachat_hidden_chats', JSON.stringify(hidden));
-}
 
 // ------------------------------------------
 // İSKELET (LOADING) LİSTESİ
@@ -119,7 +98,6 @@ export async function loadContacts() {
         console.warn("Rehber okunurken bir durum oluştu:", err);
     }
 
-    // --- Sabit DOM iskeleti kuruluyor: Genel Oda (kalıcı) + dinamik liste kabı ---
     contactList.innerHTML = '';
 
     const globalDiv = document.createElement('div');
@@ -157,7 +135,6 @@ export async function loadContacts() {
     const dynamicListContainer = document.createElement('div');
     contactList.appendChild(dynamicListContainer);
 
-    // --- İki sabit dinleyici: tüm kullanıcılar + benim sohbet özetlerim ---
     let allUsersById = new Map();
     let myChats = new Map();
     let usersLoaded = false;
@@ -170,16 +147,15 @@ export async function loadContacts() {
         contactElementsMap.clear();
         exitChatSelectionMode();
 
-        const hiddenChats = getHiddenChats();
-
-       // 1) Gerçek sohbet özetleri (mesajlaşılmış olanlar)
-        // İsim/avatar özet dokümanından DEĞİL, her zaman taze users
-        // koleksiyonundan alınıyor - karşı taraf profilini değiştirdiğinde
-        // liste anında güncellensin diye.
+        // 1) Gerçek sohbet özetleri (mesajlaşılmış olanlar).
+        // İsim/avatar her zaman taze users koleksiyonundan alınıyor.
+        // clearedAt varsa ve son mesaj ondan eskiyse (yani silindikten
+        // sonra yeni mesaj gelmediyse) sohbet listede gösterilmiyor.
         myChats.forEach((chatData, chatId) => {
-            const hiddenAt = hiddenChats[chatId];
+            const clearedAt = chatData.clearedAt;
             const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
-            if (hiddenAt && lastTimeMs <= hiddenAt) return;
+            const clearedAtMs = clearedAt ? clearedAt.toDate().getTime() : 0;
+            if (clearedAt && lastTimeMs <= clearedAtMs) return;
 
             const liveUser = allUsersById.get(chatData.otherUid);
             const mergedChatData = {
@@ -400,22 +376,29 @@ if (chatSelectionCancelBtn) {
 }
 
 if (chatSelectionDeleteBtn) {
-    chatSelectionDeleteBtn.addEventListener('click', () => {
+    chatSelectionDeleteBtn.addEventListener('click', async () => {
         if (selectedChatIds.size === 0) return;
 
         const count = selectedChatIds.size;
-        const proceed = confirm(`${count} sohbet listenden silinsin mi?\n\n(Karşı taraf etkilenmez, yeni mesaj gelirse sohbet geri gelir.)`);
+        const proceed = confirm(`${count} sohbet kalıcı olarak silinsin mi?\n\n(Karşı taraf etkilenmez, ama bu cihazda/hesapta eski mesajlar bir daha görünmez. Yeni mesaj gelirse sohbet tekrar listeye düşer, sadece yeni mesajla.)`);
         if (!proceed) return;
 
-        selectedChatIds.forEach((chatId) => {
-            hideChat(chatId);
-            const item = contactElementsMap.get(chatId);
-            if (item && item.element && item.element.parentNode) {
-                item.element.parentNode.removeChild(item.element);
-            }
-            contactElementsMap.delete(chatId);
-        });
+        chatSelectionDeleteBtn.disabled = true;
 
+        try {
+            for (const chatId of selectedChatIds) {
+                await clearChatForMe(chatId);
+                const item = contactElementsMap.get(chatId);
+                if (item && item.element && item.element.parentNode) {
+                    item.element.parentNode.removeChild(item.element);
+                }
+                contactElementsMap.delete(chatId);
+            }
+        } catch (err) {
+            alert("Bazı sohbetler silinemedi: " + err.message);
+        }
+
+        chatSelectionDeleteBtn.disabled = false;
         selectedChatIds.clear();
         exitChatSelectionMode();
     });
