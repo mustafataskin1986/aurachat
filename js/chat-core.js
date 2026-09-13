@@ -14,7 +14,7 @@
 
 import { db } from "./firebase-init.js";
 import {
-    collection, addDoc, onSnapshot, query, orderBy,
+    collection, addDoc, onSnapshot, query, orderBy, limitToLast,
     serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, getDoc, increment
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
@@ -371,7 +371,7 @@ function loadMessages(chatId) {
         </div>
     `;
 
-    const q = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"));
+    const q = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"), limitToLast(50));
 
     unsubscribeMessages = onSnapshot(q, (snapshot) => {
         messageContainer.innerHTML = '';
