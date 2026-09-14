@@ -1,16 +1,16 @@
 // ==========================================
 // KİŞİ LİSTESİ + ADMİN PANEL
 //
-// GÜNCELLEME: Sohbet silme artık localStorage yerine Firestore'daki
-// clearedAt alanına yazılıyor (chat-core.js -> clearChatForMe). Bu
-// sayede cihaz değişse/uygulama silinip kurulsa bile silme kalıcı
-// kalıyor, ve chat-core.js o tarihten önceki mesajları bir daha hiç
-// yüklemiyor.
+// GÜNCELLEME: Sohbet seçim modunda avatarın sağ alt köşesinde yeşil
+// tik rozeti gösteriliyor. Toolbar'a Sabitle ve Arşivle butonları
+// eklendi (pinned/archived alanları users/{uid}/chats/{chatId}
+// dokümanında tutuluyor). Sabitlenen sohbetler listenin en üstünde,
+// arşivlenenler ana listede görünmüyor.
 // ==========================================
 
 import { db, ADMIN_EMAIL } from "./firebase-init.js";
 import {
-    collection, onSnapshot, query, orderBy, doc, getDocs
+    collection, onSnapshot, query, orderBy, doc, getDocs, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
 import { selectChat, getCurrentUser, clearChatForMe } from "./chat-core.js";
@@ -29,6 +29,8 @@ const chatSelectionToolbar = document.getElementById('chat-selection-toolbar');
 const chatSelectionCancelBtn = document.getElementById('chat-selection-cancel-btn');
 const chatSelectionCountEl = document.getElementById('chat-selection-count');
 const chatSelectionDeleteBtn = document.getElementById('chat-selection-delete-btn');
+const chatSelectionPinBtn = document.getElementById('chat-selection-pin-btn');
+const chatSelectionArchiveBtn = document.getElementById('chat-selection-archive-btn');
 
 const contactElementsMap = new Map();
 
@@ -52,6 +54,18 @@ function renderSkeletonList() {
         `;
     }
     contactList.innerHTML = skeletonHtml;
+}
+
+// Avatarı, seçim modunda gösterilecek yeşil tik rozetiyle birlikte sarmalar
+function wrapAvatarWithSelectionBadge(avatarInnerHtml) {
+    return `
+        <div class="relative flex-shrink-0">
+            ${avatarInnerHtml}
+            <div class="selection-check hidden absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-emerald-500 border-2 border-[#111b21] items-center justify-center">
+                <i class="fa-solid fa-check text-white text-[9px]"></i>
+            </div>
+        </div>
+    `;
 }
 
 // ------------------------------------------
@@ -148,10 +162,9 @@ export async function loadContacts() {
         exitChatSelectionMode();
 
         // 1) Gerçek sohbet özetleri (mesajlaşılmış olanlar).
-        // İsim/avatar her zaman taze users koleksiyonundan alınıyor.
-        // clearedAt varsa ve son mesaj ondan eskiyse (yani silindikten
-        // sonra yeni mesaj gelmediyse) sohbet listede gösterilmiyor.
         myChats.forEach((chatData, chatId) => {
+            if (chatData.archived) return;
+
             const clearedAt = chatData.clearedAt;
             const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
             const clearedAtMs = clearedAt ? clearedAt.toDate().getTime() : 0;
@@ -187,13 +200,13 @@ export async function loadContacts() {
         userDiv.className = "contact-list-item flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
         userDiv.dataset.chatId = chatId;
 
-        let avatarContent = '';
+        let avatarInner = '';
         if (chatData.otherAvatar) {
-            avatarContent = `<img src="${chatData.otherAvatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
+            avatarInner = `<img src="${chatData.otherAvatar}" class="w-12 h-12 rounded-full object-cover shadow">`;
         } else {
             const initials = getInitials(chatData.otherName || '?');
             const color = getUserColor(chatData.otherName || '?');
-            avatarContent = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color: ${color};">${initials}</div>`;
+            avatarInner = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow" style="background-color: ${color};">${initials}</div>`;
         }
 
         const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
@@ -207,11 +220,13 @@ export async function loadContacts() {
             tickHtml = `<span class="tick-container mr-1 flex-shrink-0"><i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i></span>`;
         }
 
+        const pinIconHtml = chatData.pinned ? `<i class="fa-solid fa-thumbtack text-[10px] text-amber-400 mr-1"></i>` : '';
+
         userDiv.innerHTML = `
-            ${avatarContent}
+            ${wrapAvatarWithSelectionBadge(avatarInner)}
             <div class="flex-1 overflow-hidden ml-3">
                 <div class="flex justify-between items-baseline">
-                    <h4 class="text-white font-medium text-sm">${escapeHtml(chatData.otherName || '')}</h4>
+                    <h4 class="text-white font-medium text-sm">${pinIconHtml}${escapeHtml(chatData.otherName || '')}</h4>
                     <span class="text-[11px] text-gray-400">${lastTime}</span>
                 </div>
                 <div class="flex justify-between items-center mt-0.5">
@@ -233,7 +248,9 @@ export async function loadContacts() {
         attachChatSelectionHandlers(userDiv, chatId);
         contactElementsMap.set(chatId, {
             element: userDiv,
-            lastTimeObj: chatData.lastMessageTime ? chatData.lastMessageTime.toDate() : null
+            lastTimeObj: chatData.lastMessageTime ? chatData.lastMessageTime.toDate() : null,
+            pinned: !!chatData.pinned,
+            hasChat: true
         });
         dynamicListContainer.appendChild(userDiv);
     }
@@ -243,17 +260,17 @@ export async function loadContacts() {
         userDiv.className = "contact-list-item flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
         userDiv.dataset.chatId = chatId;
 
-        let avatarContent = '';
+        let avatarInner = '';
         if (user.avatar) {
-            avatarContent = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow flex-shrink-0">`;
+            avatarInner = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow">`;
         } else {
             const initials = getInitials(user.name);
             const color = getUserColor(user.name);
-            avatarContent = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color: ${color};">${initials}</div>`;
+            avatarInner = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow" style="background-color: ${color};">${initials}</div>`;
         }
 
         userDiv.innerHTML = `
-            ${avatarContent}
+            ${wrapAvatarWithSelectionBadge(avatarInner)}
             <div class="flex-1 overflow-hidden ml-3">
                 <div class="flex justify-between items-baseline">
                     <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
@@ -274,7 +291,7 @@ export async function loadContacts() {
         });
 
         attachChatSelectionHandlers(userDiv, chatId);
-        contactElementsMap.set(chatId, { element: userDiv, lastTimeObj: null });
+        contactElementsMap.set(chatId, { element: userDiv, lastTimeObj: null, pinned: false, hasChat: false });
         dynamicListContainer.appendChild(userDiv);
     }
 
@@ -303,6 +320,9 @@ export async function loadContacts() {
 function sortContactList() {
     const itemsArray = Array.from(contactElementsMap.values());
     itemsArray.sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+
         if (!a.lastTimeObj) return 1;
         if (!b.lastTimeObj) return -1;
         return b.lastTimeObj - a.lastTimeObj;
@@ -314,7 +334,7 @@ function sortContactList() {
 }
 
 // ------------------------------------------
-// SOHBET LİSTESİ SEÇME MODU (silmek için)
+// SOHBET LİSTESİ SEÇME MODU (silmek/sabitlemek/arşivlemek için)
 // ------------------------------------------
 function enterChatSelectionMode(firstChatId) {
     chatSelectionMode = true;
@@ -328,7 +348,7 @@ function exitChatSelectionModeFromBack() {
     chatSelectionMode = false;
     selectedChatIds.forEach((id) => {
         const item = contactElementsMap.get(id);
-        if (item) item.element.classList.remove('bg-emerald-900/40');
+        if (item) setItemSelectedVisual(item.element, false);
     });
     selectedChatIds.clear();
     updateChatSelectionUI();
@@ -340,6 +360,15 @@ function exitChatSelectionMode() {
     popBackState();
 }
 
+function setItemSelectedVisual(el, isSelected) {
+    el.classList.toggle('bg-emerald-900/40', isSelected);
+    const checkBadge = el.querySelector('.selection-check');
+    if (checkBadge) {
+        checkBadge.classList.toggle('hidden', !isSelected);
+        checkBadge.classList.toggle('flex', isSelected);
+    }
+}
+
 function toggleChatSelectionInternal(chatId) {
     if (selectedChatIds.has(chatId)) {
         selectedChatIds.delete(chatId);
@@ -347,7 +376,7 @@ function toggleChatSelectionInternal(chatId) {
         selectedChatIds.add(chatId);
     }
     const item = contactElementsMap.get(chatId);
-    if (item) item.element.classList.toggle('bg-emerald-900/40', selectedChatIds.has(chatId));
+    if (item) setItemSelectedVisual(item.element, selectedChatIds.has(chatId));
 }
 
 function toggleChatSelection(chatId) {
@@ -380,7 +409,7 @@ if (chatSelectionDeleteBtn) {
         if (selectedChatIds.size === 0) return;
 
         const count = selectedChatIds.size;
-        const proceed = confirm(`${count} sohbet kalıcı olarak silinsin mi?\n\n(Karşı taraf etkilenmez, ama bu cihazda/hesapta eski mesajlar bir daha görünmez. Yeni mesaj gelirse sohbet tekrar listeye düşer, sadece yeni mesajla.)`);
+        const proceed = confirm(`${count} sohbet kalıcı olarak silinsin mi?\n\n(Karşı taraf etkilenmez, ama bu hesapta eski mesajlar bir daha görünmez. Yeni mesaj gelirse sohbet tekrar listeye düşer, sadece yeni mesajla.)`);
         if (!proceed) return;
 
         chatSelectionDeleteBtn.disabled = true;
@@ -400,6 +429,72 @@ if (chatSelectionDeleteBtn) {
 
         chatSelectionDeleteBtn.disabled = false;
         selectedChatIds.clear();
+        exitChatSelectionMode();
+    });
+}
+
+if (chatSelectionPinBtn) {
+    chatSelectionPinBtn.addEventListener('click', async () => {
+        if (selectedChatIds.size === 0) return;
+
+        const currentUser = getCurrentUser();
+        if (!currentUser) return;
+
+        const validIds = Array.from(selectedChatIds).filter((chatId) => {
+            const item = contactElementsMap.get(chatId);
+            return item && item.hasChat;
+        });
+
+        if (validIds.length === 0) {
+            alert("Henüz mesajlaşılmamış bir sohbeti sabitleyemezsin kanka.");
+            return;
+        }
+
+        chatSelectionPinBtn.disabled = true;
+        try {
+            for (const chatId of validIds) {
+                const item = contactElementsMap.get(chatId);
+                await updateDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
+                    pinned: !item.pinned
+                });
+            }
+        } catch (err) {
+            alert("Sabitleme işlemi başarısız: " + err.message);
+        }
+        chatSelectionPinBtn.disabled = false;
+        exitChatSelectionMode();
+    });
+}
+
+if (chatSelectionArchiveBtn) {
+    chatSelectionArchiveBtn.addEventListener('click', async () => {
+        if (selectedChatIds.size === 0) return;
+
+        const currentUser = getCurrentUser();
+        if (!currentUser) return;
+
+        const validIds = Array.from(selectedChatIds).filter((chatId) => {
+            const item = contactElementsMap.get(chatId);
+            return item && item.hasChat;
+        });
+
+        if (validIds.length === 0) {
+            alert("Henüz mesajlaşılmamış bir sohbeti arşivleyemezsin kanka.");
+            return;
+        }
+
+        chatSelectionArchiveBtn.disabled = true;
+        try {
+            for (const chatId of validIds) {
+                await updateDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
+                    archived: true,
+                    pinned: false
+                });
+            }
+        } catch (err) {
+            alert("Arşivleme işlemi başarısız: " + err.message);
+        }
+        chatSelectionArchiveBtn.disabled = false;
         exitChatSelectionMode();
     });
 }
