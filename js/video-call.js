@@ -7,7 +7,7 @@
 
 import { db } from "./firebase-init.js";
 import {
-    doc, collection, setDoc, updateDoc, onSnapshot, addDoc, serverTimestamp
+    doc, collection, setDoc, updateDoc, onSnapshot, addDoc, serverTimestamp, getDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getCurrentUser, getCurrentChatId, sendPushToUser } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
@@ -35,6 +35,7 @@ const callStatusText = document.getElementById('call-status-text');
 const btnHangup = document.getElementById('btn-hangup');
 const btnToggleMic = document.getElementById('btn-toggle-mic');
 const btnToggleCam = document.getElementById('btn-toggle-cam');
+const btnSwitchCamera = document.getElementById('btn-switch-camera');
 
 let pc = null;
 let localStream = null;
@@ -45,6 +46,7 @@ let unsubRemoteCandidates = null;
 let micEnabled = true;
 let camEnabled = true;
 let pendingOffer = null;
+let currentFacingMode = 'user';
 
 function callDocRef(chatId) {
     return doc(db, "chats", chatId, "call", "current");
@@ -73,9 +75,16 @@ export function watchCallForChat(chatId) {
             showIncomingCall(chatId, data.callerName, data.callerAvatar, data.offer);
         }
 
-        // Karşı taraf kapattı/reddetti
-        if ((data.status === 'ended' || data.status === 'declined') && pc) {
-            endCallUI(data.status === 'declined' ? 'Arama reddedildi' : 'Arama sonlandı');
+     // Karşı taraf kapattı/reddetti
+        if (data.status === 'ended' || data.status === 'declined') {
+            if (pc) {
+                endCallUI(data.status === 'declined' ? 'Arama reddedildi' : 'Arama sonlandı');
+            } else if (incomingCallOverlay && !incomingCallOverlay.classList.contains('hidden')) {
+                // Ben daha cevap vermeden karşı taraf aramayı kapattı -
+                // gelen arama ekranını otomatik kapat.
+                hideIncomingCallUI();
+                resetCallState();
+            }
         }
 
         // Ben arayansam ve cevap geldiyse
@@ -268,7 +277,26 @@ function showActiveCallUI(statusText) {
 
 async function hangupCall() {
     if (currentCallChatId) {
-        await updateDoc(callDocRef(currentCallChatId), { status: 'ended' }).catch(() => {});
+        try {
+            const snap = await getDoc(callDocRef(currentCallChatId));
+            const data = snap.exists() ? snap.data() : null;
+            const wasRinging = data && data.status === 'ringing';
+
+            await updateDoc(callDocRef(currentCallChatId), { status: 'ended' }).catch(() => {});
+
+            // Karşı taraf hiç cevap vermeden ben kapattıysam ona
+            // "cevapsız arama" bildirimi gönder.
+            if (wasRinging && isCaller && data.calleeUid) {
+                const user = getCurrentUser();
+                sendPushToUser(data.calleeUid, `${user.name}`, "☎️ Cevapsız görüntülü arama", {
+                    chatId: currentCallChatId,
+                    otherUid: user.uid,
+                    otherName: user.name
+                });
+            }
+        } catch (err) {
+            console.error("Arama sonlandırılırken hata:", err);
+        }
     }
     endCallUI('Arama sonlandı');
 }
@@ -293,6 +321,7 @@ function resetCallState() {
     isCaller = false;
     currentCallChatId = null;
     pendingOffer = null;
+    currentFacingMode = 'user';
 }
 
 if (btnHangup) {
@@ -320,4 +349,38 @@ if (btnToggleCam) {
         btnToggleCam.classList.toggle('bg-rose-600', !camEnabled);
         btnToggleCam.classList.toggle('bg-white/20', camEnabled);
     });
+}
+
+async function switchCamera() {
+    if (!localStream || !pc) return;
+
+    const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+
+    try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: newFacingMode },
+            audio: false
+        });
+        const newVideoTrack = newStream.getVideoTracks()[0];
+        if (!newVideoTrack) return;
+
+        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender) await sender.replaceTrack(newVideoTrack);
+
+        const oldVideoTrack = localStream.getVideoTracks()[0];
+        if (oldVideoTrack) {
+            localStream.removeTrack(oldVideoTrack);
+            oldVideoTrack.stop();
+        }
+        localStream.addTrack(newVideoTrack);
+        if (localVideoEl) localVideoEl.srcObject = localStream;
+
+        currentFacingMode = newFacingMode;
+    } catch (err) {
+        alert("Kamera değiştirilemedi kanka: " + err.message);
+    }
+}
+
+if (btnSwitchCamera) {
+    btnSwitchCamera.addEventListener('click', () => switchCamera());
 }
