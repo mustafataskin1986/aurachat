@@ -9,7 +9,7 @@ import { db } from "./firebase-init.js";
 import {
     doc, collection, setDoc, updateDoc, onSnapshot, addDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getCurrentUser, getCurrentChatId } from "./chat-core.js";
+import { getCurrentUser, getCurrentChatId, sendPushToUser } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -141,6 +141,13 @@ async function startCall(chatId, otherUid) {
         status: 'ringing',
         offer: { type: offer.type, sdp: offer.sdp },
         createdAt: serverTimestamp()
+    });
+
+    sendPushToUser(otherUid, `${user.name}`, "📹 Görüntülü arama yapıyor...", {
+        chatId: chatId,
+        otherUid: user.uid,
+        otherName: user.name,
+        otherAvatar: user.avatar || ''
     });
 
     listenRemoteCandidates(chatId, 'calleeCandidates');
