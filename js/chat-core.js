@@ -698,8 +698,7 @@ async function sendMessage() {
             sendPushToUser(currentOtherUid, `${currentUser.name}`, text, {
                 chatId: currentChatId,
                 otherUid: currentUser.uid,
-                otherName: currentUser.name,
-                otherAvatar: currentUser.avatar || ''
+                otherName: currentUser.name
             });
         }
 
@@ -833,8 +832,7 @@ if (attachBtn && imageInput) {
                 sendPushToUser(currentOtherUid, `${currentUser.name}`, "📷 Bir fotoğraf gönderdi", {
                     chatId: currentChatId,
                     otherUid: currentUser.uid,
-                    otherName: currentUser.name,
-                    otherAvatar: currentUser.avatar || ''
+                    otherName: currentUser.name
                 });
             }
 
