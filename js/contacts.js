@@ -1,11 +1,19 @@
 // ==========================================
 // KİŞİ LİSTESİ + ADMİN PANEL
 //
-// GÜNCELLEME: Sohbet seçim modunda avatarın sağ alt köşesinde yeşil
-// tik rozeti gösteriliyor. Toolbar'a Sabitle ve Arşivle butonları
-// eklendi (pinned/archived alanları users/{uid}/chats/{chatId}
-// dokümanında tutuluyor). Sabitlenen sohbetler listenin en üstünde,
-// arşivlenenler ana listede görünmüyor.
+// GÜNCELLEME: Avatarlar artık WhatsApp mantığıyla cihaza yerel dosya
+// olarak önbelleğe alınıyor (Capacitor Filesystem). İlk açılışta
+// baş harf/ initials placeholder gösteriliyor, arkaplanda avatar
+// cihaza yazılıyor/okunuyor, hazır olunca yerine geçiyor. Sonraki
+// tüm render'larda artık koca base64 string yerine küçük bir yerel
+// dosya yolu kullanılıyor — snapshot tetiklendikçe liste çok daha
+// hafif ve hızlı yeniden çiziliyor.
+//
+// Sohbet seçim modunda avatarın sağ alt köşesinde yeşil tik rozeti
+// gösteriliyor. Toolbar'a Sabitle ve Arşivle butonları eklendi
+// (pinned/archived alanları users/{uid}/chats/{chatId} dokümanında
+// tutuluyor). Sabitlenen sohbetler listenin en üstünde, arşivlenenler
+// ana listede görünmüyor.
 // ==========================================
 
 import { db, ADMIN_EMAIL } from "./firebase-init.js";
@@ -38,6 +46,78 @@ let chatSelectionMode = false;
 const selectedChatIds = new Set();
 
 // ------------------------------------------
+// AVATAR YEREL DOSYA ÖNBELLEĞİ (WhatsApp mantığı)
+// ------------------------------------------
+const AVATAR_CACHE_DIR = 'avatars';
+const avatarUriCache = new Map(); // uid -> yerel dosyanın gösterilebilir src'si
+
+// Base64 avatarı cihaza dosya olarak yazar (bir kez), sonraki
+// çağrılarda direkt yerel dosyadan okur. Capacitor Filesystem yoksa
+// (web/PWA) eski davranışa döner: base64'ü olduğu gibi kullanır.
+async function resolveLocalAvatar(uid, base64Avatar) {
+    if (!base64Avatar) return null;
+    if (avatarUriCache.has(uid)) return avatarUriCache.get(uid);
+
+    const Filesystem = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+    if (!Filesystem || !window.Capacitor.convertFileSrc) {
+        return base64Avatar;
+    }
+
+    const fileName = `${AVATAR_CACHE_DIR}/${uid}.jpg`;
+
+    try {
+        const existing = await Filesystem.getUri({ path: fileName, directory: 'DATA' });
+        const src = window.Capacitor.convertFileSrc(existing.uri);
+        avatarUriCache.set(uid, src);
+        return src;
+    } catch (e) {
+        // Dosya cihazda henüz yok, ilk kez yazılacak
+    }
+
+    try {
+        const base64Data = base64Avatar.includes(',') ? base64Avatar.split(',')[1] : base64Avatar;
+        await Filesystem.mkdir({ path: AVATAR_CACHE_DIR, directory: 'DATA', recursive: true }).catch(() => {});
+        const written = await Filesystem.writeFile({ path: fileName, data: base64Data, directory: 'DATA' });
+        const src = window.Capacitor.convertFileSrc(written.uri);
+        avatarUriCache.set(uid, src);
+        return src;
+    } catch (err) {
+        console.warn("Avatar yerel diske yazılamadı:", err);
+        return base64Avatar;
+    }
+}
+
+function buildAvatarPlaceholder(name, sizeClasses) {
+    const initials = getInitials(name || '?');
+    const color = getUserColor(name || '?');
+    return `<div class="${sizeClasses} rounded-full flex items-center justify-center text-white font-bold text-sm shadow" style="background-color: ${color};">${initials}</div>`;
+}
+
+// Bir avatar slotunu senkron olarak (placeholder veya önbellekten) doldurur,
+// önbellekte yoksa arkaplanda cihaza yazıp hazır olunca yerine geçirir.
+function renderAvatarInto(containerEl, uid, avatarBase64, name, sizeClasses) {
+    if (!containerEl) return;
+
+    const cached = avatarUriCache.get(uid);
+    if (cached) {
+        containerEl.innerHTML = `<img src="${cached}" class="${sizeClasses} rounded-full object-cover shadow">`;
+        return;
+    }
+
+    if (!avatarBase64) {
+        containerEl.innerHTML = buildAvatarPlaceholder(name, sizeClasses);
+        return;
+    }
+
+    containerEl.innerHTML = buildAvatarPlaceholder(name, sizeClasses);
+    resolveLocalAvatar(uid, avatarBase64).then((src) => {
+        if (src && containerEl.isConnected) {
+            containerEl.innerHTML = `<img src="${src}" class="${sizeClasses} rounded-full object-cover shadow">`;
+        }
+    });
+}
+
+// ------------------------------------------
 // İSKELET (LOADING) LİSTESİ
 // ------------------------------------------
 function renderSkeletonList() {
@@ -56,11 +136,12 @@ function renderSkeletonList() {
     contactList.innerHTML = skeletonHtml;
 }
 
-// Avatarı, seçim modunda gösterilecek yeşil tik rozetiyle birlikte sarmalar
-function wrapAvatarWithSelectionBadge(avatarInnerHtml) {
+// Avatarı, seçim modunda gösterilecek yeşil tik rozetiyle birlikte sarmalar.
+// slotId, avatarın async olarak sonradan doldurulacağı hedefi işaretler.
+function wrapAvatarWithSelectionBadge(slotId) {
     return `
         <div class="relative flex-shrink-0">
-            ${avatarInnerHtml}
+            <div data-avatar-slot="${slotId}"></div>
             <div class="selection-check hidden absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-emerald-500 border-2 border-[#111b21] items-center justify-center">
                 <i class="fa-solid fa-check text-white text-[9px]"></i>
             </div>
@@ -200,15 +281,6 @@ export async function loadContacts() {
         userDiv.className = "contact-list-item flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
         userDiv.dataset.chatId = chatId;
 
-        let avatarInner = '';
-        if (chatData.otherAvatar) {
-            avatarInner = `<img src="${chatData.otherAvatar}" class="w-12 h-12 rounded-full object-cover shadow">`;
-        } else {
-            const initials = getInitials(chatData.otherName || '?');
-            const color = getUserColor(chatData.otherName || '?');
-            avatarInner = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow" style="background-color: ${color};">${initials}</div>`;
-        }
-
         const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
         const lastText = chatData.lastMessage || "Henüz mesaj yok";
         const lastTime = chatData.lastMessageTime ? formatTimestamp(chatData.lastMessageTime.toDate()) : '';
@@ -223,7 +295,7 @@ export async function loadContacts() {
         const pinIconHtml = chatData.pinned ? `<i class="fa-solid fa-thumbtack text-[10px] text-amber-400 mr-1"></i>` : '';
 
         userDiv.innerHTML = `
-            ${wrapAvatarWithSelectionBadge(avatarInner)}
+            ${wrapAvatarWithSelectionBadge(chatId)}
             <div class="flex-1 overflow-hidden ml-3">
                 <div class="flex justify-between items-baseline">
                     <h4 class="text-white font-medium text-sm">${pinIconHtml}${escapeHtml(chatData.otherName || '')}</h4>
@@ -238,6 +310,9 @@ export async function loadContacts() {
                 </div>
             </div>
         `;
+
+        const avatarSlot = userDiv.querySelector(`[data-avatar-slot="${chatId}"]`);
+        renderAvatarInto(avatarSlot, chatData.otherUid, chatData.otherAvatar, chatData.otherName, 'w-12 h-12');
 
         userDiv.addEventListener('click', () => {
             if (!chatSelectionMode) {
@@ -260,17 +335,8 @@ export async function loadContacts() {
         userDiv.className = "contact-list-item flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
         userDiv.dataset.chatId = chatId;
 
-        let avatarInner = '';
-        if (user.avatar) {
-            avatarInner = `<img src="${user.avatar}" class="w-12 h-12 rounded-full object-cover shadow">`;
-        } else {
-            const initials = getInitials(user.name);
-            const color = getUserColor(user.name);
-            avatarInner = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow" style="background-color: ${color};">${initials}</div>`;
-        }
-
         userDiv.innerHTML = `
-            ${wrapAvatarWithSelectionBadge(avatarInner)}
+            ${wrapAvatarWithSelectionBadge(chatId)}
             <div class="flex-1 overflow-hidden ml-3">
                 <div class="flex justify-between items-baseline">
                     <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
@@ -283,6 +349,9 @@ export async function loadContacts() {
                 </div>
             </div>
         `;
+
+        const avatarSlot = userDiv.querySelector(`[data-avatar-slot="${chatId}"]`);
+        renderAvatarInto(avatarSlot, user.uid, user.avatar, user.name, 'w-12 h-12');
 
         userDiv.addEventListener('click', () => {
             if (!chatSelectionMode) {
@@ -608,18 +677,11 @@ if (adminBtn) {
                 const userDiv = document.createElement('div');
                 userDiv.className = "flex items-center justify-between p-3 bg-[#202c33]/60 hover:bg-[#202c33] rounded-xl border border-gray-800 transition";
 
-                let avatarHtml = '';
-                if (user.avatar) {
-                    avatarHtml = `<img src="${user.avatar}" class="w-10 h-10 rounded-full object-cover shadow flex-shrink-0">`;
-                } else {
-                    const initials = getInitials(user.name);
-                    const color = getUserColor(user.name);
-                    avatarHtml = `<div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shadow flex-shrink-0" style="background-color: ${color};">${initials}</div>`;
-                }
+                const avatarSlotId = `admin-${user.uid}`;
 
                 userDiv.innerHTML = `
                     <div class="flex items-center space-x-3 overflow-hidden">
-                        ${avatarHtml}
+                        <div data-avatar-slot="${avatarSlotId}" class="flex-shrink-0"></div>
                         <div class="overflow-hidden">
                             <h5 class="text-white text-sm font-medium truncate flex items-center gap-1.5">
                                 ${escapeHtml(user.name || 'İsimsiz')}
@@ -635,6 +697,9 @@ if (adminBtn) {
                         <span>Sohbet Et</span>
                     </button>` : ''}
                 `;
+
+                const avatarSlot = userDiv.querySelector(`[data-avatar-slot="${avatarSlotId}"]`);
+                renderAvatarInto(avatarSlot, user.uid, user.avatar, user.name, 'w-10 h-10');
 
                 if (!isMe) {
                     const chatBtn = userDiv.querySelector('.btn-admin-chat');
