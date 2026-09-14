@@ -66,7 +66,7 @@ export function getCurrentUser() {
 // ------------------------------------------
 // BİLDİRİM GÖNDERME YARDIMCI FONKSİYONU
 // ------------------------------------------
-async function sendPushToUser(receiverUid, title, body, extraData = {}) {
+export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
     if (!receiverUid) {
         console.warn("⚠️ sendPushToUser: receiverUid eksik.");
         return;
