@@ -491,8 +491,12 @@
 
                 PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
                     const data = notification.notification ? notification.notification.data : null;
-                    if (data && data.chatId) {
-                        window.location.hash = `#chat/${data.chatId}`;
+                    if (data && data.otherUid && window.openChatFromNotification) {
+                        window.openChatFromNotification({
+                            uid: data.otherUid,
+                            name: data.otherName || 'Sohbet',
+                            avatar: data.otherAvatar || ''
+                        });
                     }
                 });
 
