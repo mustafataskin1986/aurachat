@@ -146,8 +146,7 @@ async function startCall(chatId, otherUid) {
     sendPushToUser(otherUid, `${user.name}`, "📹 Görüntülü arama yapıyor...", {
         chatId: chatId,
         otherUid: user.uid,
-        otherName: user.name,
-        otherAvatar: user.avatar || ''
+        otherName: user.name
     });
 
     listenRemoteCandidates(chatId, 'calleeCandidates');
