@@ -130,7 +130,6 @@ async function updateChatSummaries(lastMessageText) {
         await setDoc(myChatRef, {
             otherUid: currentOtherUid,
             otherName: currentChatName,
-            otherAvatar: currentOtherAvatar || '',
             lastMessage: lastMessageText,
             lastMessageTime: serverTimestamp(),
             lastSenderUid: currentUser.uid,
@@ -142,7 +141,6 @@ async function updateChatSummaries(lastMessageText) {
         await setDoc(otherChatRef, {
             otherUid: currentUser.uid,
             otherName: currentUser.name,
-            otherAvatar: currentUser.avatar || '',
             lastMessage: lastMessageText,
             lastMessageTime: serverTimestamp(),
             lastSenderUid: currentUser.uid,
@@ -683,14 +681,14 @@ async function sendMessage() {
 
         messageInput.value = '';
 
-        await addDoc(collection(db, "chats", currentChatId, "messages"), {
+                await addDoc(collection(db, "chats", currentChatId, "messages"), {
             text: text,
             senderUid: currentUser.uid,
             senderName: currentUser.name,
-            senderAvatar: currentUser.avatar || '',
             createdAt: serverTimestamp(),
             read: false
         });
+
 
         await updateChatSummaries(text);
 
@@ -815,16 +813,16 @@ if (attachBtn && imageInput) {
                 return;
             }
 
-            await addDoc(collection(db, "chats", currentChatId, "messages"), {
+                        await addDoc(collection(db, "chats", currentChatId, "messages"), {
                 type: 'image',
                 imageUrl: dataUrl,
                 text: '',
                 senderUid: currentUser.uid,
                 senderName: currentUser.name,
-                senderAvatar: currentUser.avatar || '',
                 createdAt: serverTimestamp(),
                 read: false
             });
+
 
             await updateChatSummaries('📷 Fotoğraf');
 
