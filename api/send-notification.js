@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Yalnızca POST kabul edilir.' });
   }
 
-  const { token, title, body, platform } = req.body;
+  const { token, title, body, platform, data } = req.body;
 
   if (!token || !title || !body) {
     return res.status(400).json({ error: 'Eksik parametre.' });
@@ -24,16 +24,26 @@ export default async function handler(req, res) {
 
   const isWebPlatform = (platform || '').toLowerCase().includes('pwa') || (platform || '').toLowerCase().includes('web');
 
+  // FCM data payload'ındaki tüm alanlar string olmak zorunda
+  const safeData = { title, body };
+  if (data && typeof data === 'object') {
+    Object.keys(data).forEach((key) => {
+      if (data[key] !== undefined && data[key] !== null) {
+        safeData[key] = String(data[key]);
+      }
+    });
+  }
+
   try {
     const message = isWebPlatform
       ? {
-          data: { title, body },
+          data: safeData,
           android: { priority: 'high' },
           token: token,
         }
       : {
           notification: { title, body },
-          data: { title, body },
+          data: safeData,
           android: {
             priority: 'high',
             notification: { channelId: 'aurachat-high' }
