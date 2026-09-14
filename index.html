@@ -193,7 +193,7 @@
                 </div>
             </div>
 
-            <!-- SOHBET LİSTESİ SEÇİM TOOLBAR'I (silme modu) -->
+       <!-- SOHBET LİSTESİ SEÇİM TOOLBAR'I (silme modu) -->
             <div id="chat-selection-toolbar" class="hidden absolute top-0 left-0 right-0 bg-[#2a3942] px-4 py-3.5 items-center justify-between border-b border-gray-800 flex-shrink-0 z-30">
                 <div class="flex items-center space-x-4">
                     <button id="chat-selection-cancel-btn" class="text-gray-300 hover:text-white text-lg px-1">
@@ -201,9 +201,17 @@
                     </button>
                     <span id="chat-selection-count" class="text-white font-medium text-sm">0 seçildi</span>
                 </div>
-                <button id="chat-selection-delete-btn" class="text-gray-300 hover:text-rose-400 text-lg px-1">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
+                <div class="flex items-center space-x-4">
+                    <button id="chat-selection-pin-btn" class="text-gray-300 hover:text-amber-400 text-lg px-1" title="Sabitle">
+                        <i class="fa-solid fa-thumbtack"></i>
+                    </button>
+                    <button id="chat-selection-archive-btn" class="text-gray-300 hover:text-cyan-400 text-lg px-1" title="Arşivle">
+                        <i class="fa-solid fa-box-archive"></i>
+                    </button>
+                    <button id="chat-selection-delete-btn" class="text-gray-300 hover:text-rose-400 text-lg px-1" title="Sil">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
             </div>
 
             <!-- SABİT ARAMA BAR (Görseldeki Gibi Oval & Sor Butonlu) -->
