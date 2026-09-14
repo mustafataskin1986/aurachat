@@ -83,6 +83,37 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const data = event.notification.data || {};
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+            for (const client of clientList) {
+                if ('focus' in client) {
+                    client.postMessage({
+                        type: 'OPEN_CHAT',
+                        otherUid: data.otherUid,
+                        otherName: data.otherName,
+                        otherAvatar: data.otherAvatar
+                    });
+                    return client.focus();
+                }
+            }
+            if (clients.openWindow && data.otherUid) {
+                const params = new URLSearchParams({
+                    openChat: data.otherUid,
+                    otherName: data.otherName || '',
+                    otherAvatar: data.otherAvatar || ''
+                });
+                return clients.openWindow(`./?${params.toString()}`);
+            } else if (clients.openWindow) {
+                return clients.openWindow('./');
+            }
+        })
+    );
+});
+
 messaging.onBackgroundMessage((payload) => {
     console.log('[sw.js] Arka planda bildirim geldi:', payload);
 
