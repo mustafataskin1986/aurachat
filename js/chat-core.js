@@ -66,7 +66,7 @@ export function getCurrentUser() {
 // ------------------------------------------
 // BİLDİRİM GÖNDERME YARDIMCI FONKSİYONU
 // ------------------------------------------
-async function sendPushToUser(receiverUid, title, body) {
+async function sendPushToUser(receiverUid, title, body, extraData = {}) {
     if (!receiverUid) {
         console.warn("⚠️ sendPushToUser: receiverUid eksik.");
         return;
@@ -93,7 +93,8 @@ async function sendPushToUser(receiverUid, title, body) {
                 token: receiverToken,
                 title: title,
                 body: body,
-                platform: userData?.platform || ''
+                platform: userData?.platform || '',
+                data: extraData
             })
         });
 
@@ -693,8 +694,13 @@ async function sendMessage() {
 
         await updateChatSummaries(text);
 
-        if (currentChatId !== 'global' && currentOtherUid) {
-            sendPushToUser(currentOtherUid, `${currentUser.name}`, text);
+      if (currentChatId !== 'global' && currentOtherUid) {
+            sendPushToUser(currentOtherUid, `${currentUser.name}`, text, {
+                chatId: currentChatId,
+                otherUid: currentUser.uid,
+                otherName: currentUser.name,
+                otherAvatar: currentUser.avatar || ''
+            });
         }
 
         scrollToBottom();
@@ -823,8 +829,13 @@ if (attachBtn && imageInput) {
 
             await updateChatSummaries('📷 Fotoğraf');
 
-            if (currentChatId !== 'global' && currentOtherUid) {
-                sendPushToUser(currentOtherUid, `${currentUser.name}`, "📷 Bir fotoğraf gönderdi");
+        if (currentChatId !== 'global' && currentOtherUid) {
+                sendPushToUser(currentOtherUid, `${currentUser.name}`, "📷 Bir fotoğraf gönderdi", {
+                    chatId: currentChatId,
+                    otherUid: currentUser.uid,
+                    otherName: currentUser.name,
+                    otherAvatar: currentUser.avatar || ''
+                });
             }
 
             scrollToBottom();
