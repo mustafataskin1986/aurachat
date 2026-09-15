@@ -767,6 +767,7 @@ async function loadOlderMessages(session, btnWrapEl) {
 // ------------------------------------------
 const MEDIA_CACHE_DIR = 'chat_media';
 const mediaUriCache = new Map(); // "chatId/msgId" -> yerel gösterilebilir src
+const mediaResolveInFlight = new Map(); // "chatId/msgId" -> devam eden indirme Promise'i (çakışmayı önler)
 
 async function resolveLocalMedia(chatId, msgId, base64Data) {
     if (!base64Data || !chatId || !msgId) return base64Data || null;
@@ -774,33 +775,49 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
     const cacheKey = `${chatId}/${msgId}`;
     if (mediaUriCache.has(cacheKey)) return mediaUriCache.get(cacheKey);
 
-    const Filesystem = getFilesystemPlugin();
-    if (!Filesystem || !window.Capacitor.convertFileSrc) {
-        return base64Data;
+    // Bu resim için zaten devam eden bir indirme/yazma varsa, ikinci bir
+    // tane başlatmak yerine o işlemin bitmesini bekle - aynı dosyaya
+    // çakışan eşzamanlı yazmalar dosyayı bozuyordu, bunu böyle engelliyoruz.
+    if (mediaResolveInFlight.has(cacheKey)) {
+        return mediaResolveInFlight.get(cacheKey);
     }
 
-    const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
-    const filePath = `${dirPath}/${msgId}.jpg`;
+    const resolvePromise = (async () => {
+        const Filesystem = getFilesystemPlugin();
+        if (!Filesystem || !window.Capacitor.convertFileSrc) {
+            return base64Data;
+        }
 
-    try {
-        const existing = await Filesystem.getUri({ path: filePath, directory: 'DATA' });
-        const src = window.Capacitor.convertFileSrc(existing.uri);
-        mediaUriCache.set(cacheKey, src);
-        return src;
-    } catch (e) {
-        // Dosya cihazda henüz yok, ilk kez yazılacak
-    }
+        const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
+        const filePath = `${dirPath}/${msgId}.jpg`;
 
+        try {
+            const existing = await Filesystem.getUri({ path: filePath, directory: 'DATA' });
+            const src = window.Capacitor.convertFileSrc(existing.uri);
+            mediaUriCache.set(cacheKey, src);
+            return src;
+        } catch (e) {
+            // Dosya cihazda henüz yok, ilk kez yazılacak
+        }
+
+        try {
+            const data = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+            await Filesystem.mkdir({ path: dirPath, directory: 'DATA', recursive: true }).catch(() => {});
+            const written = await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
+            const src = window.Capacitor.convertFileSrc(written.uri);
+            mediaUriCache.set(cacheKey, src);
+            return src;
+        } catch (err) {
+            console.warn("Medya yerel diske yazılamadı:", err);
+            return base64Data;
+        }
+    })();
+
+    mediaResolveInFlight.set(cacheKey, resolvePromise);
     try {
-        const data = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-        await Filesystem.mkdir({ path: dirPath, directory: 'DATA', recursive: true }).catch(() => {});
-        const written = await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
-        const src = window.Capacitor.convertFileSrc(written.uri);
-        mediaUriCache.set(cacheKey, src);
-        return src;
-    } catch (err) {
-        console.warn("Medya yerel diske yazılamadı:", err);
-        return base64Data;
+        return await resolvePromise;
+    } finally {
+        mediaResolveInFlight.delete(cacheKey);
     }
 }
 
