@@ -1,7 +1,15 @@
 // ==========================================
 // CHAT CORE
 //
-// GÜNCELLEME: Sohbet silme artık kalıcı (Firestore'da clearedAt alanı
+// GÜNCELLEME: Mesaj içindeki resimler artık WhatsApp mantığıyla
+// cihaza yerel dosya olarak önbelleğe alınıyor (Capacitor
+// Filesystem). Resim ilk render edilirken bir yükleniyor animasyonu
+// gösteriliyor, arkaplanda base64 cihaza yazılıyor/okunuyor, hazır
+// olunca yerine geçiyor. Mesaj içerikleri asla değişmediği için
+// (bir kez gönderilip hiç güncellenmiyor) avatar önbelleğindeki gibi
+// bir versiyon/geçersiz kılma derdi yok — msgId tek başına yeterli.
+//
+// Sohbet silme artık kalıcı (Firestore'da clearedAt alanı
 // ile, cihaz değişse de kaybolmaz) ve o tarihten önceki mesajlar bir
 // daha hiç yüklenmiyor. Mesaj listesi varsayılan olarak son 50 mesajı
 // hızlıca gösteriyor, "Eski mesajları yükle" düğmesiyle geçmişe
@@ -61,6 +69,51 @@ export function getCurrentChatId() {
 
 export function getCurrentUser() {
     return currentUser;
+}
+
+// ------------------------------------------
+// MESAJ MEDYASI YEREL DOSYA ÖNBELLEĞİ (WhatsApp mantığı)
+// ------------------------------------------
+const MEDIA_CACHE_DIR = 'chat_media';
+const mediaUriCache = new Map(); // "chatId/msgId" -> yerel gösterilebilir src
+
+// Base64 mesaj resmini cihaza dosya olarak yazar (bir kez), sonraki
+// çağrılarda direkt yerel dosyadan okur. Capacitor Filesystem yoksa
+// (web/PWA) eski davranışa döner: base64'ü olduğu gibi kullanır.
+async function resolveLocalMedia(chatId, msgId, base64Data) {
+    if (!base64Data || !chatId || !msgId) return base64Data || null;
+
+    const cacheKey = `${chatId}/${msgId}`;
+    if (mediaUriCache.has(cacheKey)) return mediaUriCache.get(cacheKey);
+
+    const Filesystem = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+    if (!Filesystem || !window.Capacitor.convertFileSrc) {
+        return base64Data;
+    }
+
+    const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
+    const filePath = `${dirPath}/${msgId}.jpg`;
+
+    try {
+        const existing = await Filesystem.getUri({ path: filePath, directory: 'DATA' });
+        const src = window.Capacitor.convertFileSrc(existing.uri);
+        mediaUriCache.set(cacheKey, src);
+        return src;
+    } catch (e) {
+        // Dosya cihazda henüz yok, ilk kez yazılacak
+    }
+
+    try {
+        const data = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+        await Filesystem.mkdir({ path: dirPath, directory: 'DATA', recursive: true }).catch(() => {});
+        const written = await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
+        const src = window.Capacitor.convertFileSrc(written.uri);
+        mediaUriCache.set(cacheKey, src);
+        return src;
+    } catch (err) {
+        console.warn("Medya yerel diske yazılamadı:", err);
+        return base64Data;
+    }
 }
 
 // ------------------------------------------
@@ -558,7 +611,7 @@ function buildMessageElement(msg, isMine, msgId) {
     const isImage = msg.type === 'image' && msg.imageUrl;
 
     const bodyHtml = isImage
-        ? `<img src="${msg.imageUrl}" class="rounded-lg max-w-full max-h-72 object-cover cursor-pointer" onclick="openImageLightbox(this.src)">`
+        ? `<div class="media-slot rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-spinner fa-spin text-gray-400"></i></div>`
         : `<p class="break-words">${escapeHtml(msg.text)}</p>`;
 
     if (isMine) {
@@ -582,6 +635,15 @@ function buildMessageElement(msg, isMine, msgId) {
                 <span class="text-[10px] text-gray-400 ${isImage ? 'block text-right px-2 pb-1' : 'float-right ml-3 mt-1'}">${timeStr}</span>
             </div>
         `;
+    }
+
+    if (isImage) {
+        const mediaSlot = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
+        resolveLocalMedia(currentChatId, msgId, msg.imageUrl).then((src) => {
+            if (src && mediaSlot && mediaSlot.isConnected) {
+                mediaSlot.outerHTML = `<img src="${src}" class="rounded-lg max-w-full max-h-72 object-cover cursor-pointer" onclick="openImageLightbox(this.src)">`;
+            }
+        });
     }
 
     if (selectedMessageIds.has(msgId)) {
