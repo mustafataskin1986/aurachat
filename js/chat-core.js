@@ -611,7 +611,7 @@ function buildMessageElement(msg, isMine, msgId) {
     const isImage = msg.type === 'image' && msg.imageUrl;
 
     const bodyHtml = isImage
-        ? `<div class="media-slot rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-spinner fa-spin text-gray-400"></i></div>`
+        ? `<img src="${msg.imageUrl}" class="rounded-lg max-w-full max-h-72 object-cover cursor-pointer" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`
         : `<p class="break-words">${escapeHtml(msg.text)}</p>`;
 
     if (isMine) {
@@ -637,11 +637,11 @@ function buildMessageElement(msg, isMine, msgId) {
         `;
     }
 
-    if (isImage) {
-        const mediaSlot = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
+if (isImage) {
+        const mediaImgEl = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
         resolveLocalMedia(currentChatId, msgId, msg.imageUrl).then((src) => {
-            if (src && mediaSlot && mediaSlot.isConnected) {
-                mediaSlot.outerHTML = `<img src="${src}" class="rounded-lg max-w-full max-h-72 object-cover cursor-pointer" onclick="openImageLightbox(this.src)">`;
+            if (src && mediaImgEl && mediaImgEl.isConnected && src !== msg.imageUrl) {
+                mediaImgEl.src = src;
             }
         });
     }
