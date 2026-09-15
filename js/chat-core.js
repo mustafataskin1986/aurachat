@@ -273,7 +273,7 @@ export function selectChat(otherUser) {
         listenToChatDoc(currentChatId, currentOtherUid);
     }
 
-    if (window.innerWidth < 768) {
+if (window.innerWidth < 1024) {
         sidebar.classList.add('-translate-x-full');
         chatArea.classList.remove('translate-x-full');
         pushBackState(doCloseChatView);
@@ -311,7 +311,7 @@ function doCloseChatView() {
     messageContainer.innerHTML = '';
     exitSelectionMode();
 
-    if (window.innerWidth < 768) {
+ if (window.innerWidth < 1024) {
         sidebar.classList.remove('-translate-x-full');
         chatArea.classList.add('translate-x-full');
     }
