@@ -297,6 +297,17 @@ export function prewarmChatSession(chatId, otherUid) {
     ensureChatSession(chatId, otherUid).catch(() => {});
 }
 
+// Bildirim geldiğinde (uygulama arka planda canlıyken) çağrılır - sohbeti
+// hiç açmadan, o sohbetteki resimleri sessizce cihaza indirip önbelleğe alır.
+export async function prewarmChatMedia(chatId, otherUid) {
+    const session = await ensureChatSession(chatId, otherUid);
+    session.messages.forEach(({ id, data: msg }) => {
+        if (msg.type === 'image' && msg.imageUrl) {
+            resolveLocalMedia(chatId, id, msg.imageUrl).catch(() => {});
+        }
+    });
+}
+
 function markVisibleMessagesRead(session) {
     if (session.chatId === 'global' || !currentUser || !session.otherUid) return;
     if (document.visibilityState !== 'visible') return;
