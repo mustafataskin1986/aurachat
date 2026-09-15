@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aurachat-offline-v2';
+const CACHE_NAME = 'aurachat-offline-v3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html'
@@ -44,8 +44,10 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  const noCacheRequest = new Request(e.request, { cache: 'no-store' });
+
   e.respondWith(
-    fetch(e.request)
+    fetch(noCacheRequest)
       .then((response) => {
         if (response.ok) {
           const responseClone = response.clone();
@@ -122,7 +124,7 @@ messaging.onBackgroundMessage((payload) => {
     // Çift bildirimi önlemek için tag ve veri önceliklendirmesi ekliyoruz.
     const title = payload.notification?.title || payload.data?.title || 'Yeni Mesaj';
     const body = payload.notification?.body || payload.data?.body || 'AuraChat yeni bir mesajınız var.';
-    
+
     // Gönderenin avatarı data paketiyle gelmişse onu kullan, yoksa ikon dosyasını bas
     const iconUrl = payload.data?.senderAvatar || payload.notification?.icon || './icon.png';
 
