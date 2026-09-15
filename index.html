@@ -406,6 +406,7 @@
         import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
         import { getMessaging, getToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging.js";
+        import { prewarmChatMedia } from "./js/chat-core.js";
 
         // Firestore'a Token Kaydeden Ortak Fonksiyon
         async function saveFcmTokenToFirestore(user, tokenValue, platformName) {
@@ -492,6 +493,13 @@
 
                 PushNotifications.addListener('pushNotificationReceived', (notification) => {
                     console.log('Uygulama açıkken bildirim düştü:', notification);
+
+                    // Uygulama arka planda canlıyken bildirim gelince, kullanıcı
+                    // sohbeti hiç açmadan resmi sessizce cihaza indirip önbelleğe al.
+                    const data = notification.data || (notification.notification && notification.notification.data) || {};
+                    if (data.chatId) {
+                        prewarmChatMedia(data.chatId, data.otherUid || null).catch(() => {});
+                    }
                 });
 
                 PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
