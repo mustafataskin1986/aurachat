@@ -21,7 +21,7 @@ import {
     collection, onSnapshot, query, orderBy, doc, getDocs, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
-import { selectChat, getCurrentUser, clearChatForMe } from "./chat-core.js";
+import { selectChat, getCurrentUser, clearChatForMe, prewarmChatSession } from "./chat-core.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
 const contactList = document.getElementById('contact-list');
@@ -278,6 +278,30 @@ export async function loadContacts() {
         });
 
         sortContactList();
+        prewarmTopChats();
+    }
+
+    // Kullanıcı hiçbir yere dokunmadan, liste yüklenir yüklenmez en son
+    // konuşulan en fazla 3 sohbetin oturumunu arka planda ısıtır -
+    // tıklandığında zaten hazır olsun diye (WhatsApp mantığı).
+    function prewarmTopChats() {
+        const warmCandidates = Array.from(contactElementsMap.entries())
+            .filter(([, item]) => item.hasChat && item.otherUid)
+            .sort((a, b) => {
+                const ai = a[1], bi = b[1];
+                if (ai.pinned && !bi.pinned) return -1;
+                if (!ai.pinned && bi.pinned) return 1;
+                if (!ai.lastTimeObj) return 1;
+                if (!bi.lastTimeObj) return -1;
+                return bi.lastTimeObj - ai.lastTimeObj;
+            })
+            .slice(0, 3);
+
+        warmCandidates.forEach(([chatId, item]) => {
+            prewarmChatSession(chatId, item.otherUid);
+        });
+
+        prewarmChatSession('global', null);
     }
 
     function renderChatItem(chatId, chatData) {
@@ -329,7 +353,8 @@ export async function loadContacts() {
             element: userDiv,
             lastTimeObj: chatData.lastMessageTime ? chatData.lastMessageTime.toDate() : null,
             pinned: !!chatData.pinned,
-            hasChat: true
+            hasChat: true,
+            otherUid: chatData.otherUid
         });
         dynamicListContainer.appendChild(userDiv);
     }
