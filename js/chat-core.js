@@ -1,24 +1,36 @@
 // ==========================================
 // CHAT CORE
 //
-// GÜNCELLEME (WhatsApp mantığı - canlı dinleyiciler): Son görüntülenen
-// en fazla 3 sohbetin (global oda dahil) Firestore dinleyicileri artık
-// sohbetten çıkınca KAPANMIYOR, arka planda açık kalıp mesajları
-// sessizce bir "oturum" (chatSessions) önbelleğinde güncelliyor. Aynı
-// sohbete geri dönüldüğünde sıfırdan bağlantı kurmak yerine zaten açık
-// olan oturum kullanılıyor - bu da her giriş/çıkışta gereksiz ağ
-// trafiğini (sunucuyla yeniden el sıkışma) ortadan kaldırıyor. 3'ten
-// fazla sohbete girilirse en uzun süredir kullanılmayan (LRU) oturum
-// otomatik kapatılıp temizleniyor.
+// GÜNCELLEME (WhatsApp mantığı - disk önbellek + ön ısıtma): Mesajlar
+// artık sadece Firestore'un kendi (tembel/lazy) önbelleğine değil,
+// cihazın kendi diskine de (Capacitor Filesystem, msg_cache/{chatId}.json)
+// yazılıyor. Bir sohbet açıldığında ÖNCE diskten anında okunup ekrana
+// basılıyor - Firestore'un cevap vermesi hiç beklenmiyor. Firestore
+// arkadan sessizce gelip veriyi güncel tutuyor (onSnapshot), yani ağ
+// sadece gerçekten senkronizasyon gerektiğinde devrede. Bu sayede
+// uygulama kapatılıp açılsa bile, daha önce görülmüş bir sohbet anında
+// (disk hızında) açılıyor.
+//
+// Ayrıca contacts.js, liste yüklenir yüklenmez (kullanıcı hiçbir yere
+// dokunmadan) en son konuşulan 3 sohbetin oturumunu prewarmChatSession
+// ile arka planda otomatik ısıtıyor - kullanıcı tıkladığında oturum
+// zaten hazır oluyor.
+//
+// Son görüntülenen en fazla 3 sohbetin (global oda dahil) Firestore
+// dinleyicileri sohbetten çıkınca KAPANMIYOR, arka planda açık kalıp
+// mesajları sessizce bir "oturum" (chatSessions) önbelleğinde
+// güncelliyor. 3'ten fazla sohbete girilirse en uzun süredir
+// kullanılmayan (LRU) oturum otomatik kapatılıp temizleniyor (disk
+// önbelleği silinmiyor, sadece canlı dinleyici kapatılıyor).
 //
 // Mesaj içindeki resimler WhatsApp mantığıyla cihaza yerel dosya
 // olarak önbelleğe alınıyor (Capacitor Filesystem), spinner olmadan
 // önce base64 ile anında gösterilip arka planda yerel kaynağa
-// geçiriliyor. Mesaj içerikleri asla değişmediği için (bir kez
-// gönderilip hiç güncellenmiyor) versiyon/geçersiz kılma derdi yok.
+// geçiriliyor.
 //
 // Sohbet silme kalıcı (Firestore'da clearedAt alanı ile, cihaz değişse
-// de kaybolmaz) ve o tarihten önceki mesajlar bir daha hiç yüklenmiyor.
+// de kaybolmaz) ve o tarihten önceki mesajlar bir daha hiç yüklenmiyor;
+// silme anında o sohbetin disk önbellek dosyası da temizleniyor.
 // Mesaj listesi varsayılan olarak son 50 mesajı hızlıca gösteriyor,
 // "Eski mesajları yükle" düğmesiyle geçmişe istendiği kadar gidilebiliyor.
 // ==========================================
@@ -26,7 +38,7 @@
 import { db } from "./firebase-init.js";
 import {
     collection, addDoc, onSnapshot, query, orderBy, limitToLast, limit, startAfter, where, getDocs,
-    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, getDoc, increment
+    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, getDoc, increment, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
@@ -74,6 +86,74 @@ export function getCurrentUser() {
 }
 
 // ------------------------------------------
+// MESAJLARIN DİSK ÖNBELLEĞİ (WhatsApp'ın kendi SQLite'ı gibi -
+// Firestore'dan bağımsız, cihazın kendi diskinde)
+// ------------------------------------------
+const MSG_DISK_CACHE_DIR = 'msg_cache';
+const DISK_CACHE_MESSAGE_LIMIT = 50;
+
+function getFilesystemPlugin() {
+    return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) || null;
+}
+
+async function readChatDiskCache(chatId) {
+    const Filesystem = getFilesystemPlugin();
+    if (!Filesystem) return null;
+    try {
+        const result = await Filesystem.readFile({
+            path: `${MSG_DISK_CACHE_DIR}/${chatId}.json`,
+            directory: 'DATA',
+            encoding: 'utf8'
+        });
+        const parsed = JSON.parse(result.data);
+        return {
+            clearedAtMillis: parsed.clearedAtMillis ?? null,
+            messages: (parsed.messages || []).map(({ id, data }) => ({
+                id,
+                data: { ...data, createdAt: data.createdAt != null ? Timestamp.fromMillis(data.createdAt) : null }
+            }))
+        };
+    } catch (e) {
+        return null; // dosya yok / okunamadı - sorun değil, ilk kez açılıyordur
+    }
+}
+
+function writeChatDiskCache(chatId, session) {
+    const Filesystem = getFilesystemPlugin();
+    if (!Filesystem) return;
+
+    const messagesToSave = session.messages.slice(-DISK_CACHE_MESSAGE_LIMIT).map(({ id, data }) => ({
+        id,
+        data: { ...data, createdAt: data.createdAt ? data.createdAt.toMillis() : null }
+    }));
+    const payload = {
+        clearedAtMillis: session.clearedAt ? session.clearedAt.toMillis() : null,
+        messages: messagesToSave
+    };
+
+    Filesystem.mkdir({ path: MSG_DISK_CACHE_DIR, directory: 'DATA', recursive: true })
+        .catch(() => {})
+        .finally(() => {
+            Filesystem.writeFile({
+                path: `${MSG_DISK_CACHE_DIR}/${chatId}.json`,
+                directory: 'DATA',
+                data: JSON.stringify(payload),
+                encoding: 'utf8'
+            }).catch((err) => console.warn("Mesaj diskcache yazılamadı:", err));
+        });
+}
+
+async function deleteChatDiskCache(chatId) {
+    const Filesystem = getFilesystemPlugin();
+    if (!Filesystem) return;
+    try {
+        await Filesystem.deleteFile({ path: `${MSG_DISK_CACHE_DIR}/${chatId}.json`, directory: 'DATA' });
+    } catch (e) {
+        // dosya zaten yoksa sorun değil
+    }
+}
+
+// ------------------------------------------
 // SOHBET OTURUMLARI (canlı dinleyici havuzu - WhatsApp mantığı)
 // ------------------------------------------
 const MAX_WARM_SESSIONS = 3;
@@ -100,6 +180,10 @@ function evictLruSession(protectedChatId) {
     }
 }
 
+// Bir sohbetin oturumunu hazırlar. Zaten canlıysa anında döner.
+// Değilse: (1) önce DİSKTEN anında okuyup session.messages'ı doldurur
+// (Firestore'a hiç gitmeden), (2) arkasından Firestore dinleyicisini
+// kurar - dinleyici geldiğinde veriyi hem ekrana hem tekrar diske yazar.
 async function ensureChatSession(chatId, otherUid) {
     const existing = chatSessions.get(chatId);
     if (existing) {
@@ -122,8 +206,24 @@ async function ensureChatSession(chatId, otherUid) {
     };
     chatSessions.set(chatId, session);
     evictLruSession(chatId);
+    if (!chatSessions.has(chatId)) return session;
 
-    if (chatId !== 'global' && currentUser) {
+    // 1) ÖNCE DİSKTEN oku - ağa hiç gitmeden ilk görüntüyü hazırla
+    const diskCache = await readChatDiskCache(chatId);
+    if (diskCache) {
+        session.messages = diskCache.messages;
+        if (diskCache.clearedAtMillis != null) {
+            session.clearedAt = Timestamp.fromMillis(diskCache.clearedAtMillis);
+        }
+    }
+
+    // Bu sırada oturum evict edilmiş olabilir (çok hızlı art arda sohbet
+    // açılmışsa) - o durumda devam etmenin anlamı yok.
+    if (!chatSessions.has(chatId)) return session;
+
+    // 2) clearedAt diskte yoksa (bu cihazda ilk kez açılan bir sohbet)
+    // Firestore'dan al - bu tek network isteği kaçınılmaz, ilk açılışta olur.
+    if (chatId !== 'global' && currentUser && session.clearedAt === null) {
         try {
             const mySummarySnap = await getDoc(doc(db, "users", currentUser.uid, "chats", chatId));
             if (mySummarySnap.exists() && mySummarySnap.data().clearedAt) {
@@ -134,8 +234,6 @@ async function ensureChatSession(chatId, otherUid) {
         }
     }
 
-    // Oturum bu sırada evict edilmiş olabilir (çok hızlı art arda sohbet
-    // açılmışsa) - o durumda dinleyici kurmaya devam etmenin anlamı yok.
     if (!chatSessions.has(chatId)) return session;
 
     const q = session.clearedAt
@@ -164,6 +262,8 @@ async function ensureChatSession(chatId, otherUid) {
         session.oldestLoadedCreatedAt = firstDocCreatedAt;
         session.hasMoreOlderCandidate = snapshot.size >= 50;
 
+        writeChatDiskCache(chatId, session); // arka planda diske de yaz (sessizce)
+
         if (currentChatId === chatId) {
             renderSession(session);
             markVisibleMessagesRead(session);
@@ -189,6 +289,12 @@ async function ensureChatSession(chatId, otherUid) {
     }
 
     return session;
+}
+
+// contacts.js liste yüklenir yüklenmez (kullanıcı tıklamadan) çağırır -
+// en son konuşulan sohbetlerin oturumunu arka planda ısıtır.
+export function prewarmChatSession(chatId, otherUid) {
+    ensureChatSession(chatId, otherUid).catch(() => {});
 }
 
 function markVisibleMessagesRead(session) {
@@ -317,14 +423,13 @@ export async function clearChatForMe(chatId) {
             clearedAt: serverTimestamp()
         }, { merge: true });
 
-        // Açık bir oturum varsa, temizlenen geçmişi hemen yansıtsın diye kapatıp
-        // silelim - tekrar açıldığında yeni clearedAt ile taze kurulacak.
         const session = chatSessions.get(chatId);
         if (session) {
             if (session.unsubscribeMessages) session.unsubscribeMessages();
             if (session.unsubscribeChatDoc) session.unsubscribeChatDoc();
             chatSessions.delete(chatId);
         }
+        await deleteChatDiskCache(chatId);
     } catch (err) {
         console.error("Sohbet temizlenemedi:", err);
         throw err;
@@ -388,10 +493,11 @@ export async function selectChat(otherUser) {
         pushBackState(doCloseChatView);
     }
 
+    // Oturum zaten canlıysa (ön ısıtılmış ya da önceden ziyaret edilmişse)
+    // bu anında döner. Değilse, önce diskten okuyup az sonra Firestore'la
+    // senkronize olur - kullanıcı network'ü hiç beklemez.
     const session = await ensureChatSession(chatId, otherUid);
 
-    // Kullanıcı bu sırada başka bir sohbete geçmiş olabilir - o durumda bu
-    // sonucu ekrana basma.
     if (currentChatId !== chatId) return;
 
     session.lastUsed = ++sessionTick;
@@ -657,7 +763,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
     const cacheKey = `${chatId}/${msgId}`;
     if (mediaUriCache.has(cacheKey)) return mediaUriCache.get(cacheKey);
 
-    const Filesystem = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+    const Filesystem = getFilesystemPlugin();
     if (!Filesystem || !window.Capacitor.convertFileSrc) {
         return base64Data;
     }
