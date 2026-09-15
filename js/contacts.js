@@ -193,8 +193,6 @@ export async function loadContacts() {
         console.warn("Rehber okunurken bir durum oluştu:", err);
     }
 
-    contactList.innerHTML = '';
-
     const globalDiv = document.createElement('div');
     globalDiv.className = "contact-list-item flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30";
     globalDiv.innerHTML = `
@@ -212,7 +210,6 @@ export async function loadContacts() {
     globalDiv.addEventListener('click', () => {
         if (!chatSelectionMode) selectChat('global');
     });
-    contactList.appendChild(globalDiv);
 
     const globalTimeSpan = globalDiv.querySelector('.global-time');
     const globalPreview = globalDiv.querySelector('.global-preview');
@@ -228,15 +225,22 @@ export async function loadContacts() {
     });
 
     const dynamicListContainer = document.createElement('div');
-    contactList.appendChild(dynamicListContainer);
 
     let allUsersById = new Map();
     let myChats = new Map();
     let usersLoaded = false;
     let chatsLoaded = false;
+    let listMounted = false;
 
     function renderAll() {
         if (!usersLoaded || !chatsLoaded) return;
+
+        if (!listMounted) {
+            contactList.innerHTML = '';
+            contactList.appendChild(globalDiv);
+            contactList.appendChild(dynamicListContainer);
+            listMounted = true;
+        }
 
         dynamicListContainer.innerHTML = '';
         contactElementsMap.clear();
