@@ -429,16 +429,8 @@ if (selectionDeleteBtn) {
 async function loadMessages(chatId) {
     if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
 
-    messageContainer.innerHTML = `
-        <div class="flex items-center justify-center h-full">
-            <i class="fa-solid fa-spinner fa-spin text-2xl text-gray-600"></i>
-        </div>
-    `;
-
     oldestLoadedCreatedAt = null;
-    noMoreOlderMessages = false;
-    currentClearedAt = null;
-
+    
     if (chatId !== 'global' && currentUser) {
         try {
             const mySummarySnap = await getDoc(doc(db, "users", currentUser.uid, "chats", chatId));
