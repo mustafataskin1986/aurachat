@@ -692,9 +692,9 @@ function attachSelectionHandlers(el, msgId) {
 }
 
 function scrollToBottom() {
-    setTimeout(() => {
+    requestAnimationFrame(() => {
         messageContainer.scrollTop = messageContainer.scrollHeight;
-    }, 50);
+    });
 }
 
 window.openImageLightbox = function (src) {
