@@ -1,19 +1,26 @@
 // ==========================================
 // CHAT CORE
 //
-// GÜNCELLEME: Mesaj içindeki resimler artık WhatsApp mantığıyla
-// cihaza yerel dosya olarak önbelleğe alınıyor (Capacitor
-// Filesystem). Resim ilk render edilirken bir yükleniyor animasyonu
-// gösteriliyor, arkaplanda base64 cihaza yazılıyor/okunuyor, hazır
-// olunca yerine geçiyor. Mesaj içerikleri asla değişmediği için
-// (bir kez gönderilip hiç güncellenmiyor) avatar önbelleğindeki gibi
-// bir versiyon/geçersiz kılma derdi yok — msgId tek başına yeterli.
+// GÜNCELLEME (WhatsApp mantığı - canlı dinleyiciler): Son görüntülenen
+// en fazla 3 sohbetin (global oda dahil) Firestore dinleyicileri artık
+// sohbetten çıkınca KAPANMIYOR, arka planda açık kalıp mesajları
+// sessizce bir "oturum" (chatSessions) önbelleğinde güncelliyor. Aynı
+// sohbete geri dönüldüğünde sıfırdan bağlantı kurmak yerine zaten açık
+// olan oturum kullanılıyor - bu da her giriş/çıkışta gereksiz ağ
+// trafiğini (sunucuyla yeniden el sıkışma) ortadan kaldırıyor. 3'ten
+// fazla sohbete girilirse en uzun süredir kullanılmayan (LRU) oturum
+// otomatik kapatılıp temizleniyor.
 //
-// Sohbet silme artık kalıcı (Firestore'da clearedAt alanı
-// ile, cihaz değişse de kaybolmaz) ve o tarihten önceki mesajlar bir
-// daha hiç yüklenmiyor. Mesaj listesi varsayılan olarak son 50 mesajı
-// hızlıca gösteriyor, "Eski mesajları yükle" düğmesiyle geçmişe
-// istendiği kadar gidilebiliyor.
+// Mesaj içindeki resimler WhatsApp mantığıyla cihaza yerel dosya
+// olarak önbelleğe alınıyor (Capacitor Filesystem), spinner olmadan
+// önce base64 ile anında gösterilip arka planda yerel kaynağa
+// geçiriliyor. Mesaj içerikleri asla değişmediği için (bir kez
+// gönderilip hiç güncellenmiyor) versiyon/geçersiz kılma derdi yok.
+//
+// Sohbet silme kalıcı (Firestore'da clearedAt alanı ile, cihaz değişse
+// de kaybolmaz) ve o tarihten önceki mesajlar bir daha hiç yüklenmiyor.
+// Mesaj listesi varsayılan olarak son 50 mesajı hızlıca gösteriyor,
+// "Eski mesajları yükle" düğmesiyle geçmişe istendiği kadar gidilebiliyor.
 // ==========================================
 
 import { db } from "./firebase-init.js";
@@ -48,11 +55,6 @@ let currentChatId = null;
 let currentChatName = '';
 let currentOtherUid = null;
 let currentOtherAvatar = '';
-let currentClearedAt = null;       // bu sohbeti en son ne zaman "temizlediğim" (varsa)
-let oldestLoadedCreatedAt = null;  // şu an ekranda görünen en eski mesajın zamanı (eski mesaj yüklemek için)
-let noMoreOlderMessages = false;
-let unsubscribeMessages = null;
-let unsubscribeChatDoc = null;
 let typingTimeout = null;
 
 let selectionMode = false;
@@ -72,47 +74,143 @@ export function getCurrentUser() {
 }
 
 // ------------------------------------------
-// MESAJ MEDYASI YEREL DOSYA ÖNBELLEĞİ (WhatsApp mantığı)
+// SOHBET OTURUMLARI (canlı dinleyici havuzu - WhatsApp mantığı)
 // ------------------------------------------
-const MEDIA_CACHE_DIR = 'chat_media';
-const mediaUriCache = new Map(); // "chatId/msgId" -> yerel gösterilebilir src
+const MAX_WARM_SESSIONS = 3;
+const chatSessions = new Map(); // chatId -> session
+let sessionTick = 0;
 
-// Base64 mesaj resmini cihaza dosya olarak yazar (bir kez), sonraki
-// çağrılarda direkt yerel dosyadan okur. Capacitor Filesystem yoksa
-// (web/PWA) eski davranışa döner: base64'ü olduğu gibi kullanır.
-async function resolveLocalMedia(chatId, msgId, base64Data) {
-    if (!base64Data || !chatId || !msgId) return base64Data || null;
+function evictLruSession(protectedChatId) {
+    if (chatSessions.size <= MAX_WARM_SESSIONS) return;
 
-    const cacheKey = `${chatId}/${msgId}`;
-    if (mediaUriCache.has(cacheKey)) return mediaUriCache.get(cacheKey);
+    let lruId = null;
+    let lruVal = Infinity;
+    for (const [id, s] of chatSessions) {
+        if (id === protectedChatId) continue;
+        if (s.lastUsed < lruVal) {
+            lruVal = s.lastUsed;
+            lruId = id;
+        }
+    }
+    if (lruId) {
+        const s = chatSessions.get(lruId);
+        if (s.unsubscribeMessages) s.unsubscribeMessages();
+        if (s.unsubscribeChatDoc) s.unsubscribeChatDoc();
+        chatSessions.delete(lruId);
+    }
+}
 
-    const Filesystem = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
-    if (!Filesystem || !window.Capacitor.convertFileSrc) {
-        return base64Data;
+async function ensureChatSession(chatId, otherUid) {
+    const existing = chatSessions.get(chatId);
+    if (existing) {
+        existing.lastUsed = ++sessionTick;
+        return existing;
     }
 
-    const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
-    const filePath = `${dirPath}/${msgId}.jpg`;
+    const session = {
+        chatId,
+        otherUid,
+        messages: [],               // canlı pencere (son 50, onSnapshot ile güncel)
+        olderMessagesPrepended: [], // "eski mesajları yükle" ile eklenenler
+        oldestLoadedCreatedAt: null,
+        hasMoreOlderCandidate: false,
+        noMoreOlderMessages: false,
+        clearedAt: null,
+        unsubscribeMessages: null,
+        unsubscribeChatDoc: null,
+        lastUsed: ++sessionTick
+    };
+    chatSessions.set(chatId, session);
+    evictLruSession(chatId);
 
-    try {
-        const existing = await Filesystem.getUri({ path: filePath, directory: 'DATA' });
-        const src = window.Capacitor.convertFileSrc(existing.uri);
-        mediaUriCache.set(cacheKey, src);
-        return src;
-    } catch (e) {
-        // Dosya cihazda henüz yok, ilk kez yazılacak
+    if (chatId !== 'global' && currentUser) {
+        try {
+            const mySummarySnap = await getDoc(doc(db, "users", currentUser.uid, "chats", chatId));
+            if (mySummarySnap.exists() && mySummarySnap.data().clearedAt) {
+                session.clearedAt = mySummarySnap.data().clearedAt;
+            }
+        } catch (err) {
+            console.warn("clearedAt okunamadı:", err);
+        }
     }
 
-    try {
-        const data = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-        await Filesystem.mkdir({ path: dirPath, directory: 'DATA', recursive: true }).catch(() => {});
-        const written = await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
-        const src = window.Capacitor.convertFileSrc(written.uri);
-        mediaUriCache.set(cacheKey, src);
-        return src;
-    } catch (err) {
-        console.warn("Medya yerel diske yazılamadı:", err);
-        return base64Data;
+    // Oturum bu sırada evict edilmiş olabilir (çok hızlı art arda sohbet
+    // açılmışsa) - o durumda dinleyici kurmaya devam etmenin anlamı yok.
+    if (!chatSessions.has(chatId)) return session;
+
+    const q = session.clearedAt
+        ? query(
+            collection(db, "chats", chatId, "messages"),
+            where("createdAt", ">", session.clearedAt),
+            orderBy("createdAt", "asc"),
+            limitToLast(50)
+        )
+        : query(
+            collection(db, "chats", chatId, "messages"),
+            orderBy("createdAt", "asc"),
+            limitToLast(50)
+        );
+
+    session.unsubscribeMessages = onSnapshot(q, (snapshot) => {
+        const docs = [];
+        let firstDocCreatedAt = null;
+        snapshot.forEach((docSnap) => {
+            const msg = docSnap.data();
+            if (!firstDocCreatedAt && msg.createdAt) firstDocCreatedAt = msg.createdAt;
+            docs.push({ id: docSnap.id, data: msg });
+        });
+
+        session.messages = docs;
+        session.oldestLoadedCreatedAt = firstDocCreatedAt;
+        session.hasMoreOlderCandidate = snapshot.size >= 50;
+
+        if (currentChatId === chatId) {
+            renderSession(session);
+            markVisibleMessagesRead(session);
+            scrollToBottom();
+        }
+    }, (error) => {
+        console.error("Mesajlar yüklenirken hata:", error);
+    });
+
+    if (chatId !== 'global') {
+        session.unsubscribeChatDoc = onSnapshot(doc(db, "chats", chatId), (docSnap) => {
+            if (currentChatId !== chatId) return;
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const isOtherTyping = otherUid && data[`typing_${otherUid}`];
+                if (isOtherTyping) {
+                    activeChatStatus.innerHTML = `<span class="text-emerald-400 font-medium animate-pulse">yazıyor...</span>`;
+                } else {
+                    activeChatStatus.textContent = "";
+                }
+            }
+        });
+    }
+
+    return session;
+}
+
+function markVisibleMessagesRead(session) {
+    if (session.chatId === 'global' || !currentUser || !session.otherUid) return;
+    if (document.visibilityState !== 'visible') return;
+
+    let markedAny = false;
+    session.messages.forEach(({ id, data: msg }) => {
+        const isMine = !!(currentUser.uid && msg.senderUid === currentUser.uid);
+        if (!isMine && msg.read === false) {
+            updateDoc(doc(db, "chats", session.chatId, "messages", id), { read: true });
+            markedAny = true;
+        }
+    });
+
+    if (markedAny) {
+        updateDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), {
+            unreadCount: 0
+        }).catch(() => {});
+        updateDoc(doc(db, "users", session.otherUid, "chats", session.chatId), {
+            lastMessageRead: true
+        }).catch(() => {});
     }
 }
 
@@ -218,6 +316,15 @@ export async function clearChatForMe(chatId) {
         await setDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
             clearedAt: serverTimestamp()
         }, { merge: true });
+
+        // Açık bir oturum varsa, temizlenen geçmişi hemen yansıtsın diye kapatıp
+        // silelim - tekrar açıldığında yeni clearedAt ile taze kurulacak.
+        const session = chatSessions.get(chatId);
+        if (session) {
+            if (session.unsubscribeMessages) session.unsubscribeMessages();
+            if (session.unsubscribeChatDoc) session.unsubscribeChatDoc();
+            chatSessions.delete(chatId);
+        }
     } catch (err) {
         console.error("Sohbet temizlenemedi:", err);
         throw err;
@@ -227,17 +334,18 @@ export async function clearChatForMe(chatId) {
 // ------------------------------------------
 // SOHBET SEÇİMİ
 // ------------------------------------------
-export function selectChat(otherUser) {
-    if (unsubscribeChatDoc) { unsubscribeChatDoc(); unsubscribeChatDoc = null; }
+export async function selectChat(otherUser) {
     exitSelectionMode();
 
-    if (otherUser === 'global') {
-        currentChatId = 'global';
-        currentChatName = 'Genel Kanka Odası 🌍';
-        currentOtherUid = null;
-        currentOtherAvatar = '';
+    let chatId, chatName, otherUid, otherAvatar;
 
-        activeChatName.textContent = currentChatName;
+    if (otherUser === 'global') {
+        chatId = 'global';
+        chatName = 'Genel Kanka Odası 🌍';
+        otherUid = null;
+        otherAvatar = '';
+
+        activeChatName.textContent = chatName;
         activeChatAvatar.style.backgroundColor = '';
         activeChatAvatar.className = "w-10 h-10 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0";
         activeChatAvatar.innerHTML = `<i class="fa-solid fa-globe text-sm"></i>`;
@@ -247,18 +355,14 @@ export function selectChat(otherUser) {
             console.warn("selectChat: currentUser.uid yok, önce setCurrentUser çağrılmalı");
             return;
         }
-        currentOtherUid = otherUser.uid || otherUser.id;
-        currentOtherAvatar = otherUser.avatar || '';
-        currentChatId = getChatId(currentUser.uid, currentOtherUid);
-        currentChatName = otherUser.name;
+        otherUid = otherUser.uid || otherUser.id;
+        otherAvatar = otherUser.avatar || '';
+        chatId = getChatId(currentUser.uid, otherUid);
+        chatName = otherUser.name;
 
-        activeChatName.textContent = currentChatName;
+        activeChatName.textContent = chatName;
 
-        if (otherUser.avatar && otherUser.avatar.startsWith('data:image')) {
-            activeChatAvatar.style.backgroundColor = '';
-            activeChatAvatar.className = "w-10 h-10 rounded-full overflow-hidden shadow flex-shrink-0";
-            activeChatAvatar.innerHTML = `<img src="${otherUser.avatar}" class="w-full h-full object-cover">`;
-        } else if (otherUser.avatar) {
+        if (otherUser.avatar) {
             activeChatAvatar.style.backgroundColor = '';
             activeChatAvatar.className = "w-10 h-10 rounded-full overflow-hidden shadow flex-shrink-0";
             activeChatAvatar.innerHTML = `<img src="${otherUser.avatar}" class="w-full h-full object-cover">`;
@@ -270,48 +374,47 @@ export function selectChat(otherUser) {
             activeChatAvatar.innerHTML = `<span>${initials}</span>`;
         }
 
-        listenToChatDoc(currentChatId, currentOtherUid);
+        activeChatStatus.textContent = "";
     }
 
-if (window.innerWidth < 1024) {
+    currentChatId = chatId;
+    currentChatName = chatName;
+    currentOtherUid = otherUid;
+    currentOtherAvatar = otherAvatar;
+
+    if (window.innerWidth < 1024) {
         sidebar.classList.add('-translate-x-full');
         chatArea.classList.remove('translate-x-full');
         pushBackState(doCloseChatView);
     }
 
-    loadMessages(currentChatId);
-    watchCallForChat(currentChatId);
-}
+    const session = await ensureChatSession(chatId, otherUid);
 
-function listenToChatDoc(chatId, otherUid) {
-    activeChatStatus.textContent = "";
+    // Kullanıcı bu sırada başka bir sohbete geçmiş olabilir - o durumda bu
+    // sonucu ekrana basma.
+    if (currentChatId !== chatId) return;
 
-    unsubscribeChatDoc = onSnapshot(doc(db, "chats", chatId), (docSnap) => {
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            const isOtherTyping = otherUid && data[`typing_${otherUid}`];
+    session.lastUsed = ++sessionTick;
+    renderSession(session);
+    markVisibleMessagesRead(session);
+    scrollToBottom();
 
-            if (isOtherTyping) {
-                activeChatStatus.innerHTML = `<span class="text-emerald-400 font-medium animate-pulse">yazıyor...</span>`;
-            } else {
-                activeChatStatus.textContent = "";
-            }
-        }
-    });
+    watchCallForChat(chatId);
 }
 
 function doCloseChatView() {
-    if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
-    if (unsubscribeChatDoc) { unsubscribeChatDoc(); unsubscribeChatDoc = null; }
-
+    // NOT: Dinleyicileri artık burada KAPATMIYORUZ - WhatsApp mantığı
+    // gereği son görüntülenen sohbetler arka planda canlı kalıyor
+    // (bkz. chatSessions / ensureChatSession).
     currentChatId = null;
     currentChatName = '';
     currentOtherUid = null;
     currentOtherAvatar = '';
     messageContainer.innerHTML = '';
+    messageElementsById.clear();
     exitSelectionMode();
 
- if (window.innerWidth < 1024) {
+    if (window.innerWidth < 1024) {
         sidebar.classList.remove('-translate-x-full');
         chatArea.classList.add('translate-x-full');
     }
@@ -320,6 +423,13 @@ function doCloseChatView() {
 backBtn.addEventListener('click', () => {
     doCloseChatView();
     popBackState();
+});
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && currentChatId) {
+        const session = chatSessions.get(currentChatId);
+        if (session) markVisibleMessagesRead(session);
+    }
 });
 
 // ------------------------------------------
@@ -402,15 +512,17 @@ if (selectionDeleteBtn) {
             if (!proceed) return;
         }
 
+        const chatIdAtDeleteTime = currentChatId;
+
         try {
             for (const id of ids) {
                 const el = messageElementsById.get(id);
                 const isMine = el && el.dataset.mine === 'true';
 
                 if (deleteForEveryone && isMine) {
-                    await deleteDoc(doc(db, "chats", currentChatId, "messages", id));
+                    await deleteDoc(doc(db, "chats", chatIdAtDeleteTime, "messages", id));
                 } else {
-                    await updateDoc(doc(db, "chats", currentChatId, "messages", id), {
+                    await updateDoc(doc(db, "chats", chatIdAtDeleteTime, "messages", id), {
                         deletedFor: arrayUnion(currentUser.uid)
                     });
                 }
@@ -419,179 +531,159 @@ if (selectionDeleteBtn) {
             alert("Mesajlar silinemedi: " + err.message);
         }
 
+        // Silinenler "eski mesajları yükle" ile gelmiş paginasyon dışı
+        // öğelerse, canlı sorgu penceresinin dışında kaldıkları için
+        // onSnapshot bunları otomatik güncellemez - elle temizleyelim.
+        const session = chatSessions.get(chatIdAtDeleteTime);
+        if (session) {
+            session.olderMessagesPrepended = session.olderMessagesPrepended.filter(
+                (m) => !ids.includes(m.id)
+            );
+            if (currentChatId === chatIdAtDeleteTime) {
+                renderSession(session);
+            }
+        }
+
         exitSelectionMode();
     });
 }
 
 // ------------------------------------------
-// MESAJ YÜKLEME / DİNLEME
+// MESAJLARI EKRANA ÇİZME
 // ------------------------------------------
-async function loadMessages(chatId) {
-    if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+function renderSession(session) {
+    messageContainer.innerHTML = '';
+    messageElementsById.clear();
 
-    oldestLoadedCreatedAt = null;
-    
-    if (chatId !== 'global' && currentUser) {
-        try {
-            const mySummarySnap = await getDoc(doc(db, "users", currentUser.uid, "chats", chatId));
-            if (mySummarySnap.exists() && mySummarySnap.data().clearedAt) {
-                currentClearedAt = mySummarySnap.data().clearedAt;
-            }
-        } catch (err) {
-            console.warn("clearedAt okunamadı:", err);
-        }
+    if (session.chatId !== 'global') {
+        const olderBtn = buildLoadOlderButtonElement(session);
+        if (olderBtn) messageContainer.appendChild(olderBtn);
     }
 
-    // Bu fonksiyon çağrıldıktan sonra kullanıcı başka bir sohbete geçmiş
-    // olabilir - o durumda eski isteğin sonucu ekranı ezmesin.
-    if (chatId !== currentChatId) return;
+    const fragment = document.createDocumentFragment();
 
-    const q = currentClearedAt
-        ? query(
-            collection(db, "chats", chatId, "messages"),
-            where("createdAt", ">", currentClearedAt),
-            orderBy("createdAt", "asc"),
-            limitToLast(50)
-        )
-        : query(
-            collection(db, "chats", chatId, "messages"),
-            orderBy("createdAt", "asc"),
-            limitToLast(50)
-        );
-
-    unsubscribeMessages = onSnapshot(q, (snapshot) => {
-        messageContainer.innerHTML = '';
-        messageElementsById.clear();
-
-        let markedAnyRead = false;
-        let firstDocCreatedAt = null;
-        const isAppVisible = document.visibilityState === 'visible';
-
-        if (chatId !== 'global') {
-            renderLoadOlderButton(chatId, snapshot.size >= 50);
-        }
-
-        snapshot.forEach((docSnap) => {
-            const msg = docSnap.data();
-            if (!firstDocCreatedAt && msg.createdAt) firstDocCreatedAt = msg.createdAt;
-
-            if (currentUser && Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) {
-                return;
-            }
-
-            const isMine = !!(currentUser && currentUser.uid && msg.senderUid && msg.senderUid === currentUser.uid);
-
-            if (currentUser && currentUser.uid && currentChatId === chatId && chatId !== 'global' && !isMine && msg.read === false && isAppVisible) {
-                updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), { read: true });
-                markedAnyRead = true;
-            }
-
-            renderMessage(msg, isMine, docSnap.id);
-        });
-
-        oldestLoadedCreatedAt = firstDocCreatedAt;
-
-        if (markedAnyRead && currentUser && chatId !== 'global' && currentOtherUid) {
-            updateDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
-                unreadCount: 0
-            }).catch(() => {});
-            updateDoc(doc(db, "users", currentOtherUid, "chats", chatId), {
-                lastMessageRead: true
-            }).catch(() => {});
-        }
-
-        scrollToBottom();
-    }, (error) => {
-        console.error("Mesajlar yüklenirken hata:", error);
+    session.olderMessagesPrepended.forEach(({ id, data: msg }) => {
+        if (currentUser && Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) return;
+        const isMine = !!(currentUser && currentUser.uid && msg.senderUid === currentUser.uid);
+        fragment.appendChild(buildMessageElement(msg, isMine, id));
     });
-}
 
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && currentChatId && currentChatId !== 'global') {
-        loadMessages(currentChatId);
-    }
-});
+    session.messages.forEach(({ id, data: msg }) => {
+        if (currentUser && Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) return;
+        const isMine = !!(currentUser && currentUser.uid && msg.senderUid === currentUser.uid);
+        fragment.appendChild(buildMessageElement(msg, isMine, id));
+    });
+
+    messageContainer.appendChild(fragment);
+}
 
 // ------------------------------------------
 // ESKİ MESAJLARI YÜKLE (pagination)
 // ------------------------------------------
-function renderLoadOlderButton(chatId, mightHaveMore) {
-    const existing = document.getElementById('load-older-btn');
-    if (existing) existing.remove();
-
-    if (!mightHaveMore || noMoreOlderMessages) return;
+function buildLoadOlderButtonElement(session) {
+    if (!session.hasMoreOlderCandidate || session.noMoreOlderMessages || !session.oldestLoadedCreatedAt) {
+        return null;
+    }
 
     const btnWrap = document.createElement('div');
-    btnWrap.id = 'load-older-btn';
     btnWrap.className = 'flex justify-center py-2';
     btnWrap.innerHTML = `
         <button class="bg-[#202c33] hover:bg-[#2a3942] text-emerald-400 text-xs font-medium px-4 py-2 rounded-full transition">
             Eski mesajları yükle
         </button>
     `;
-    btnWrap.querySelector('button').addEventListener('click', () => loadOlderMessages(chatId, btnWrap));
-    messageContainer.insertBefore(btnWrap, messageContainer.firstChild);
+    btnWrap.querySelector('button').addEventListener('click', () => loadOlderMessages(session, btnWrap));
+    return btnWrap;
 }
 
-async function loadOlderMessages(chatId, btnWrapEl) {
-    if (!oldestLoadedCreatedAt || chatId !== currentChatId) return;
+async function loadOlderMessages(session, btnWrapEl) {
+    if (!session.oldestLoadedCreatedAt) return;
 
     const btn = btnWrapEl.querySelector('button');
-    const originalText = btn.textContent;
     btn.disabled = true;
     btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
 
     try {
-        const q = currentClearedAt
+        const q = session.clearedAt
             ? query(
-                collection(db, "chats", chatId, "messages"),
-                where("createdAt", ">", currentClearedAt),
+                collection(db, "chats", session.chatId, "messages"),
+                where("createdAt", ">", session.clearedAt),
                 orderBy("createdAt", "desc"),
-                startAfter(oldestLoadedCreatedAt),
+                startAfter(session.oldestLoadedCreatedAt),
                 limit(50)
             )
             : query(
-                collection(db, "chats", chatId, "messages"),
+                collection(db, "chats", session.chatId, "messages"),
                 orderBy("createdAt", "desc"),
-                startAfter(oldestLoadedCreatedAt),
+                startAfter(session.oldestLoadedCreatedAt),
                 limit(50)
             );
 
         const snap = await getDocs(q);
 
         if (snap.empty) {
-            noMoreOlderMessages = true;
-            btnWrapEl.remove();
+            session.noMoreOlderMessages = true;
+            if (currentChatId === session.chatId) renderSession(session);
             return;
         }
 
-        const docsAsc = snap.docs.slice().reverse();
-        const fragment = document.createDocumentFragment();
-
-        docsAsc.forEach((docSnap) => {
-            const msg = docSnap.data();
-            if (currentUser && Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) {
-                return;
-            }
-            const isMine = !!(currentUser && currentUser.uid && msg.senderUid && msg.senderUid === currentUser.uid);
-            const el = buildMessageElement(msg, isMine, docSnap.id);
-            fragment.appendChild(el);
-        });
-
-        messageContainer.insertBefore(fragment, btnWrapEl.nextSibling);
-        oldestLoadedCreatedAt = docsAsc[0].data().createdAt;
+        const docsAsc = snap.docs.slice().reverse().map((d) => ({ id: d.id, data: d.data() }));
+        session.olderMessagesPrepended = docsAsc.concat(session.olderMessagesPrepended);
+        session.oldestLoadedCreatedAt = docsAsc[0].data.createdAt;
 
         if (snap.size < 50) {
-            noMoreOlderMessages = true;
-            btnWrapEl.remove();
-        } else {
-            btn.disabled = false;
-            btn.textContent = originalText;
+            session.noMoreOlderMessages = true;
         }
+
+        if (currentChatId === session.chatId) renderSession(session);
     } catch (err) {
         console.error("Eski mesajlar yüklenemedi:", err);
-        btn.disabled = false;
-        btn.textContent = originalText;
+        if (currentChatId === session.chatId) {
+            btn.disabled = false;
+            btn.textContent = "Eski mesajları yükle";
+        }
+    }
+}
+
+// ------------------------------------------
+// MESAJ MEDYASI YEREL DOSYA ÖNBELLEĞİ (WhatsApp mantığı)
+// ------------------------------------------
+const MEDIA_CACHE_DIR = 'chat_media';
+const mediaUriCache = new Map(); // "chatId/msgId" -> yerel gösterilebilir src
+
+async function resolveLocalMedia(chatId, msgId, base64Data) {
+    if (!base64Data || !chatId || !msgId) return base64Data || null;
+
+    const cacheKey = `${chatId}/${msgId}`;
+    if (mediaUriCache.has(cacheKey)) return mediaUriCache.get(cacheKey);
+
+    const Filesystem = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+    if (!Filesystem || !window.Capacitor.convertFileSrc) {
+        return base64Data;
+    }
+
+    const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
+    const filePath = `${dirPath}/${msgId}.jpg`;
+
+    try {
+        const existing = await Filesystem.getUri({ path: filePath, directory: 'DATA' });
+        const src = window.Capacitor.convertFileSrc(existing.uri);
+        mediaUriCache.set(cacheKey, src);
+        return src;
+    } catch (e) {
+        // Dosya cihazda henüz yok, ilk kez yazılacak
+    }
+
+    try {
+        const data = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+        await Filesystem.mkdir({ path: dirPath, directory: 'DATA', recursive: true }).catch(() => {});
+        const written = await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
+        const src = window.Capacitor.convertFileSrc(written.uri);
+        mediaUriCache.set(cacheKey, src);
+        return src;
+    } catch (err) {
+        console.warn("Medya yerel diske yazılamadı:", err);
+        return base64Data;
     }
 }
 
@@ -629,7 +721,7 @@ function buildMessageElement(msg, isMine, msgId) {
         `;
     }
 
-if (isImage) {
+    if (isImage) {
         const mediaImgEl = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
         resolveLocalMedia(currentChatId, msgId, msg.imageUrl).then((src) => {
             if (src && mediaImgEl && mediaImgEl.isConnected && src !== msg.imageUrl) {
@@ -645,11 +737,6 @@ if (isImage) {
     attachSelectionHandlers(msgDiv, msgId);
     messageElementsById.set(msgId, msgDiv);
     return msgDiv;
-}
-
-function renderMessage(msg, isMine, msgId) {
-    const msgDiv = buildMessageElement(msg, isMine, msgId);
-    messageContainer.appendChild(msgDiv);
 }
 
 function attachSelectionHandlers(el, msgId) {
