@@ -104,19 +104,27 @@ function getFilesystemPlugin() {
 const ensuredDirs = new Set();
 
 async function ensureDirOnce(Filesystem, path) {
-    if (!Filesystem || !path) return;
-    if (ensuredDirs.has(path)) return;
+    if (!Filesystem || !path || ensuredDirs.has(path)) return;
 
     try {
-        await Filesystem.mkdir({ 
-            path: path, 
-            directory: 'DATA', 
-            recursive: true 
+        // 1. Önce klasör var mı diye kontrol et (Sessiz kontrol)
+        await Filesystem.stat({
+            path: path,
+            directory: 'DATA'
         });
     } catch (e) {
-        // "Directory exists" hatasını tamamen yutuyoruz, sessizce devam ediyor
+        // 2. Klasör yoksa stat hata verir, burada güvenle oluştururuz
+        try {
+            await Filesystem.mkdir({
+                path: path,
+                directory: 'DATA',
+                recursive: true
+            });
+        } catch (err) {
+            // Olası ufacık bir çakışmayı da sessizce yut
+        }
     } finally {
-        // Klasör oluşsa da var olsa da Set'e ekle ki aynı oturumda tekrar çağırmasın
+        // Hafızaya al ki aynı oturumda tekrar disk kontrolü yapmasın
         ensuredDirs.add(path);
     }
 }
@@ -864,24 +872,38 @@ async function pwaDbSet(key, value) {
 // - bu durumda sadece yerelde zaten var olan bir kopya aranır, yenisi
 // yazılamaz. Android'de Filesystem, tarayıcıda IndexedDB kullanılır.
 // DÜZELTİLMİŞ resolveLocalMedia FONKSİYONU
-async function saveToNativeGallery(pureBase64, filename) {
+// EKLE
+async function saveToNativeGallery(pureBase64) {
     try {
         const Filesystem = getFilesystemPlugin();
         if (!Filesystem) return;
 
+        // Tarih ve saat formatı oluşturur: YYYYMMDD_HHMMSS (Örn: AuraChat_20260916_175430.jpg)
+        const now = new Date();
+        const timestamp = now.getFullYear().toString() +
+            String(now.getMonth() + 1).padStart(2, '0') +
+            String(now.getDate()).padStart(2, '0') + '_' +
+            String(now.getHours()).padStart(2, '0') +
+            String(now.getMinutes()).padStart(2, '0') +
+            String(now.getSeconds()).padStart(2, '0');
+
+        const cleanFilename = `AuraChat_${timestamp}`;
+
         await Filesystem.writeFile({
-            path: `Pictures/AuraChat/${filename}.jpg`,
+            path: `Pictures/AuraChat/${cleanFilename}.jpg`,
             data: pureBase64,
             directory: 'EXTERNAL_STORAGE',
             recursive: true
         });
-        console.log("📷 Fotoğraf telefon galerisine kaydedildi.");
+        console.log(`📷 Fotoğraf telefon galerisine kaydedildi: ${cleanFilename}.jpg`);
     } catch (e) {
         try {
             const Filesystem = getFilesystemPlugin();
             if (Filesystem) {
+                const now = new Date();
+                const timestamp = now.getTime();
                 await Filesystem.writeFile({
-                    path: `AuraChat_${filename}.jpg`,
+                    path: `AuraChat_${timestamp}.jpg`,
                     data: pureBase64,
                     directory: 'DOCUMENTS'
                 });
@@ -891,6 +913,7 @@ async function saveToNativeGallery(pureBase64, filename) {
         }
     }
 }
+
 
 async function resolveLocalMedia(chatId, msgId, base64Data) {
     if (!chatId || !msgId) return base64Data || null;
@@ -941,7 +964,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
                 });
 
                 // Galeriye de kopya at
-                saveToNativeGallery(pureBase64, `${chatId}_${msgId}`);
+                saveToNativeGallery(pureBase64);
 
                 const src = `data:image/jpeg;base64,${pureBase64}`;
                 mediaUriCache.set(cacheKey, src);
