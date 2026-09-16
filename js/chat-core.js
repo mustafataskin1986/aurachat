@@ -784,16 +784,21 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
 
     const resolvePromise = (async () => {
         const Filesystem = getFilesystemPlugin();
-        if (!Filesystem || !window.Capacitor.convertFileSrc) {
+        if (!Filesystem) {
             return base64Data;
         }
 
         const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
         const filePath = `${dirPath}/${msgId}.jpg`;
 
+        // NOT: convertFileSrc() kullanmıyoruz - uygulama Vercel'den canlı
+        // yüklendiği için (server.url), Capacitor'ın yerel dosya şeması ile
+        // sayfanın gerçek kökeni uyuşmuyor ve resim yüklenemiyordu. Bunun
+        // yerine dosyayı doğrudan okuyup data: URI olarak veriyoruz - bu her
+        // koşulda çalışır, köprüye (URL şemasına) hiç ihtiyaç duymaz.
         try {
-            const existing = await Filesystem.getUri({ path: filePath, directory: 'DATA' });
-            const src = window.Capacitor.convertFileSrc(existing.uri);
+            const existing = await Filesystem.readFile({ path: filePath, directory: 'DATA', encoding: 'base64' });
+            const src = `data:image/jpeg;base64,${existing.data}`;
             mediaUriCache.set(cacheKey, src);
             return src;
         } catch (e) {
@@ -803,8 +808,8 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
         try {
             const data = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
             await Filesystem.mkdir({ path: dirPath, directory: 'DATA', recursive: true }).catch(() => {});
-            const written = await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
-            const src = window.Capacitor.convertFileSrc(written.uri);
+            await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
+            const src = `data:image/jpeg;base64,${data}`;
             mediaUriCache.set(cacheKey, src);
             return src;
         } catch (err) {
