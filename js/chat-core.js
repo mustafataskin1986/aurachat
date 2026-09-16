@@ -976,26 +976,6 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
             }
         }
 
-        // Filesystem yoksa ve elimizde base64 varsa fallback olarak dön
-        if (base64Data) {
-            const src = base64Data.startsWith('data:') ? base64Data : `data:image/jpeg;base64,${base64Data}`;
-            mediaUriCache.set(cacheKey, src);
-            return src;
-        }
-
-        return null;
-    })();
-
-    mediaResolveInFlight.set(cacheKey, resolvePromise);
-
-    try {
-        return await resolvePromise;
-    } finally {
-        mediaResolveInFlight.delete(cacheKey);
-    }
-}
-
-
         // Tarayıcı / PWA fallback
         const existing = await pwaDbGet(cacheKey);
         if (existing) {
