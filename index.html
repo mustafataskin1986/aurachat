@@ -504,12 +504,21 @@
 
                 PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
                     const data = notification.notification ? notification.notification.data : null;
-                    if (data && data.otherUid && window.openChatFromNotification) {
-                        window.openChatFromNotification({
+                    if (data && data.otherUid) {
+                        const target = {
                             uid: data.otherUid,
                             name: data.otherName || 'Sohbet',
                             avatar: data.otherAvatar || ''
-                        });
+                        };
+                        // Uygulama zaten çalışıyorsa (sıcak açılış) direkt sohbete geç.
+                        // Henüz açılış sürecindeyse (soğuk açılış), app-init.js'in
+                        // listeyi göstermeye karar vermeden önce kontrol edeceği
+                        // bayrağa yaz - "önce liste sonra sohbet" sıçramasını önler.
+                        if (window.__aurachatReady && window.openChatFromNotification) {
+                            window.openChatFromNotification(target);
+                        } else {
+                            window.pendingOpenChat = target;
+                        }
                     }
                 });
 
