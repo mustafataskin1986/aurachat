@@ -868,11 +868,6 @@ async function pwaDbSet(key, value) {
     });
 }
 
-// base64Data null olabilir (Firestore'daki kopya zaten temizlenmiş olabilir)
-// - bu durumda sadece yerelde zaten var olan bir kopya aranır, yenisi
-// yazılamaz. Android'de Filesystem, tarayıcıda IndexedDB kullanılır.
-// DÜZELTİLMİŞ resolveLocalMedia FONKSİYONU
-// EKLE
 async function saveToNativeGallery(pureBase64) {
     try {
         const Filesystem = getFilesystemPlugin();
@@ -913,7 +908,6 @@ async function saveToNativeGallery(pureBase64) {
         }
     }
 }
-
 
 async function resolveLocalMedia(chatId, msgId, base64Data) {
     if (!chatId || !msgId) return base64Data || null;
@@ -976,7 +970,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
             }
         }
 
-        // Tarayıcı / PWA fallback
+        // Tarayıcı / PWA fallback (IndexedDB)
         const existing = await pwaDbGet(cacheKey);
         if (existing) {
             mediaUriCache.set(cacheKey, existing);
@@ -1174,7 +1168,7 @@ async function sendMessage() {
 
         messageInput.value = '';
 
-                await addDoc(collection(db, "chats", currentChatId, "messages"), {
+        await addDoc(collection(db, "chats", currentChatId, "messages"), {
             text: text,
             senderUid: currentUser.uid,
             senderName: currentUser.name,
@@ -1185,7 +1179,7 @@ async function sendMessage() {
 
         await updateChatSummaries(text);
 
-      if (currentChatId !== 'global' && currentOtherUid) {
+        if (currentChatId !== 'global' && currentOtherUid) {
             sendPushToUser(currentOtherUid, `${currentUser.name}`, text, {
                 chatId: currentChatId,
                 otherUid: currentUser.uid,
@@ -1306,7 +1300,7 @@ if (attachBtn && imageInput) {
                 return;
             }
 
-                        await addDoc(collection(db, "chats", currentChatId, "messages"), {
+            await addDoc(collection(db, "chats", currentChatId, "messages"), {
                 type: 'image',
                 imageUrl: dataUrl,
                 text: '',
@@ -1319,7 +1313,7 @@ if (attachBtn && imageInput) {
 
             await updateChatSummaries('📷 Fotoğraf');
 
-        if (currentChatId !== 'global' && currentOtherUid) {
+            if (currentChatId !== 'global' && currentOtherUid) {
                 sendPushToUser(currentOtherUid, `${currentUser.name}`, "📷 Bir fotoğraf gönderdi", {
                     chatId: currentChatId,
                     otherUid: currentUser.uid,
