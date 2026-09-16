@@ -96,6 +96,17 @@ function getFilesystemPlugin() {
     return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) || null;
 }
 
+const ensuredDirs = new Set(); // hangi klasörlerin zaten oluşturulduğunu tutar - tekrar mkdir denemesin
+async function ensureDirOnce(Filesystem, path) {
+    if (ensuredDirs.has(path)) return;
+    try {
+        await Filesystem.mkdir({ path, directory: 'DATA', recursive: true });
+    } catch (e) {
+        // klasör zaten varsa sorun değil
+    }
+    ensuredDirs.add(path);
+}
+
 async function readChatDiskCache(chatId) {
     const Filesystem = getFilesystemPlugin();
     if (!Filesystem) return null;
@@ -131,16 +142,14 @@ function writeChatDiskCache(chatId, session) {
         messages: messagesToSave
     };
 
-    Filesystem.mkdir({ path: MSG_DISK_CACHE_DIR, directory: 'DATA', recursive: true })
-        .catch(() => {})
-        .finally(() => {
-            Filesystem.writeFile({
-                path: `${MSG_DISK_CACHE_DIR}/${chatId}.json`,
-                directory: 'DATA',
-                data: JSON.stringify(payload),
-                encoding: 'utf8'
-            }).catch((err) => console.warn("Mesaj diskcache yazılamadı:", err));
-        });
+    ensureDirOnce(Filesystem, MSG_DISK_CACHE_DIR).finally(() => {
+        Filesystem.writeFile({
+            path: `${MSG_DISK_CACHE_DIR}/${chatId}.json`,
+            directory: 'DATA',
+            data: JSON.stringify(payload),
+            encoding: 'utf8'
+        }).catch((err) => console.warn("Mesaj diskcache yazılamadı:", err));
+    });
 }
 
 async function deleteChatDiskCache(chatId) {
@@ -807,7 +816,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
 
         try {
             const data = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-            await Filesystem.mkdir({ path: dirPath, directory: 'DATA', recursive: true }).catch(() => {});
+            await ensureDirOnce(Filesystem, dirPath);
             await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
             const src = `data:image/jpeg;base64,${data}`;
             mediaUriCache.set(cacheKey, src);
