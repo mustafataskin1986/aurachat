@@ -942,13 +942,18 @@ function maybeStripDeliveredImage(chatId, msgId, msg) {
     if (msg.senderUid === currentUser.uid) return;
 
     const cacheKey = `${chatId}/${msgId}`;
-    if (!mediaUriCache.has(cacheKey)) return; // gerçekten diske yazılı değilse dokunma
+    
+    // GÜVENLİK SUBABI: Eğer resim yerel bellek kütüphanesine (mediaUriCache) 
+    // başarıyla yazılmadıysa (Android Filesystem veya PWA IndexedDB patladıysa) 
+    // sakın sunucudaki resmi silme!
+    if (!mediaUriCache.has(cacheKey)) return; 
 
     updateDoc(doc(db, "chats", chatId, "messages", msgId), {
         imageUrl: null,
         imageDelivered: true
     }).catch((err) => console.warn("Teslim edilen resim Firestore'dan temizlenemedi:", err));
 }
+
 
 function buildMessageElement(msg, isMine, msgId) {
     const msgDiv = document.createElement('div');
