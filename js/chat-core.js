@@ -330,13 +330,18 @@ export function prewarmChatSession(chatId, otherUid) {
 
 export async function prewarmChatMedia(chatId, otherUid) {
     const session = await ensureChatSession(chatId, otherUid);
-    session.messages.forEach(({ id, data: msg }) => {
+    for (const { id, data: msg } of session.messages) {
         if (msg.type === 'image' && msg.imageUrl) {
-            resolveLocalMedia(chatId, id, msg.imageUrl)
-                .then(() => maybeStripDeliveredImage(chatId, id, msg))
-                .catch(() => {});
+            try {
+                const localSrc = await resolveLocalMedia(chatId, id, msg.imageUrl);
+                if (localSrc) {
+                    maybeStripDeliveredImage(chatId, id, msg);
+                }
+            } catch (e) {
+                console.warn("Prewarm media hatası:", e);
+            }
         }
-    });
+    }
 }
 
 function markVisibleMessagesRead(session) {
@@ -849,6 +854,38 @@ async function pwaDbSet(key, value) {
 // - bu durumda sadece yerelde zaten var olan bir kopya aranır, yenisi
 // yazılamaz. Android'de Filesystem, tarayıcıda IndexedDB kullanılır.
 // DÜZELTİLMİŞ resolveLocalMedia FONKSİYONU
+async function saveToNativeGallery(pureBase64, filename) {
+    try {
+        const Filesystem = getFilesystemPlugin();
+        if (!Filesystem) return;
+
+        // Android Galeri / Pictures klasörüne kaydetme
+        await Filesystem.writeFile({
+            path: `Pictures/AuraChat/${filename}.jpg`,
+            data: pureBase64,
+            directory: 'EXTERNAL_STORAGE',
+            encoding: 'base64',
+            recursive: true
+        });
+        console.log("📷 Fotoğraf telefon galerisine (Pictures/AuraChat) kaydedildi.");
+    } catch (e) {
+        // External storage yetkisi yoksa veya alternatif klasör deneniyorsa fallback
+        try {
+            const Filesystem = getFilesystemPlugin();
+            if (Filesystem) {
+                await Filesystem.writeFile({
+                    path: `AuraChat_${filename}.jpg`,
+                    data: pureBase64,
+                    directory: 'DOCUMENTS',
+                    encoding: 'base64'
+                });
+            }
+        } catch (err) {
+            console.warn("Galeritutucuya yazılamadı:", err);
+        }
+    }
+}
+
 async function resolveLocalMedia(chatId, msgId, base64Data) {
     if (!chatId || !msgId) return base64Data || null;
 
@@ -867,32 +904,30 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
             const filePath = `${dirPath}/${msgId}.jpg`;
 
             try {
-                // 1. Önce diski oku
+                // 1. Önce dahili diski oku (Uygulama içi hızlı yükleme)
                 const existing = await Filesystem.readFile({ 
                     path: filePath, 
                     directory: 'DATA', 
                     encoding: 'base64' 
                 });
                 
-                // Capacitor 5+ sürümlerinde data string veya object dönebilir
                 const rawData = typeof existing.data === 'string' ? existing.data : existing.data;
                 const src = rawData.startsWith('data:') ? rawData : `data:image/jpeg;base64,${rawData}`;
                 
                 mediaUriCache.set(cacheKey, src);
                 return src;
             } catch (e) {
-                // Dosya cihazda henüz yok, yazmaya devam et
+                // Dosya henüz iç diskte yok
             }
 
             if (!base64Data) return null;
 
             try {
-                // Base64 header kısmını temizle (data:image/jpeg;base64, kısmını at)
                 const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
                 
                 await ensureDirOnce(Filesystem, dirPath);
                 
-                // CRITICAL FIX: encoding: 'base64' eklendi! Bu olmadan Android diske yazmıyordu!
+                // 2. Uygulama özel hafızasına kaydet (Silinmeyecek uygulama önbelleği)
                 await Filesystem.writeFile({ 
                     path: filePath, 
                     data: pureBase64, 
@@ -900,17 +935,19 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
                     encoding: 'base64' 
                 });
 
+                // 3. Telefonun GALERİSİNE de ekle (Kullanıcı galeriden görebilsin diye)
+                saveToNativeGallery(pureBase64, `${chatId}_${msgId}`);
+
                 const src = `data:image/jpeg;base64,${pureBase64}`;
                 mediaUriCache.set(cacheKey, src);
                 return src;
             } catch (err) {
                 console.warn("Medya yerel diske yazılamadı:", err);
-                // Diske yazılamadıysa kurye temizliği tetiklenmesin diye yerel hafızaya Alma!
                 return base64Data; 
             }
         }
 
-        // Filesystem yok (PWA/tarayıcı) - IndexedDB'yi kullan
+        // Tarayıcı / PWA için IndexedDB fallback
         const existing = await pwaDbGet(cacheKey);
         if (existing) {
             mediaUriCache.set(cacheKey, existing);
