@@ -848,6 +848,7 @@ async function pwaDbSet(key, value) {
 // base64Data null olabilir (Firestore'daki kopya zaten temizlenmiş olabilir)
 // - bu durumda sadece yerelde zaten var olan bir kopya aranır, yenisi
 // yazılamaz. Android'de Filesystem, tarayıcıda IndexedDB kullanılır.
+// DÜZELTİLMİŞ resolveLocalMedia FONKSİYONU
 async function resolveLocalMedia(chatId, msgId, base64Data) {
     if (!chatId || !msgId) return base64Data || null;
 
@@ -866,26 +867,46 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
             const filePath = `${dirPath}/${msgId}.jpg`;
 
             try {
-                const existing = await Filesystem.readFile({ path: filePath, directory: 'DATA', encoding: 'base64' });
-                const src = `data:image/jpeg;base64,${existing.data}`;
+                // 1. Önce diski oku
+                const existing = await Filesystem.readFile({ 
+                    path: filePath, 
+                    directory: 'DATA', 
+                    encoding: 'base64' 
+                });
+                
+                // Capacitor 5+ sürümlerinde data string veya object dönebilir
+                const rawData = typeof existing.data === 'string' ? existing.data : existing.data;
+                const src = rawData.startsWith('data:') ? rawData : `data:image/jpeg;base64,${rawData}`;
+                
                 mediaUriCache.set(cacheKey, src);
                 return src;
             } catch (e) {
-                // Dosya cihazda henüz yok
+                // Dosya cihazda henüz yok, yazmaya devam et
             }
 
             if (!base64Data) return null;
 
             try {
-                const data = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+                // Base64 header kısmını temizle (data:image/jpeg;base64, kısmını at)
+                const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+                
                 await ensureDirOnce(Filesystem, dirPath);
-                await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
-                const src = `data:image/jpeg;base64,${data}`;
+                
+                // CRITICAL FIX: encoding: 'base64' eklendi! Bu olmadan Android diske yazmıyordu!
+                await Filesystem.writeFile({ 
+                    path: filePath, 
+                    data: pureBase64, 
+                    directory: 'DATA',
+                    encoding: 'base64' 
+                });
+
+                const src = `data:image/jpeg;base64,${pureBase64}`;
                 mediaUriCache.set(cacheKey, src);
                 return src;
             } catch (err) {
                 console.warn("Medya yerel diske yazılamadı:", err);
-                return base64Data;
+                // Diske yazılamadıysa kurye temizliği tetiklenmesin diye yerel hafızaya Alma!
+                return base64Data; 
             }
         }
 
