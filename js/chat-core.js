@@ -789,9 +789,65 @@ const MEDIA_CACHE_DIR = 'chat_media';
 const mediaUriCache = new Map(); // "chatId/msgId" -> yerel gösterilebilir src (data: URI)
 const mediaResolveInFlight = new Map();
 
+// ------------------------------------------
+// PWA/TARAYICI için kalıcı yerel depo (IndexedDB) - Capacitor
+// Filesystem sadece Android APK'da var, tarayıcıda yok. Bu olmadan
+// PWA tarafında hiçbir kalıcı kopya oluşmuyordu; karşı taraf resmi
+// indirip Firestore'daki kopyayı temizleyince, PWA'da hiç yerel kopya
+// kalmadığı için resim kalıcı olarak kayboluyordu. Android'deki
+// Filesystem'in tam karşılığı burada IndexedDB ile sağlanıyor.
+// ------------------------------------------
+const PWA_DB_NAME = 'aurachat-media';
+const PWA_DB_STORE = 'images';
+let pwaDbPromise = null;
+
+function openPwaDb() {
+    if (pwaDbPromise) return pwaDbPromise;
+    pwaDbPromise = new Promise((resolve) => {
+        if (!('indexedDB' in window)) { resolve(null); return; }
+        const req = indexedDB.open(PWA_DB_NAME, 1);
+        req.onupgradeneeded = () => {
+            req.result.createObjectStore(PWA_DB_STORE);
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+    });
+    return pwaDbPromise;
+}
+
+async function pwaDbGet(key) {
+    const dbase = await openPwaDb();
+    if (!dbase) return null;
+    return new Promise((resolve) => {
+        try {
+            const tx = dbase.transaction(PWA_DB_STORE, 'readonly');
+            const req = tx.objectStore(PWA_DB_STORE).get(key);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => resolve(null);
+        } catch (e) {
+            resolve(null);
+        }
+    });
+}
+
+async function pwaDbSet(key, value) {
+    const dbase = await openPwaDb();
+    if (!dbase) return;
+    return new Promise((resolve) => {
+        try {
+            const tx = dbase.transaction(PWA_DB_STORE, 'readwrite');
+            tx.objectStore(PWA_DB_STORE).put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+        } catch (e) {
+            resolve();
+        }
+    });
+}
+
 // base64Data null olabilir (Firestore'daki kopya zaten temizlenmiş olabilir)
-// - bu durumda sadece diskte zaten var olan bir dosya aranır, yenisi
-// yazılamaz. chatId/msgId zorunlu.
+// - bu durumda sadece yerelde zaten var olan bir kopya aranır, yenisi
+// yazılamaz. Android'de Filesystem, tarayıcıda IndexedDB kullanılır.
 async function resolveLocalMedia(chatId, msgId, base64Data) {
     if (!chatId || !msgId) return base64Data || null;
 
@@ -804,35 +860,48 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
 
     const resolvePromise = (async () => {
         const Filesystem = getFilesystemPlugin();
-        if (!Filesystem) {
-            return base64Data || null;
+
+        if (Filesystem) {
+            const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
+            const filePath = `${dirPath}/${msgId}.jpg`;
+
+            try {
+                const existing = await Filesystem.readFile({ path: filePath, directory: 'DATA', encoding: 'base64' });
+                const src = `data:image/jpeg;base64,${existing.data}`;
+                mediaUriCache.set(cacheKey, src);
+                return src;
+            } catch (e) {
+                // Dosya cihazda henüz yok
+            }
+
+            if (!base64Data) return null;
+
+            try {
+                const data = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+                await ensureDirOnce(Filesystem, dirPath);
+                await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
+                const src = `data:image/jpeg;base64,${data}`;
+                mediaUriCache.set(cacheKey, src);
+                return src;
+            } catch (err) {
+                console.warn("Medya yerel diske yazılamadı:", err);
+                return base64Data;
+            }
         }
 
-        const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
-        const filePath = `${dirPath}/${msgId}.jpg`;
-
-        try {
-            const existing = await Filesystem.readFile({ path: filePath, directory: 'DATA', encoding: 'base64' });
-            const src = `data:image/jpeg;base64,${existing.data}`;
-            mediaUriCache.set(cacheKey, src);
-            return src;
-        } catch (e) {
-            // Dosya cihazda henüz yok
+        // Filesystem yok (PWA/tarayıcı) - IndexedDB'yi kullan
+        const existing = await pwaDbGet(cacheKey);
+        if (existing) {
+            mediaUriCache.set(cacheKey, existing);
+            return existing;
         }
 
-        if (!base64Data) return null; // ne diskte ne elimizde orijinali var
+        if (!base64Data) return null;
 
-        try {
-            const data = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-            await ensureDirOnce(Filesystem, dirPath);
-            await Filesystem.writeFile({ path: filePath, data, directory: 'DATA' });
-            const src = `data:image/jpeg;base64,${data}`;
-            mediaUriCache.set(cacheKey, src);
-            return src;
-        } catch (err) {
-            console.warn("Medya yerel diske yazılamadı:", err);
-            return base64Data;
-        }
+        const src = base64Data.startsWith('data:') ? base64Data : `data:image/jpeg;base64,${base64Data}`;
+        await pwaDbSet(cacheKey, src);
+        mediaUriCache.set(cacheKey, src);
+        return src;
     })();
 
     mediaResolveInFlight.set(cacheKey, resolvePromise);
