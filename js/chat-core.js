@@ -855,8 +855,18 @@ function buildMessageElement(msg, isMine, msgId) {
         `;
     }
 
-    if (isImage) {
+ if (isImage) {
         const mediaImgEl = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
+        if (mediaImgEl) {
+            // Yerel dosya yolu herhangi bir sebeple yüklenemezse (bozuk
+            // sonuç verirse), orijinal base64'e geri dön - resim asla
+            // bozuk görünmesin, en kötü ihtimalle önbellek devreye girmemiş olur.
+            mediaImgEl.addEventListener('error', () => {
+                if (mediaImgEl.src !== msg.imageUrl) {
+                    mediaImgEl.src = msg.imageUrl;
+                }
+            });
+        }
         resolveLocalMedia(currentChatId, msgId, msg.imageUrl).then((src) => {
             if (src && mediaImgEl && mediaImgEl.isConnected && src !== msg.imageUrl) {
                 mediaImgEl.src = src;
