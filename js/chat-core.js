@@ -859,25 +859,21 @@ async function saveToNativeGallery(pureBase64, filename) {
         const Filesystem = getFilesystemPlugin();
         if (!Filesystem) return;
 
-        // Android Galeri / Pictures klasörüne kaydetme
         await Filesystem.writeFile({
             path: `Pictures/AuraChat/${filename}.jpg`,
             data: pureBase64,
             directory: 'EXTERNAL_STORAGE',
-            encoding: 'base64',
             recursive: true
         });
-        console.log("📷 Fotoğraf telefon galerisine (Pictures/AuraChat) kaydedildi.");
+        console.log("📷 Fotoğraf telefon galerisine kaydedildi.");
     } catch (e) {
-        // External storage yetkisi yoksa veya alternatif klasör deneniyorsa fallback
         try {
             const Filesystem = getFilesystemPlugin();
             if (Filesystem) {
                 await Filesystem.writeFile({
                     path: `AuraChat_${filename}.jpg`,
                     data: pureBase64,
-                    directory: 'DOCUMENTS',
-                    encoding: 'base64'
+                    directory: 'DOCUMENTS'
                 });
             }
         } catch (err) {
@@ -904,7 +900,6 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
             const filePath = `${dirPath}/${msgId}.jpg`;
 
             try {
-                // 1. Önce dahili diski oku (Uygulama içi hızlı yükleme)
                 const existing = await Filesystem.readFile({ 
                     path: filePath, 
                     directory: 'DATA', 
@@ -917,7 +912,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
                 mediaUriCache.set(cacheKey, src);
                 return src;
             } catch (e) {
-                // Dosya henüz iç diskte yok
+                // Henüz diske yazılmamış
             }
 
             if (!base64Data) return null;
@@ -927,15 +922,14 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
                 
                 await ensureDirOnce(Filesystem, dirPath);
                 
-                // 2. Uygulama özel hafızasına kaydet (Silinmeyecek uygulama önbelleği)
+                // DATA klasörüne kaydet (encoding kaldırıldı)
                 await Filesystem.writeFile({ 
                     path: filePath, 
                     data: pureBase64, 
-                    directory: 'DATA',
-                    encoding: 'base64' 
+                    directory: 'DATA'
                 });
 
-                // 3. Telefonun GALERİSİNE de ekle (Kullanıcı galeriden görebilsin diye)
+                // Galeriye kaydet
                 saveToNativeGallery(pureBase64, `${chatId}_${msgId}`);
 
                 const src = `data:image/jpeg;base64,${pureBase64}`;
@@ -947,7 +941,6 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
             }
         }
 
-        // Tarayıcı / PWA için IndexedDB fallback
         const existing = await pwaDbGet(cacheKey);
         if (existing) {
             mediaUriCache.set(cacheKey, existing);
