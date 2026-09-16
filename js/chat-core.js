@@ -102,15 +102,25 @@ function getFilesystemPlugin() {
 }
 
 const ensuredDirs = new Set();
+
 async function ensureDirOnce(Filesystem, path) {
+    if (!Filesystem || !path) return;
     if (ensuredDirs.has(path)) return;
+
     try {
-        await Filesystem.mkdir({ path, directory: 'DATA', recursive: true });
+        await Filesystem.mkdir({ 
+            path: path, 
+            directory: 'DATA', 
+            recursive: true 
+        });
     } catch (e) {
-        // klasör zaten varsa sorun değil
+        // "Directory exists" hatasını tamamen yutuyoruz, sessizce devam ediyor
+    } finally {
+        // Klasör oluşsa da var olsa da Set'e ekle ki aynı oturumda tekrar çağırmasın
+        ensuredDirs.add(path);
     }
-    ensuredDirs.add(path);
 }
+
 
 async function readChatDiskCache(chatId) {
     const Filesystem = getFilesystemPlugin();
@@ -899,11 +909,11 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
             const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
             const filePath = `${dirPath}/${msgId}.jpg`;
 
+            // 1. Önce dahili diski oku
             try {
                 const existing = await Filesystem.readFile({ 
                     path: filePath, 
-                    directory: 'DATA', 
-                    encoding: 'base64' 
+                    directory: 'DATA'
                 });
                 
                 const rawData = typeof existing.data === 'string' ? existing.data : existing.data;
@@ -912,7 +922,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
                 mediaUriCache.set(cacheKey, src);
                 return src;
             } catch (e) {
-                // Henüz diske yazılmamış
+                // Dosya henüz iç diskte yok, aşağıya devam et
             }
 
             if (!base64Data) return null;
@@ -920,16 +930,17 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
             try {
                 const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
                 
+                // Klasörü güvenli şekilde oluştur (Var ise hatayı yutar)
                 await ensureDirOnce(Filesystem, dirPath);
                 
-                // DATA klasörüne kaydet (encoding kaldırıldı)
+                // DATA klasörüne kaydet
                 await Filesystem.writeFile({ 
                     path: filePath, 
                     data: pureBase64, 
                     directory: 'DATA'
                 });
 
-                // Galeriye kaydet
+                // Galeriye de kopya at
                 saveToNativeGallery(pureBase64, `${chatId}_${msgId}`);
 
                 const src = `data:image/jpeg;base64,${pureBase64}`;
@@ -937,10 +948,12 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
                 return src;
             } catch (err) {
                 console.warn("Medya yerel diske yazılamadı:", err);
-                return base64Data; 
+                // Diske yazılamadıysa Firestore temizliğinin TETİKLENMEMESİ için null dön
+                return null; 
             }
         }
 
+        // Tarayıcı / PWA fallback
         const existing = await pwaDbGet(cacheKey);
         if (existing) {
             mediaUriCache.set(cacheKey, existing);
@@ -962,6 +975,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
         mediaResolveInFlight.delete(cacheKey);
     }
 }
+
 
 // Firebase = kurye. Resim gerçekten bu cihaza (diske) indiyse ve ben
 // ALICIYSAM (gönderen değilsem), Firestore'daki kopyayı temizle.
