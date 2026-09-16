@@ -3,7 +3,13 @@
 // index.html tarafından tek modül olarak import edilir.
 // giris.js başarılı girişten sonra window.initApp()'i çağırır.
 //
-// GÜNCELLEME: Bildirime tıklandığında ilgili sohbeti açan
+// GÜNCELLEME: Bildirimden gelen "şu sohbeti aç" bilgisi artık listeyi
+// göstermeye karar vermeden ÖNCE kontrol ediliyor - soğuk açılışta
+// önce listenin görünüp sonra sohbete sıçraması bu şekilde önleniyor.
+// window.__aurachatReady bayrağı, uygulamanın açılış sürecini bitirip
+// bitirmediğini index.html'deki bildirim dinleyicisine bildiriyor.
+//
+// Bildirime tıklandığında ilgili sohbeti açan
 // window.openChatFromNotification() burada tanımlanıyor. PWA
 // tarafında sw.js'ten gelen mesajı ve cold-start URL parametresini
 // de burada karşılıyoruz.
@@ -16,6 +22,8 @@ import { loadContacts, initAdminPanel } from "./contacts.js";
 
 const sidebar = document.getElementById('sidebar');
 const chatArea = document.getElementById('chat-area');
+
+window.__aurachatReady = false;
 
 async function ensureUid(user) {
     if (user.uid) return user;
@@ -46,11 +54,16 @@ window.openChatFromNotification = function (otherUser) {
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data && event.data.type === 'OPEN_CHAT' && event.data.otherUid) {
-            window.openChatFromNotification({
+            const target = {
                 uid: event.data.otherUid,
                 name: event.data.otherName || 'Sohbet',
                 avatar: event.data.otherAvatar || ''
-            });
+            };
+            if (window.__aurachatReady) {
+                window.openChatFromNotification(target);
+            } else {
+                window.pendingOpenChat = target;
+            }
         }
     });
 }
@@ -80,17 +93,21 @@ window.initApp = async function () {
         window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
     }
 
-    if (window.innerWidth >= 768) {
+    // Bekleyen bir bildirim hedefi varsa (soğuk açılış, bildirimden
+    // geldiyse) ÖNCE onu kontrol et - varsayılan liste görünümüne hiç
+    // geçmeden direkt sohbete gidelim, "önce liste sonra sohbet"
+    // sıçramasını böyle önlüyoruz.
+    if (window.pendingOpenChat) {
+        selectChat(window.pendingOpenChat);
+        window.pendingOpenChat = null;
+    } else if (window.innerWidth >= 1024) {
         selectChat('global');
     } else {
         sidebar.classList.remove('-translate-x-full');
         chatArea.classList.add('translate-x-full');
     }
 
-    if (window.pendingOpenChat) {
-        selectChat(window.pendingOpenChat);
-        window.pendingOpenChat = null;
-    }
+    window.__aurachatReady = true;
 };
 
 const existingUser = JSON.parse(localStorage.getItem('aurachat_user'));
