@@ -932,7 +932,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
             const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
             const filePath = `${dirPath}/${msgId}.jpg`;
 
-            // 1. Önce dahili diski oku
+            // 1. Önce dahili diskte kayıtlı mı bak
             try {
                 const existing = await Filesystem.readFile({ 
                     path: filePath, 
@@ -950,31 +950,59 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
 
             if (!base64Data) return null;
 
-            try {
-                const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-                
-                // Klasörü güvenli şekilde oluştur (Var ise hatayı yutar)
-                await ensureDirOnce(Filesystem, dirPath);
-                
-                // DATA klasörüne kaydet
-                await Filesystem.writeFile({ 
-                    path: filePath, 
-                    data: pureBase64, 
-                    directory: 'DATA'
-                });
+            const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+            const src = `data:image/jpeg;base64,${pureBase64}`;
 
-                // Galeriye de kopya at
-                saveToNativeGallery(pureBase64);
+            // HIZLI CANLI BELLEK KAYDI: Ekranda anında görünmesi için hemen hafızaya alıyoruz!
+            mediaUriCache.set(cacheKey, src);
 
-                const src = `data:image/jpeg;base64,${pureBase64}`;
-                mediaUriCache.set(cacheKey, src);
-                return src;
-            } catch (err) {
-                console.warn("Medya yerel diske yazılamadı:", err);
-                // Diske yazılamadıysa Firestore temizliğinin TETİKLENMEMESİ için null dön
-                return null; 
-            }
+            // ARKA PLAN İŞLEMİ (ASYNC): 
+            // Kullanıcıyı bekletmeden diske ve galeriye kaydetmeyi arka planda yapıyoruz.
+            (async () => {
+                try {
+                    await ensureDirOnce(Filesystem, dirPath);
+                    await Filesystem.writeFile({ 
+                        path: filePath, 
+                        data: pureBase64, 
+                        directory: 'DATA'
+                    });
+                    
+                    // Galeriye tarih formatlı kaydetme fonksiyonu
+                    if (typeof saveToNativeGallery === 'function') {
+                        saveToNativeGallery(pureBase64);
+                    }
+                } catch (err) {
+                    console.warn("Arka plan medya kaydı başarısız:", err);
+                }
+            })();
+
+            // Kullanıcıya anında resmi döndür (4 saniyelik bekleme bitti!)
+            return src;
         }
+
+        // Native Filesystem yoksa (PWA / Tarayıcı)
+        const existing = await pwaDbGet(cacheKey);
+        if (existing) {
+            mediaUriCache.set(cacheKey, existing);
+            return existing;
+        }
+
+        if (!base64Data) return null;
+
+        const src = base64Data.startsWith('data:') ? base64Data : `data:image/jpeg;base64,${base64Data}`;
+        await pwaDbSet(cacheKey, src);
+        mediaUriCache.set(cacheKey, src);
+        return src;
+    })();
+
+    mediaResolveInFlight.set(cacheKey, resolvePromise);
+    try {
+        return await resolvePromise;
+    } finally {
+        mediaResolveInFlight.delete(cacheKey);
+    }
+}
+
 
         // Tarayıcı / PWA fallback
         const existing = await pwaDbGet(cacheKey);
