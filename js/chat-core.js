@@ -78,6 +78,7 @@ let typingTimeout = null;
 let selectionMode = false;
 const selectedMessageIds = new Set();
 const messageElementsById = new Map();
+let recentOpenScrollLock = false;
 
 export function setCurrentUser(user) {
     currentUser = user;
@@ -564,6 +565,9 @@ export async function selectChat(otherUser) {
     markVisibleMessagesRead(session);
     scrollToBottom();
 
+    recentOpenScrollLock = true;
+    setTimeout(() => { recentOpenScrollLock = false; }, 1500);
+
     watchCallForChat(chatId);
 }
 
@@ -1028,7 +1032,7 @@ function buildMessageElement(msg, isMine, msgId) {
 
     const bodyHtml = isImage
         ? (initialImgSrc
-            ? `<img src="${initialImgSrc}" class="rounded-lg max-w-full max-h-72 object-cover cursor-pointer" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`
+            ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`
             : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`)
         : `<p class="break-words">${escapeHtml(msg.text)}</p>`;
 
@@ -1055,11 +1059,14 @@ function buildMessageElement(msg, isMine, msgId) {
         `;
     }
 
-    if (isImage) {
+   if (isImage) {
         const mediaEl = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
         if (mediaEl && mediaEl.tagName === 'IMG') {
             mediaEl.addEventListener('error', () => {
                 if (msg.imageUrl && mediaEl.src !== msg.imageUrl) mediaEl.src = msg.imageUrl;
+            });
+            mediaEl.addEventListener('load', () => {
+                if (recentOpenScrollLock || isNearBottom()) scrollToBottom();
             });
         }
         resolveLocalMedia(currentChatId, msgId, msg.imageUrl).then((src) => {
@@ -1069,7 +1076,13 @@ function buildMessageElement(msg, isMine, msgId) {
                 if (el.tagName === 'IMG') {
                     if (src !== el.src) el.src = src;
                 } else {
-                    el.outerHTML = `<img src="${src}" class="rounded-lg max-w-full max-h-72 object-cover cursor-pointer" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`;
+                    el.outerHTML = `<img src="${src}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`;
+                    const newEl = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
+                    if (newEl) {
+                        newEl.addEventListener('load', () => {
+                            if (recentOpenScrollLock || isNearBottom()) scrollToBottom();
+                        });
+                    }
                 }
             }
             maybeStripDeliveredImage(currentChatId, msgId, msg);
@@ -1128,6 +1141,10 @@ function scrollToBottom() {
     requestAnimationFrame(() => {
         messageContainer.scrollTop = messageContainer.scrollHeight;
     });
+}
+
+function isNearBottom() {
+    return (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight) < 150;
 }
 
 window.openImageLightbox = function (src) {
@@ -1276,14 +1293,16 @@ function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
 }
 
 if (attachBtn && imageInput) {
+    imageInput.multiple = true;
     attachBtn.addEventListener('click', () => imageInput.click());
 
     imageInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file || !currentUser || !currentChatId) return;
+        const files = Array.from(e.target.files || []);
+        if (!files.length || !currentUser || !currentChatId) return;
         imageInput.value = '';
 
-        if (!file.type.startsWith('image/')) {
+        const validFiles = files.filter((f) => f.type.startsWith('image/'));
+        if (!validFiles.length) {
             alert("Lütfen bir görsel dosyası seç kanka!");
             return;
         }
@@ -1293,28 +1312,34 @@ if (attachBtn && imageInput) {
         attachBtn.className = attachBtn.className.replace('fa-plus', 'fa-spinner fa-spin');
 
         try {
-            const dataUrl = await compressImageToDataUrl(file);
+            for (const file of validFiles) {
+                try {
+                    const dataUrl = await compressImageToDataUrl(file);
 
-            if (dataUrl.length * 0.75 > 900 * 1024) {
-                alert("Bu görsel çok büyük kanka, daha düşük çözünürlüklü bir fotoğraf dene.");
-                return;
+                    if (dataUrl.length * 0.75 > 900 * 1024) {
+                        alert(`"${file.name}" çok büyük kanka, daha düşük çözünürlüklü bir fotoğraf dene.`);
+                        continue;
+                    }
+
+                    await addDoc(collection(db, "chats", currentChatId, "messages"), {
+                        type: 'image',
+                        imageUrl: dataUrl,
+                        text: '',
+                        senderUid: currentUser.uid,
+                        senderName: currentUser.name,
+                        createdAt: serverTimestamp(),
+                        read: false
+                    });
+
+                    await updateChatSummaries('📷 Fotoğraf');
+                } catch (innerErr) {
+                    // tek dosya başarısız olsa da diğerlerine devam
+                }
             }
 
-            await addDoc(collection(db, "chats", currentChatId, "messages"), {
-                type: 'image',
-                imageUrl: dataUrl,
-                text: '',
-                senderUid: currentUser.uid,
-                senderName: currentUser.name,
-                createdAt: serverTimestamp(),
-                read: false
-            });
-
-
-            await updateChatSummaries('📷 Fotoğraf');
-
             if (currentChatId !== 'global' && currentOtherUid) {
-                sendPushToUser(currentOtherUid, `${currentUser.name}`, "📷 Bir fotoğraf gönderdi", {
+                const count = validFiles.length;
+                sendPushToUser(currentOtherUid, `${currentUser.name}`, count > 1 ? `📷 ${count} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi", {
                     chatId: currentChatId,
                     otherUid: currentUser.uid,
                     otherName: currentUser.name
@@ -1323,8 +1348,7 @@ if (attachBtn && imageInput) {
 
             scrollToBottom();
         } catch (err) {
-            console.error("Görsel gönderilemedi:", err);
-            alert("Görsel gönderilirken hata oluştu!");
+            alert("Görseller gönderilirken hata oluştu!");
         } finally {
             attachBtn.className = originalIcon;
             attachBtn.classList.remove('opacity-40', 'pointer-events-none');
