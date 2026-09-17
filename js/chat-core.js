@@ -39,6 +39,17 @@
 // Sohbet silme kalıcı (Firestore'da clearedAt alanı ile) ve o
 // tarihten önceki mesajlar bir daha hiç yüklenmiyor; silme anında o
 // sohbetin disk önbellek dosyası da temizleniyor.
+//
+// GÜNCELLEME (çoklu resim / albüm): Birden fazla resim tek seferde
+// seçilirse hepsi TEK mesaj olarak (images: [...] dizisi,
+// imagesCount alanı) gönderiliyor ve sohbette WhatsApp'taki gibi 2
+// sütunlu ızgara halinde gösteriliyor (4'ten fazlaysa son karede
+// "+N" yazıyor). Tek resim seçilirse eskisi gibi tek mesaj / tam
+// boyut olarak gidiyor (imageUrl alanı). Albümdeki her resim kendi
+// disk/IndexedDB dosyasına ayrı ayrı önbelleğe alınıyor
+// (chat_media/{chatId}/{msgId}_{index}.jpg) ve alıcı tarafında
+// TÜMÜ yerel diske yazıldığında Firestore'daki images dizisi
+// (imageUrl'deki kurye mantığının aynısıyla) temizleniyor.
 // ==========================================
 
 import { db } from "./firebase-init.js";
@@ -350,7 +361,20 @@ export function prewarmChatSession(chatId, otherUid) {
 export async function prewarmChatMedia(chatId, otherUid) {
     const session = await ensureChatSession(chatId, otherUid);
     for (const { id, data: msg } of session.messages) {
-        if (msg.type === 'image' && msg.imageUrl) {
+        if (msg.type !== 'image') continue;
+
+        const imagesCount = msg.imagesCount || 0;
+        if (imagesCount > 1) {
+            const arr = Array.isArray(msg.images) ? msg.images : [];
+            for (let i = 0; i < imagesCount; i++) {
+                try {
+                    await resolveLocalMedia(chatId, id, arr[i], i);
+                } catch (e) {
+                    console.warn("Prewarm albüm medya hatası:", e);
+                }
+            }
+            maybeStripAlbumImages(chatId, id, msg, imagesCount);
+        } else if (msg.imageUrl) {
             try {
                 const localSrc = await resolveLocalMedia(chatId, id, msg.imageUrl);
                 if (localSrc) {
@@ -813,7 +837,7 @@ async function loadOlderMessages(session, btnWrapEl) {
 // MESAJ MEDYASI YEREL DOSYA ÖNBELLEĞİ + TESLİMAT SONRASI TEMİZLİK
 // ------------------------------------------
 const MEDIA_CACHE_DIR = 'chat_media';
-const mediaUriCache = new Map(); // "chatId/msgId" -> yerel gösterilebilir src (data: URI)
+const mediaUriCache = new Map(); // "chatId/msgId" veya "chatId/msgId_index" -> yerel gösterilebilir src (data: URI)
 const mediaResolveInFlight = new Map();
 
 // ------------------------------------------
@@ -913,10 +937,13 @@ async function saveToNativeGallery(pureBase64) {
     }
 }
 
-async function resolveLocalMedia(chatId, msgId, base64Data) {
+// idx null/undefined ise eski tekil-resim davranışı (msgId.jpg), sayı verilirse
+// albüm alt-resmi (msgId_idx.jpg) olarak ayrı önbelleklenir.
+async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
     if (!chatId || !msgId) return base64Data || null;
 
-    const cacheKey = `${chatId}/${msgId}`;
+    const suffix = (idx === null || idx === undefined) ? '' : `_${idx}`;
+    const cacheKey = `${chatId}/${msgId}${suffix}`;
     if (mediaUriCache.has(cacheKey)) return mediaUriCache.get(cacheKey);
 
     if (mediaResolveInFlight.has(cacheKey)) {
@@ -928,7 +955,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data) {
 
         if (Filesystem) {
             const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
-            const filePath = `${dirPath}/${msgId}.jpg`;
+            const filePath = `${dirPath}/${msgId}${suffix}.jpg`;
 
             // 1. Önce dahili diski oku
             try {
@@ -1019,22 +1046,72 @@ function maybeStripDeliveredImage(chatId, msgId, msg) {
     }).catch((err) => console.warn("Teslim edilen resim Firestore'dan temizlenemedi:", err));
 }
 
+// Albüm (çoklu resim) versiyonu: ALICI tarafında albümdeki TÜM
+// resimler yerel diske/IndexedDB'ye başarıyla yazıldıysa, Firestore'daki
+// images dizisini temizler (imagesDelivered:true bırakır).
+function maybeStripAlbumImages(chatId, msgId, msg, imagesCount) {
+    if (chatId === 'global') return;
+    if (!currentUser || msg.senderUid === currentUser.uid) return;
+    if (!Array.isArray(msg.images) || !msg.images.length) return; // zaten temizlenmiş ya da hiç yoktu
+    if (!imagesCount) return;
+
+    for (let i = 0; i < imagesCount; i++) {
+        if (!mediaUriCache.has(`${chatId}/${msgId}_${i}`)) return; // hepsi henüz diske yazılmadı
+    }
+
+    updateDoc(doc(db, "chats", chatId, "messages", msgId), {
+        images: null,
+        imagesDelivered: true
+    }).catch((err) => console.warn("Albüm resimleri Firestore'dan temizlenemedi:", err));
+}
+
+// WhatsApp tarzı 2 sütunlu albüm ızgarası. 4'ten fazla resim varsa
+// son görünen karede "+N" bindirmesi gösterilir.
+function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
+    const maxTiles = Math.min(imagesCount, 4);
+    const extra = imagesCount - maxTiles;
+    let tiles = '';
+
+    for (let i = 0; i < maxTiles; i++) {
+        const cachedSrc = mediaUriCache.get(`${chatId}/${msgId}_${i}`);
+        const showOverlay = i === maxTiles - 1 && extra > 0;
+        const inner = cachedSrc
+            ? `<img src="${cachedSrc}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openImageLightbox(this.src)">`
+            : `<div class="w-full h-full flex items-center justify-center bg-black/20" data-media-msg="${msgId}" data-media-idx="${i}"><i class="fa-solid fa-image text-gray-500"></i></div>`;
+        tiles += `
+            <div class="relative overflow-hidden" style="aspect-ratio:1/1;">
+                ${inner}
+                ${showOverlay ? `<div class="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-lg font-bold pointer-events-none">+${extra}</div>` : ''}
+            </div>`;
+    }
+
+    return `<div class="grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden" style="width:280px;">${tiles}</div>`;
+}
 
 function buildMessageElement(msg, isMine, msgId) {
     const msgDiv = document.createElement('div');
     msgDiv.dataset.msgId = msgId;
     msgDiv.dataset.mine = isMine ? 'true' : 'false';
     const timeStr = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi';
-    const isImage = msg.type === 'image' && (msg.imageUrl || msg.imageDelivered);
 
-    const localCachedSrc = isImage ? mediaUriCache.get(`${currentChatId}/${msgId}`) : null;
+    const imagesCount = msg.imagesCount || 0;
+    const isAlbum = msg.type === 'image' && imagesCount > 1;
+    const isSingleImage = msg.type === 'image' && !isAlbum && (msg.imageUrl || msg.imageDelivered);
+    const isImage = isAlbum || isSingleImage;
+
+    const localCachedSrc = isSingleImage ? mediaUriCache.get(`${currentChatId}/${msgId}`) : null;
     const initialImgSrc = localCachedSrc || msg.imageUrl || '';
 
-    const bodyHtml = isImage
-        ? (initialImgSrc
+    let bodyHtml;
+    if (isAlbum) {
+        bodyHtml = buildAlbumTilesHtml(currentChatId, msgId, imagesCount);
+    } else if (isSingleImage) {
+        bodyHtml = initialImgSrc
             ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`
-            : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`)
-        : `<p class="break-words">${escapeHtml(msg.text)}</p>`;
+            : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`;
+    } else {
+        bodyHtml = `<p class="break-words">${escapeHtml(msg.text)}</p>`;
+    }
 
     if (isMine) {
         const tickColor = msg.read ? 'text-[#53bdeb]' : 'text-gray-400';
@@ -1059,7 +1136,48 @@ function buildMessageElement(msg, isMine, msgId) {
         `;
     }
 
-   if (isImage) {
+    if (isAlbum) {
+        const arr = Array.isArray(msg.images) ? msg.images : [];
+        const maxTiles = Math.min(imagesCount, 4);
+
+        // Zaten önbellekte olup senkron çizilen karelere de yükleme sonrası kaydırma bağla
+        for (let i = 0; i < maxTiles; i++) {
+            const tileImg = msgDiv.querySelector(`img[data-media-idx="${i}"]`);
+            if (tileImg) {
+                tileImg.addEventListener('load', () => {
+                    if (recentOpenScrollLock || isNearBottom()) scrollToBottom();
+                });
+            }
+        }
+
+        let resolvedCount = 0;
+        for (let i = 0; i < imagesCount; i++) {
+            resolveLocalMedia(currentChatId, msgId, arr[i], i).then((src) => {
+                resolvedCount++;
+
+                if (src && i < maxTiles) {
+                    const tileEl = msgDiv.querySelector(`[data-media-msg="${msgId}"][data-media-idx="${i}"]`);
+                    if (tileEl && tileEl.isConnected) {
+                        if (tileEl.tagName === 'IMG') {
+                            if (src !== tileEl.src) tileEl.src = src;
+                        } else {
+                            tileEl.outerHTML = `<img src="${src}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openImageLightbox(this.src)">`;
+                            const newTile = msgDiv.querySelector(`img[data-media-idx="${i}"]`);
+                            if (newTile) {
+                                newTile.addEventListener('load', () => {
+                                    if (recentOpenScrollLock || isNearBottom()) scrollToBottom();
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if (resolvedCount === imagesCount) {
+                    maybeStripAlbumImages(currentChatId, msgId, msg, imagesCount);
+                }
+            });
+        }
+    } else if (isSingleImage) {
         const mediaEl = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
         if (mediaEl && mediaEl.tagName === 'IMG') {
             mediaEl.addEventListener('error', () => {
@@ -1237,7 +1355,7 @@ messageInput.addEventListener('input', () => {
 });
 
 // ------------------------------------------
-// GÖRSEL GÖNDERME
+// GÖRSEL GÖNDERME (tek resim = tam boyut / birden fazla resim = tek albüm mesajı)
 // ------------------------------------------
 function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
     return new Promise((resolve, reject) => {
@@ -1311,43 +1429,79 @@ if (attachBtn && imageInput) {
         const originalIcon = attachBtn.className;
         attachBtn.className = attachBtn.className.replace('fa-plus', 'fa-spinner fa-spin');
 
+        // Birden fazla resim tek Firestore belgesine (max ~1MB) sığmalı,
+        // o yüzden çoklu seçimde resim başına hedef boyutu düşürüyoruz.
+        const perImageTarget = validFiles.length > 1 ? 150 * 1024 : 300 * 1024;
+        const maxTotalBytes = 900 * 1024;
+
         try {
+            const compressed = [];
+            let totalBytes = 0;
+            let skippedForSize = false;
+
             for (const file of validFiles) {
                 try {
-                    const dataUrl = await compressImageToDataUrl(file);
+                    const dataUrl = await compressImageToDataUrl(file, perImageTarget);
+                    const approxBytes = dataUrl.length * 0.75;
 
-                    if (dataUrl.length * 0.75 > 900 * 1024) {
-                        alert(`"${file.name}" çok büyük kanka, daha düşük çözünürlüklü bir fotoğraf dene.`);
-                        continue;
+                    if (totalBytes + approxBytes > maxTotalBytes) {
+                        skippedForSize = true;
+                        break;
                     }
 
-                    await addDoc(collection(db, "chats", currentChatId, "messages"), {
-                        type: 'image',
-                        imageUrl: dataUrl,
-                        text: '',
-                        senderUid: currentUser.uid,
-                        senderName: currentUser.name,
-                        createdAt: serverTimestamp(),
-                        read: false
-                    });
-
-                    await updateChatSummaries('📷 Fotoğraf');
+                    compressed.push(dataUrl);
+                    totalBytes += approxBytes;
                 } catch (innerErr) {
-                    // tek dosya başarısız olsa da diğerlerine devam
+                    console.warn(`Görsel sıkıştırılamadı (${file.name}):`, innerErr);
                 }
             }
 
+            if (!compressed.length) {
+                alert("Görseller gönderilemedi, dene tekrar kanka.");
+                return;
+            }
+
+            if (compressed.length === 1) {
+                await addDoc(collection(db, "chats", currentChatId, "messages"), {
+                    type: 'image',
+                    imageUrl: compressed[0],
+                    text: '',
+                    senderUid: currentUser.uid,
+                    senderName: currentUser.name,
+                    createdAt: serverTimestamp(),
+                    read: false
+                });
+            } else {
+                await addDoc(collection(db, "chats", currentChatId, "messages"), {
+                    type: 'image',
+                    images: compressed,
+                    imagesCount: compressed.length,
+                    imagesDelivered: false,
+                    text: '',
+                    senderUid: currentUser.uid,
+                    senderName: currentUser.name,
+                    createdAt: serverTimestamp(),
+                    read: false
+                });
+            }
+
+            await updateChatSummaries(compressed.length > 1 ? `📷 ${compressed.length} Fotoğraf` : '📷 Fotoğraf');
+
             if (currentChatId !== 'global' && currentOtherUid) {
-                const count = validFiles.length;
-                sendPushToUser(currentOtherUid, `${currentUser.name}`, count > 1 ? `📷 ${count} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi", {
+                sendPushToUser(currentOtherUid, `${currentUser.name}`, compressed.length > 1 ? `📷 ${compressed.length} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi", {
                     chatId: currentChatId,
                     otherUid: currentUser.uid,
                     otherName: currentUser.name
                 });
             }
 
+            if (skippedForSize) {
+                alert(`Boyut sınırı yüzünden sadece ${compressed.length} fotoğraf gönderildi, kalanları ayrı bir mesajda gönder kanka.`);
+            }
+
             scrollToBottom();
         } catch (err) {
+            console.error("Görseller gönderilemedi:", err);
             alert("Görseller gönderilirken hata oluştu!");
         } finally {
             attachBtn.className = originalIcon;
