@@ -896,21 +896,23 @@ async function pwaDbSet(key, value) {
     });
 }
 
-async function saveToNativeGallery(pureBase64) {
+async function saveToNativeGallery(pureBase64, msgId = '', idx = null) {
     try {
         const Filesystem = getFilesystemPlugin();
         if (!Filesystem) return;
 
-        // Tarih ve saat formatı oluşturur: YYYYMMDD_HHMMSS (Örn: AuraChat_20260916_175430.jpg)
+        // Tarih, saat ve milisaniye formatı + albüm indexi (Örn: AuraChat_20260916_175430_102_0.jpg)
         const now = new Date();
         const timestamp = now.getFullYear().toString() +
             String(now.getMonth() + 1).padStart(2, '0') +
             String(now.getDate()).padStart(2, '0') + '_' +
             String(now.getHours()).padStart(2, '0') +
             String(now.getMinutes()).padStart(2, '0') +
-            String(now.getSeconds()).padStart(2, '0');
+            String(now.getSeconds()).padStart(2, '0') + '_' +
+            String(now.getMilliseconds()).padStart(3, '0');
 
-        const cleanFilename = `AuraChat_${timestamp}`;
+        const suffix = idx !== null && idx !== undefined ? `_${idx}` : '';
+        const cleanFilename = `AuraChat_${timestamp}${suffix}`;
 
         await Filesystem.writeFile({
             path: `Pictures/AuraChat/${cleanFilename}.jpg`,
@@ -925,8 +927,9 @@ async function saveToNativeGallery(pureBase64) {
             if (Filesystem) {
                 const now = new Date();
                 const timestamp = now.getTime();
+                const suffix = idx !== null && idx !== undefined ? `_${idx}` : '';
                 await Filesystem.writeFile({
-                    path: `AuraChat_${timestamp}.jpg`,
+                    path: `AuraChat_${timestamp}${suffix}.jpg`,
                     data: pureBase64,
                     directory: 'DOCUMENTS'
                 });
@@ -936,6 +939,7 @@ async function saveToNativeGallery(pureBase64) {
         }
     }
 }
+
 
 // idx null/undefined ise eski tekil-resim davranışı (msgId.jpg), sayı verilirse
 // albüm alt-resmi (msgId_idx.jpg) olarak ayrı önbelleklenir.
@@ -981,15 +985,17 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 // Klasörü güvenli şekilde oluştur (Var ise hatayı yutar)
                 await ensureDirOnce(Filesystem, dirPath);
                 
-                // DATA klasörüne kaydet
+              // DATA klasörüne kaydet
                 await Filesystem.writeFile({ 
                     path: filePath, 
                     data: pureBase64, 
                     directory: 'DATA'
                 });
 
-                // Galeriye de kopya at
-                saveToNativeGallery(pureBase64);
+                // Galeriye de kopya at (İster tekil resim, ister albümdeki her bir resim olsun galeriye kaydeder)
+                saveToNativeGallery(pureBase64, msgId, idx);
+
+                const src = `data:image/jpeg;base64,${pureBase64}`;
 
                 const src = `data:image/jpeg;base64,${pureBase64}`;
                 mediaUriCache.set(cacheKey, src);
