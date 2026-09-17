@@ -896,53 +896,9 @@ async function pwaDbSet(key, value) {
     });
 }
 
-async function saveToNativeGallery(pureBase64, msgId = '', idx = null) {
-    try {
-        const Filesystem = getFilesystemPlugin();
-        if (!Filesystem) return;
-
-        // Tarih, saat ve milisaniye formatı + albüm indexi (Örn: AuraChat_20260916_175430_102_0.jpg)
-        const now = new Date();
-        const timestamp = now.getFullYear().toString() +
-            String(now.getMonth() + 1).padStart(2, '0') +
-            String(now.getDate()).padStart(2, '0') + '_' +
-            String(now.getHours()).padStart(2, '0') +
-            String(now.getMinutes()).padStart(2, '0') +
-            String(now.getSeconds()).padStart(2, '0') + '_' +
-            String(now.getMilliseconds()).padStart(3, '0');
-
-        const suffix = idx !== null && idx !== undefined ? `_${idx}` : '';
-        const cleanFilename = `AuraChat_${timestamp}${suffix}`;
-
-        await Filesystem.writeFile({
-            path: `Pictures/AuraChat/${cleanFilename}.jpg`,
-            data: pureBase64,
-            directory: 'EXTERNAL_STORAGE',
-            recursive: true
-        });
-        console.log(`📷 Fotoğraf telefon galerisine kaydedildi: ${cleanFilename}.jpg`);
-    } catch (e) {
-        try {
-            const Filesystem = getFilesystemPlugin();
-            if (Filesystem) {
-                const now = new Date();
-                const timestamp = now.getTime();
-                const suffix = idx !== null && idx !== undefined ? `_${idx}` : '';
-                await Filesystem.writeFile({
-                    path: `AuraChat_${timestamp}${suffix}.jpg`,
-                    data: pureBase64,
-                    directory: 'DOCUMENTS'
-                });
-            }
-        } catch (err) {
-            console.warn("Galeritutucuya yazılamadı:", err);
-        }
-    }
-}
 
 
-// idx null/undefined ise eski tekil-resim davranışı (msgId.jpg), sayı verilirse
-// albüm alt-resmi (msgId_idx.jpg) olarak ayrı önbelleklenir.
+
 async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
     if (!chatId || !msgId) return base64Data || null;
 
@@ -958,14 +914,14 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
         const Filesystem = getFilesystemPlugin();
 
         if (Filesystem) {
-            const dirPath = `${MEDIA_CACHE_DIR}/${chatId}`;
-            const filePath = `${dirPath}/${msgId}${suffix}.jpg`;
+            const fileName = `AuraChat_${chatId}_${msgId}${suffix}.jpg`;
+            const filePath = `Pictures/AuraChat/${fileName}`;
 
-            // 1. Önce dahili diski oku
+            // 1. Doğrudan Galerideki (ortak) klasörden oku
             try {
                 const existing = await Filesystem.readFile({ 
                     path: filePath, 
-                    directory: 'DATA'
+                    directory: 'EXTERNAL_STORAGE'
                 });
                 
                 const rawData = typeof existing.data === 'string' ? existing.data : existing.data;
@@ -974,33 +930,29 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 mediaUriCache.set(cacheKey, src);
                 return src;
             } catch (e) {
-                // Dosya henüz iç diskte yok, aşağıya devam et
+                // Galeriden silindiyse veya dosya yoksa buraya düşer
             }
 
-            if (!base64Data) return null;
+            // Galeride yoksa ve internetten gelen base64 da temizlendiyse gösterilmez
+            if (!base64Data) return null; 
 
             try {
                 const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
                 
-                // Klasörü güvenli şekilde oluştur (Var ise hatayı yutar)
-                await ensureDirOnce(Filesystem, dirPath);
+                await ensureDirOnce(Filesystem, 'Pictures/AuraChat');
                 
-              // DATA klasörüne kaydet
+                // Resim tek bir yere (Galeriye) yazılır
                 await Filesystem.writeFile({ 
                     path: filePath, 
                     data: pureBase64, 
-                    directory: 'DATA'
+                    directory: 'EXTERNAL_STORAGE'
                 });
-
-                // Galeriye de kopya at (İster tekil resim, ister albümdeki her bir resim olsun galeriye kaydeder)
-                saveToNativeGallery(pureBase64, msgId, idx);
 
                 const src = `data:image/jpeg;base64,${pureBase64}`;
                 mediaUriCache.set(cacheKey, src);
                 return src;
             } catch (err) {
-                console.warn("Medya yerel diske yazılamadı:", err);
-                // Diske yazılamadıysa Firestore temizliğinin TETİKLENMEMESİ için null dön
+                console.warn("Medya galeriye yazılamadı:", err);
                 return null; 
             }
         }
@@ -1027,6 +979,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
         mediaResolveInFlight.delete(cacheKey);
     }
 }
+
 
 
 // Firebase = kurye. Resim gerçekten bu cihaza (diske) indiyse ve ben
