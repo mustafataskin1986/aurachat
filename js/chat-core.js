@@ -1160,7 +1160,7 @@ function buildMessageElement(msg, isMine, msgId) {
                     if (tileEl && tileEl.isConnected) {
                         if (tileEl.tagName === 'IMG') {
                             if (src !== tileEl.src) tileEl.src = src;
-                       } else {
+                        } else {
                             tileEl.outerHTML = `<img src="${src}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openAlbumLightbox('${currentChatId}','${msgId}',${imagesCount},${i})">`;
                             const newTile = msgDiv.querySelector(`img[data-media-idx="${i}"]`);
                             if (newTile) {
@@ -1271,6 +1271,9 @@ window.openImageLightbox = function (src) {
     if (!lightbox || !lightboxImg) return;
     albumViewerState = null;
     hideAlbumViewerControls();
+    lightboxImg.style.transition = 'none';
+    lightboxImg.style.transform = 'translateX(0)';
+    lightboxImg.style.opacity = '1';
     lightboxImg.src = src;
     lightbox.classList.remove('hidden');
     lightbox.classList.add('flex');
@@ -1279,7 +1282,8 @@ window.openImageLightbox = function (src) {
 
 // ------------------------------------------
 // ALBÜM GÖRÜNTÜLEYİCİ (4'ten fazla resimde "+N" karesine dokununca
-// açılır, ok tuşlarıyla albümdeki TÜM resimler gezilebilir)
+// açılır, ok tuşlarıyla veya parmakla sola/sağa kaydırarak albümdeki
+// TÜM resimler gezilebilir; geçişte kısa bir kayma animasyonu olur)
 // ------------------------------------------
 let albumViewerState = null;
 
@@ -1289,19 +1293,42 @@ function updateAlbumViewerCounter() {
     if (counterEl) counterEl.textContent = `${albumViewerState.index + 1} / ${albumViewerState.imagesCount}`;
 }
 
-async function renderAlbumViewerImage() {
+async function renderAlbumViewerImage(direction = 0) {
     if (!albumViewerState) return;
     const { chatId, msgId, index } = albumViewerState;
     const lightboxImg = document.getElementById('lightbox-img');
     if (!lightboxImg) return;
+
+    if (direction !== 0) {
+        lightboxImg.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+        lightboxImg.style.transform = `translateX(${direction > 0 ? '-24px' : '24px'})`;
+        lightboxImg.style.opacity = '0.2';
+    }
 
     const cacheKey = `${chatId}/${msgId}_${index}`;
     let src = mediaUriCache.get(cacheKey);
     if (!src) {
         src = await resolveLocalMedia(chatId, msgId, null, index);
     }
-    if (albumViewerState && albumViewerState.chatId === chatId && albumViewerState.msgId === msgId && albumViewerState.index === index && src) {
-        lightboxImg.src = src;
+
+    if (!(albumViewerState && albumViewerState.chatId === chatId && albumViewerState.msgId === msgId && albumViewerState.index === index)) {
+        return; // kullanıcı bu sırada başka bir kareye geçti
+    }
+
+    if (src) {
+        if (direction !== 0) {
+            lightboxImg.style.transition = 'none';
+            lightboxImg.style.transform = `translateX(${direction > 0 ? '24px' : '-24px'})`;
+            lightboxImg.src = src;
+            void lightboxImg.offsetWidth; // reflow'u zorla, transition'ın yeniden tetiklenmesi için
+            lightboxImg.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+            lightboxImg.style.transform = 'translateX(0)';
+            lightboxImg.style.opacity = '1';
+        } else {
+            lightboxImg.src = src;
+            lightboxImg.style.transform = 'translateX(0)';
+            lightboxImg.style.opacity = '1';
+        }
     }
     updateAlbumViewerCounter();
 }
@@ -1311,12 +1338,39 @@ function albumViewerStep(delta) {
     const newIndex = albumViewerState.index + delta;
     if (newIndex < 0 || newIndex >= albumViewerState.imagesCount) return;
     albumViewerState.index = newIndex;
-    renderAlbumViewerImage();
+    renderAlbumViewerImage(delta);
+}
+
+let swipeStartX = null;
+let swipeStartY = null;
+
+function attachSwipeHandlersOnce(lightbox) {
+    if (!lightbox || lightbox.dataset.swipeBound === '1') return;
+    lightbox.dataset.swipeBound = '1';
+
+    lightbox.addEventListener('touchstart', (e) => {
+        if (!albumViewerState || e.touches.length !== 1) return;
+        swipeStartX = e.touches[0].clientX;
+        swipeStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    lightbox.addEventListener('touchend', (e) => {
+        if (!albumViewerState || swipeStartX === null) return;
+        const touch = e.changedTouches[0];
+        const deltaX = touch.clientX - swipeStartX;
+        const deltaY = touch.clientY - swipeStartY;
+        swipeStartX = null;
+        swipeStartY = null;
+        if (Math.abs(deltaX) < 40 || Math.abs(deltaX) < Math.abs(deltaY)) return;
+        albumViewerStep(deltaX < 0 ? 1 : -1);
+    }, { passive: true });
 }
 
 function ensureAlbumViewerControls() {
     const lightbox = document.getElementById('image-lightbox');
-    if (!lightbox || document.getElementById('lightbox-album-prev')) return;
+    if (!lightbox) return;
+    attachSwipeHandlersOnce(lightbox);
+    if (document.getElementById('lightbox-album-prev')) return;
 
     const prevBtn = document.createElement('button');
     prevBtn.id = 'lightbox-album-prev';
@@ -1354,6 +1408,10 @@ window.openAlbumLightbox = function (chatId, msgId, imagesCount, startIndex) {
     albumViewerState = { chatId, msgId, imagesCount, index: startIndex };
     ensureAlbumViewerControls();
 
+    lightboxImg.style.transition = 'none';
+    lightboxImg.style.transform = 'translateX(0)';
+    lightboxImg.style.opacity = '1';
+
     const cacheKey = `${chatId}/${msgId}_${startIndex}`;
     const cachedSrc = mediaUriCache.get(cacheKey);
     lightboxImg.src = cachedSrc || '';
@@ -1371,6 +1429,8 @@ function doCloseLightbox() {
     lightbox.classList.add('hidden');
     lightbox.classList.remove('flex');
     albumViewerState = null;
+    swipeStartX = null;
+    swipeStartY = null;
     hideAlbumViewerControls();
 }
 
@@ -1531,7 +1591,12 @@ if (attachBtn && imageInput) {
             let totalBytes = 0;
             let skippedForSize = false;
 
+            let processedCount = 0;
             for (const file of validFiles) {
+                processedCount++;
+                if (activeChatStatus && validFiles.length > 1) {
+                    activeChatStatus.innerHTML = `<span class="text-emerald-400">${processedCount}/${validFiles.length} fotoğraf hazırlanıyor...</span>`;
+                }
                 try {
                     const dataUrl = await compressImageToDataUrl(file, perImageTarget);
                     const approxBytes = dataUrl.length * 0.75;
@@ -1546,6 +1611,10 @@ if (attachBtn && imageInput) {
                 } catch (innerErr) {
                     console.warn(`Görsel sıkıştırılamadı (${file.name}):`, innerErr);
                 }
+            }
+
+            if (activeChatStatus && validFiles.length > 1) {
+                activeChatStatus.innerHTML = `<span class="text-emerald-400">Gönderiliyor...</span>`;
             }
 
             if (!compressed.length) {
@@ -1598,6 +1667,9 @@ if (attachBtn && imageInput) {
         } finally {
             attachBtn.className = originalIcon;
             attachBtn.classList.remove('opacity-40', 'pointer-events-none');
+            if (activeChatStatus && validFiles.length > 1) {
+                activeChatStatus.textContent = '';
+            }
         }
     });
 }
