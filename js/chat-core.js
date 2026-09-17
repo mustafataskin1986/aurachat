@@ -996,8 +996,6 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 saveToNativeGallery(pureBase64, msgId, idx);
 
                 const src = `data:image/jpeg;base64,${pureBase64}`;
-
-                const src = `data:image/jpeg;base64,${pureBase64}`;
                 mediaUriCache.set(cacheKey, src);
                 return src;
             } catch (err) {
