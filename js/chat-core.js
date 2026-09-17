@@ -1076,8 +1076,8 @@ function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
         const cachedSrc = mediaUriCache.get(`${chatId}/${msgId}_${i}`);
         const showOverlay = i === maxTiles - 1 && extra > 0;
         const inner = cachedSrc
-            ? `<img src="${cachedSrc}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openImageLightbox(this.src)">`
-            : `<div class="w-full h-full flex items-center justify-center bg-black/20" data-media-msg="${msgId}" data-media-idx="${i}"><i class="fa-solid fa-image text-gray-500"></i></div>`;
+            ? `<img src="${cachedSrc}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})">`
+            : `<div class="w-full h-full flex items-center justify-center bg-black/20" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})"><i class="fa-solid fa-image text-gray-500"></i></div>`;
         tiles += `
             <div class="relative overflow-hidden" style="aspect-ratio:1/1;">
                 ${inner}
@@ -1160,8 +1160,8 @@ function buildMessageElement(msg, isMine, msgId) {
                     if (tileEl && tileEl.isConnected) {
                         if (tileEl.tagName === 'IMG') {
                             if (src !== tileEl.src) tileEl.src = src;
-                        } else {
-                            tileEl.outerHTML = `<img src="${src}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openImageLightbox(this.src)">`;
+                       } else {
+                            tileEl.outerHTML = `<img src="${src}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openAlbumLightbox('${currentChatId}','${msgId}',${imagesCount},${i})">`;
                             const newTile = msgDiv.querySelector(`img[data-media-idx="${i}"]`);
                             if (newTile) {
                                 newTile.addEventListener('load', () => {
@@ -1269,7 +1269,97 @@ window.openImageLightbox = function (src) {
     const lightbox = document.getElementById('image-lightbox');
     const lightboxImg = document.getElementById('lightbox-img');
     if (!lightbox || !lightboxImg) return;
+    albumViewerState = null;
+    hideAlbumViewerControls();
     lightboxImg.src = src;
+    lightbox.classList.remove('hidden');
+    lightbox.classList.add('flex');
+    pushBackState(doCloseLightbox);
+};
+
+// ------------------------------------------
+// ALBÜM GÖRÜNTÜLEYİCİ (4'ten fazla resimde "+N" karesine dokununca
+// açılır, ok tuşlarıyla albümdeki TÜM resimler gezilebilir)
+// ------------------------------------------
+let albumViewerState = null;
+
+function updateAlbumViewerCounter() {
+    if (!albumViewerState) return;
+    const counterEl = document.getElementById('lightbox-album-counter');
+    if (counterEl) counterEl.textContent = `${albumViewerState.index + 1} / ${albumViewerState.imagesCount}`;
+}
+
+async function renderAlbumViewerImage() {
+    if (!albumViewerState) return;
+    const { chatId, msgId, index } = albumViewerState;
+    const lightboxImg = document.getElementById('lightbox-img');
+    if (!lightboxImg) return;
+
+    const cacheKey = `${chatId}/${msgId}_${index}`;
+    let src = mediaUriCache.get(cacheKey);
+    if (!src) {
+        src = await resolveLocalMedia(chatId, msgId, null, index);
+    }
+    if (albumViewerState && albumViewerState.chatId === chatId && albumViewerState.msgId === msgId && albumViewerState.index === index && src) {
+        lightboxImg.src = src;
+    }
+    updateAlbumViewerCounter();
+}
+
+function albumViewerStep(delta) {
+    if (!albumViewerState) return;
+    const newIndex = albumViewerState.index + delta;
+    if (newIndex < 0 || newIndex >= albumViewerState.imagesCount) return;
+    albumViewerState.index = newIndex;
+    renderAlbumViewerImage();
+}
+
+function ensureAlbumViewerControls() {
+    const lightbox = document.getElementById('image-lightbox');
+    if (!lightbox || document.getElementById('lightbox-album-prev')) return;
+
+    const prevBtn = document.createElement('button');
+    prevBtn.id = 'lightbox-album-prev';
+    prevBtn.innerHTML = '<i class="fa-solid fa-chevron-left"></i>';
+    prevBtn.className = 'absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white w-10 h-10 rounded-full flex items-center justify-center z-10';
+    prevBtn.addEventListener('click', (e) => { e.stopPropagation(); albumViewerStep(-1); });
+
+    const nextBtn = document.createElement('button');
+    nextBtn.id = 'lightbox-album-next';
+    nextBtn.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
+    nextBtn.className = 'absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white w-10 h-10 rounded-full flex items-center justify-center z-10';
+    nextBtn.addEventListener('click', (e) => { e.stopPropagation(); albumViewerStep(1); });
+
+    const counter = document.createElement('div');
+    counter.id = 'lightbox-album-counter';
+    counter.className = 'absolute top-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-3 py-1 rounded-full z-10';
+
+    lightbox.appendChild(prevBtn);
+    lightbox.appendChild(nextBtn);
+    lightbox.appendChild(counter);
+}
+
+function hideAlbumViewerControls() {
+    ['lightbox-album-prev', 'lightbox-album-next', 'lightbox-album-counter'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+    });
+}
+
+window.openAlbumLightbox = function (chatId, msgId, imagesCount, startIndex) {
+    const lightbox = document.getElementById('image-lightbox');
+    const lightboxImg = document.getElementById('lightbox-img');
+    if (!lightbox || !lightboxImg) return;
+
+    albumViewerState = { chatId, msgId, imagesCount, index: startIndex };
+    ensureAlbumViewerControls();
+
+    const cacheKey = `${chatId}/${msgId}_${startIndex}`;
+    const cachedSrc = mediaUriCache.get(cacheKey);
+    lightboxImg.src = cachedSrc || '';
+    updateAlbumViewerCounter();
+    if (!cachedSrc) renderAlbumViewerImage();
+
     lightbox.classList.remove('hidden');
     lightbox.classList.add('flex');
     pushBackState(doCloseLightbox);
@@ -1280,6 +1370,8 @@ function doCloseLightbox() {
     if (!lightbox) return;
     lightbox.classList.add('hidden');
     lightbox.classList.remove('flex');
+    albumViewerState = null;
+    hideAlbumViewerControls();
 }
 
 window.closeImageLightboxUI = function () {
