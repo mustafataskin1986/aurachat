@@ -9,7 +9,7 @@ import { db } from "./firebase-init.js";
 import {
     doc, collection, setDoc, updateDoc, onSnapshot, addDoc, serverTimestamp, getDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getCurrentUser, getCurrentChatId, sendPushToUser } from "./chat-core.js";
+import { getCurrentUser, getCurrentChatId, sendPushToUser, logMissedCall } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -286,8 +286,9 @@ async function hangupCall() {
 
             // Karşı taraf hiç cevap vermeden ben kapattıysam ona
             // "cevapsız arama" bildirimi gönder.
-            if (wasRinging && isCaller && data.calleeUid) {
+        if (wasRinging && isCaller && data.calleeUid) {
                 const user = getCurrentUser();
+                logMissedCall(currentCallChatId, user.uid, user.name, data.calleeUid);
                 sendPushToUser(data.calleeUid, `${user.name}`, "☎️ Cevapsız görüntülü arama", {
                     chatId: currentCallChatId,
                     otherUid: user.uid,
