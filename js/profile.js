@@ -26,6 +26,62 @@ const profileLogoutBtn = document.getElementById('profile-logout-btn');
 
 let pendingAvatarBase64 = null;
 
+// Avatar da chat resimleri gibi sıkıştırılmalı - Firestore'un tek
+// doküman için 1MiB sert sınırı var, ham base64 onu kolayca aşıyor
+// ve kayıt sessizce/hatayla başarısız oluyordu.
+function compressAvatarToDataUrl(file, targetBytes = 200 * 1024) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const dimensionSteps = [500, 400, 300];
+                const qualitySteps = [0.7, 0.55, 0.4, 0.3];
+                let bestResult = null;
+
+                outer:
+                for (const maxDim of dimensionSteps) {
+                    let { width, height } = img;
+                    if (width > maxDim || height > maxDim) {
+                        if (width > height) {
+                            height = Math.round(height * (maxDim / width));
+                            width = maxDim;
+                        } else {
+                            width = Math.round(width * (maxDim / height));
+                            height = maxDim;
+                        }
+                    } else if (maxDim !== dimensionSteps[0]) {
+                        break;
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    for (const q of qualitySteps) {
+                        const dataUrl = canvas.toDataURL('image/jpeg', q);
+                        bestResult = dataUrl;
+                        const approxBytes = dataUrl.length * 0.75;
+                        if (approxBytes <= targetBytes) {
+                            resolve(dataUrl);
+                            break outer;
+                        }
+                    }
+                }
+
+                if (bestResult) resolve(bestResult);
+                else reject(new Error('Avatar sıkıştırılamadı'));
+            };
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
 function renderAvatar(user) {
     if (!profileAvatar) return;
     if (user.avatar) {
@@ -106,19 +162,25 @@ if (profileBackBtn) {
 
 // Avatara tıklayınca yeni fotoğraf seç - sadece önizleme, kaydet'e basınca yazılır
 if (profileAvatarInput) {
-    profileAvatarInput.addEventListener('change', (e) => {
+    profileAvatarInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            pendingAvatarBase64 = ev.target.result;
+        if (profileAvatar) {
+            profileAvatar.innerHTML = `<div class="w-full h-full flex items-center justify-center"><i class="fa-solid fa-spinner fa-spin text-white"></i></div>`;
+        }
+
+        try {
+            pendingAvatarBase64 = await compressAvatarToDataUrl(file);
             if (profileAvatar) {
                 profileAvatar.style.backgroundColor = '';
                 profileAvatar.innerHTML = `<img src="${pendingAvatarBase64}" class="w-full h-full object-cover">`;
             }
-        };
-        reader.readAsDataURL(file);
+        } catch (err) {
+            alert("Fotoğraf işlenemedi kanka, başka bir tane dene: " + err.message);
+            const user = getCurrentUser();
+            if (user) renderAvatar(user);
+        }
     });
 }
 
