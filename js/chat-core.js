@@ -441,7 +441,8 @@ export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
                 title: title,
                 body: body,
                 platform: userData?.platform || '',
-                data: extraData
+                data: extraData,
+                tag: extraData && extraData.tag ? extraData.tag : undefined
             })
         });
 
