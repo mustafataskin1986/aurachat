@@ -45,6 +45,8 @@ const chatSelectionPinBtn = document.getElementById('chat-selection-pin-btn');
 const chatSelectionArchiveBtn = document.getElementById('chat-selection-archive-btn');
 
 const contactElementsMap = new Map();
+let archivedChats = new Map();
+let dynamicListContainer = null;
 
 let chatSelectionMode = false;
 const selectedChatIds = new Set();
@@ -228,11 +230,10 @@ export async function loadContacts() {
         }
     });
 
-    const dynamicListContainer = document.createElement('div');
+    dynamicListContainer = document.createElement('div');
 
 let allUsersById = new Map();
     let myChats = new Map();
-    let archivedChats = new Map();
     let usersLoaded = false;
     let chatsLoaded = false;
     let listMounted = false;
