@@ -176,6 +176,13 @@ if (filterTabsContainer) {
     });
 }
 
+function updateFilterChipLabels(unreadCount, favoritesCount) {
+    if (!filterTabsContainer) return;
+    const unreadChip = filterTabsContainer.querySelector('[data-filter="unread"]');
+    const favChip = filterTabsContainer.querySelector('[data-filter="favorites"]');
+    if (unreadChip) unreadChip.textContent = unreadCount > 0 ? `Okunmamış ${unreadCount}` : 'Okunmamış';
+    if (favChip) favChip.textContent = favoritesCount > 0 ? `Favoriler ${favoritesCount}` : 'Favoriler';
+}
 // ------------------------------------------
 // KİŞİLERİ YÜKLE
 // ------------------------------------------
@@ -273,6 +280,16 @@ export async function loadContacts() {
         // Genel Kanka Odası sadece "Tümü" sekmesinde görünür
         globalDiv.style.display = (activeFilter === 'all') ? 'flex' : 'none';
 
+        let unreadChatsCount = 0;
+        let favoritesCount = 0;
+        myChats.forEach((chatData) => {
+            const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
+            const unreadCount = isLastMsgMine ? 0 : (chatData.unreadCount || 0);
+            if (unreadCount > 0) unreadChatsCount++;
+            if (chatData.archived) favoritesCount++;
+        });
+        updateFilterChipLabels(unreadChatsCount, favoritesCount);
+
         dynamicListContainer.innerHTML = '';
         contactElementsMap.clear();
         exitChatSelectionMode();
@@ -293,10 +310,9 @@ export async function loadContacts() {
             if (dynamicListContainer.children.length === 0) {
                 renderEmptyStateRow("Henüz favori sohbetin yok kanka. Bir sohbeti uzun basıp favorile.");
             }
-        } else if (activeFilter === 'unread') {
-            // Sadece okunmamış mesajı olan (arşivlenmemiş) sohbetler
+} else if (activeFilter === 'unread') {
+            // Sadece okunmamış mesajı olan sohbetler (favoriler dahil)
             myChats.forEach((chatData, chatId) => {
-                if (chatData.archived) return;
                 const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
                 const unreadCount = isLastMsgMine ? 0 : (chatData.unreadCount || 0);
                 if (unreadCount <= 0) return;
@@ -318,11 +334,9 @@ export async function loadContacts() {
             if (dynamicListContainer.children.length === 0) {
                 renderEmptyStateRow("Okunmamış mesajın yok kanka.");
             }
-        } else {
-            // "Tümü" - eski davranış
+   } else {
+            // "Tümü" - favoriler dahil hepsi
             myChats.forEach((chatData, chatId) => {
-                if (chatData.archived) return;
-
                 const clearedAt = chatData.clearedAt;
                 const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
                 const clearedAtMs = clearedAt ? clearedAt.toDate().getTime() : 0;
@@ -400,13 +414,12 @@ export async function loadContacts() {
         }
 
         const pinIconHtml = chatData.pinned ? `<i class="fa-solid fa-thumbtack text-[10px] text-amber-400 mr-1"></i>` : '';
-        const favIconHtml = chatData.archived ? `<i class="fa-solid fa-star text-[10px] text-amber-400 mr-1"></i>` : '';
 
         userDiv.innerHTML = `
             ${wrapAvatarWithSelectionBadge(chatId)}
             <div class="flex-1 overflow-hidden ml-3">
                 <div class="flex justify-between items-baseline">
-                    <h4 class="text-white font-medium text-sm">${pinIconHtml}${favIconHtml}${escapeHtml(chatData.otherName || '')}</h4>
+                    <h4 class="text-white font-medium text-sm">${pinIconHtml}${escapeHtml(chatData.otherName || '')}</h4>
                     <span class="text-[11px] text-gray-400">${lastTime}</span>
                 </div>
                 <div class="flex justify-between items-center mt-0.5">
