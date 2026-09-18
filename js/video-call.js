@@ -15,7 +15,7 @@ import { db } from "./firebase-init.js";
 import {
     doc, collection, setDoc, updateDoc, onSnapshot, addDoc, serverTimestamp, getDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getCurrentUser, getCurrentChatId, sendPushToUser, logMissedCall, logDeclinedCall } from "./chat-core.js";
+import { getCurrentUser, getCurrentChatId, sendPushToUser, logMissedCall, logDeclinedCall, showToast } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -228,10 +228,11 @@ if (btnDeclineCall) {
         if (currentCallChatId) {
             await updateDoc(callDocRef(currentCallChatId), { status: 'declined' }).catch(() => {});
             const user = getCurrentUser();
-            if (pendingCallerUid && user) {
+         if (pendingCallerUid && user) {
                 logDeclinedCall(currentCallChatId, pendingCallerUid, pendingCallerName, user.uid, 'video');
             }
         }
+        showToast("Aramayı reddettiniz");
         resetCallState();
     });
 }
