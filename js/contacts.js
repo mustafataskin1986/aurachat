@@ -252,8 +252,6 @@ let allUsersById = new Map();
         archivedChats.clear();
         exitChatSelectionMode();
 
-        renderArchivedSummaryRow();
-
         // 1) Gerçek sohbet özetleri (mesajlaşılmış olanlar).
         myChats.forEach((chatData, chatId) => {
             if (chatData.archived) {
@@ -279,6 +277,8 @@ let allUsersById = new Map();
             };
             renderChatItem(chatId, mergedChatData);
         });
+
+        renderArchivedSummaryRow();
 
         // 2) Rehberde kayıtlı ama henüz mesajlaşılmamış kullanıcılar
         allUsersById.forEach((user, uid) => {
@@ -413,7 +413,8 @@ let allUsersById = new Map();
         allUsersById.clear();
         snapshot.forEach((docSnap) => {
             let user = docSnap.data();
-            if (!user || !user.name || !user.uid) return;
+            if (!user || !user.name) return;
+            user.uid = user.uid || docSnap.id;
             user = formatAdminUser(user, ADMIN_EMAIL);
             allUsersById.set(user.uid, user);
         });
@@ -799,6 +800,7 @@ if (adminBtn) {
 
             snapshot.forEach((docSnap) => {
                 let user = docSnap.data();
+                user.uid = user.uid || docSnap.id;
                 user = formatAdminUser(user, ADMIN_EMAIL);
 
                 const isMe = currentUser && user.uid === currentUser.uid;
