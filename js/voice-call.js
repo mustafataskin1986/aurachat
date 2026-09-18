@@ -78,7 +78,7 @@ export function watchVoiceCallForChat(chatId) {
         const data = snap.data();
 
         // Sadece sesli arama ise devreye gir - video ise video-call.js halleder
-        if (data.status === 'ringing' && data.calleeUid === user.uid && !pc && data.callType === 'audio') {
+    if (data.status === 'ringing' && data.calleeUid === user.uid && !pc && !window.__aurachatCallActive && data.callType === 'audio') {
             showIncomingVoiceCall(chatId, data.callerName, data.callerAvatar, data.offer, data.callerUid);
         }
 
@@ -115,7 +115,12 @@ if (voiceCallBtn) {
     });
 }
 
-async function startVoiceCall(chatId, otherUid) {
+export async function startVoiceCall(chatId, otherUid) {
+    if (window.__aurachatCallActive) {
+        alert("Zaten bir arama devam ediyor kanka.");
+        return;
+    }
+
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
@@ -123,6 +128,7 @@ async function startVoiceCall(chatId, otherUid) {
         return;
     }
 
+    window.__aurachatCallActive = true;
     isCaller = true;
     currentCallChatId = chatId;
 
@@ -240,6 +246,7 @@ async function acceptVoiceCall() {
         return;
     }
 
+    window.__aurachatCallActive = true;
     pc = new RTCPeerConnection(RTC_CONFIG);
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
@@ -354,6 +361,7 @@ function endCallUI(message) {
 }
 
 function resetCallState() {
+    window.__aurachatCallActive = false;
     if (pc) { pc.close(); pc = null; }
     if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
     if (unsubRemoteCandidates) { unsubRemoteCandidates(); unsubRemoteCandidates = null; }
