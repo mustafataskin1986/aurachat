@@ -746,6 +746,90 @@ searchIcon.addEventListener('click', () => {
 });
 
 // ------------------------------------------
+// FİLTRE ÇİPLERİNİ AÇ/KAPA (WhatsApp'taki "aşağı çekince görün" hissi)
+// Sadece listenin en tepesindeyken (scrollTop 0) aşağı doğru parmak
+// sürüklemesi filtre çubuğunu açar; yeterince çekilmezse ya da liste
+// zaten aşağı kaydırılmışsa kapalı/gizli kalır - böylece yukarı
+// ittirince arama barı ve çipler listeyle birlikte kayıp gidiyor.
+// ------------------------------------------
+const chatScrollWrapper = document.getElementById('chat-scroll-wrapper');
+const chatFilterTabsWrapper = document.getElementById('chat-filter-tabs-wrapper');
+
+if (chatScrollWrapper && chatFilterTabsWrapper) {
+    let pullStartY = null;
+    let isPulling = false;
+    const PULL_OPEN_THRESHOLD = 28;
+    const PULL_MAX = 60;
+
+    function getFilterTabsNaturalHeight() {
+        const inner = document.getElementById('chat-filter-tabs');
+        return inner ? inner.offsetHeight : 46;
+    }
+
+    function isFilterTabsOpen() {
+        return chatFilterTabsWrapper.style.maxHeight !== '0px';
+    }
+
+    function openFilterTabs() {
+        chatFilterTabsWrapper.style.transition = 'max-height 0.2s ease-out';
+        chatFilterTabsWrapper.style.maxHeight = getFilterTabsNaturalHeight() + 'px';
+    }
+
+    function closeFilterTabs() {
+        chatFilterTabsWrapper.style.transition = 'max-height 0.2s ease-out';
+        chatFilterTabsWrapper.style.maxHeight = '0px';
+    }
+
+    chatScrollWrapper.addEventListener('touchstart', (e) => {
+        if (chatScrollWrapper.scrollTop <= 0 && e.touches.length === 1) {
+            pullStartY = e.touches[0].clientY;
+            isPulling = false;
+        } else {
+            pullStartY = null;
+        }
+    }, { passive: true });
+
+    chatScrollWrapper.addEventListener('touchmove', (e) => {
+        if (pullStartY === null || chatScrollWrapper.scrollTop > 0) return;
+        const delta = e.touches[0].clientY - pullStartY;
+        if (delta <= 0) return;
+
+        isPulling = true;
+        const pull = Math.min(delta, PULL_MAX);
+        chatFilterTabsWrapper.style.transition = 'none';
+        chatFilterTabsWrapper.style.maxHeight = pull + 'px';
+    }, { passive: true });
+
+    chatScrollWrapper.addEventListener('touchend', () => {
+        if (!isPulling) { pullStartY = null; return; }
+        isPulling = false;
+        pullStartY = null;
+
+        const currentMax = parseFloat(chatFilterTabsWrapper.style.maxHeight) || 0;
+        if (currentMax >= PULL_OPEN_THRESHOLD) {
+            openFilterTabs();
+        } else {
+            closeFilterTabs();
+        }
+    });
+
+    chatScrollWrapper.addEventListener('touchcancel', () => {
+        isPulling = false;
+        pullStartY = null;
+        closeFilterTabs();
+    });
+
+    // Liste yukarı kaydırılıp çipler görünüm dışına çıktığında bir
+    // dahaki açılış temiz başlasın diye sıfırla.
+    chatScrollWrapper.addEventListener('scroll', () => {
+        if (isPulling) return;
+        if (chatScrollWrapper.scrollTop > getFilterTabsNaturalHeight() && isFilterTabsOpen()) {
+            closeFilterTabs();
+        }
+    });
+}
+
+// ------------------------------------------
 // ADMİN PANEL
 // ------------------------------------------
 export function initAdminPanel() {
