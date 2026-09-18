@@ -96,6 +96,22 @@ export function setCurrentUser(user) {
     currentUser = user;
 }
 
+// Basit, engellemeyen bildirim balonu - alert() yerine
+export function showToast(message, durationMs = 2200) {
+    try {
+        const toast = document.createElement('div');
+        toast.textContent = message;
+        toast.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(32,44,51,0.95);color:#fff;padding:10px 18px;border-radius:9999px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:80%;text-align:center;';
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.remove(); }, durationMs);
+    } catch (e) {}
+}
+
+function updateMyActiveChatId(chatId) {
+    if (!currentUser) return;
+    setDoc(doc(db, "users", currentUser.uid), { activeChatId: chatId || null }, { merge: true }).catch(() => {});
+}
+
 export function getCurrentChatId() {
     return currentChatId;
 }
@@ -427,6 +443,12 @@ export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
         }
 
         const userData = userDoc.data();
+
+        // Alıcı zaten bu sohbeti açık tutuyorsa bildirim atma - zaten görüyor.
+        if (userData?.activeChatId && extraData && extraData.chatId && userData.activeChatId === extraData.chatId) {
+            return;
+        }
+
         const receiverToken = userData?.fcmToken || userData?.fcm_token || userData?.pushToken;
 
         if (!receiverToken) {
@@ -651,6 +673,7 @@ export async function selectChat(otherUser) {
     currentChatName = chatName;
     currentOtherUid = otherUid;
     currentOtherAvatar = otherAvatar;
+    updateMyActiveChatId(chatId);
 
     if (window.innerWidth < 1024) {
         sidebar.classList.add('-translate-x-full');
@@ -675,6 +698,7 @@ export async function selectChat(otherUser) {
 }
 
 function doCloseChatView() {
+    updateMyActiveChatId(null);
     currentChatId = null;
     currentChatName = '';
     currentOtherUid = null;
@@ -698,6 +722,9 @@ document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && currentChatId) {
         const session = chatSessions.get(currentChatId);
         if (session) markVisibleMessagesRead(session);
+        updateMyActiveChatId(currentChatId);
+    } else if (document.visibilityState === 'hidden') {
+        updateMyActiveChatId(null);
     }
 });
 
