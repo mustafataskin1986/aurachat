@@ -59,8 +59,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
-import { watchCallForChat } from "./video-call.js";
-import { watchVoiceCallForChat } from "./voice-call.js";
+import { watchCallForChat, startCall } from "./video-call.js";
+import { watchVoiceCallForChat, startVoiceCall } from "./voice-call.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
@@ -1155,10 +1155,10 @@ let bodyHtml;
             : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`;
 } else if (msg.type === 'missed_call') {
         const missedLabel = msg.callType === 'audio' ? 'Cevapsız sesli arama' : 'Cevapsız görüntülü arama';
-        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic"><i class="fa-solid fa-phone-slash"></i> ${missedLabel}</p>`;
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${msg.callType === 'audio' ? 'audio' : 'video'}')"><i class="fa-solid fa-phone-slash"></i> ${missedLabel}</p>`;
     } else if (msg.type === 'declined_call') {
         const declinedLabel = msg.callType === 'audio' ? 'Reddedilen sesli arama' : 'Reddedilen görüntülü arama';
-        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic"><i class="fa-solid fa-phone-slash"></i> ${declinedLabel}</p>`;
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${msg.callType === 'audio' ? 'audio' : 'video'}')"><i class="fa-solid fa-phone-slash"></i> ${declinedLabel}</p>`;
     } else {
         bodyHtml = `<p class="break-words">${escapeHtml(msg.text)}</p>`;
     }
@@ -1314,6 +1314,15 @@ function scrollToBottom() {
 function isNearBottom() {
     return (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight) < 150;
 }
+
+window.callBackFromBubble = function (callType) {
+    if (!currentChatId || currentChatId === 'global' || !currentOtherUid) return;
+    if (callType === 'audio') {
+        startVoiceCall(currentChatId, currentOtherUid);
+    } else {
+        startCall(currentChatId, currentOtherUid);
+    }
+};
 
 window.openImageLightbox = function (src) {
     const lightbox = document.getElementById('image-lightbox');
