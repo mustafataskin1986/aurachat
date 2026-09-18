@@ -156,7 +156,8 @@ async function startCall(chatId, otherUid) {
     sendPushToUser(otherUid, `${user.name}`, "📹 Görüntülü arama yapıyor...", {
         chatId: chatId,
         otherUid: user.uid,
-        otherName: user.name
+        otherName: user.name,
+        tag: `call_${chatId}`
     });
 
     listenRemoteCandidates(chatId, 'calleeCandidates');
@@ -299,7 +300,8 @@ async function hangupCall() {
                 sendPushToUser(data.calleeUid, `${user.name}`, "☎️ Cevapsız görüntülü arama", {
                     chatId: currentCallChatId,
                     otherUid: user.uid,
-                    otherName: user.name
+                    otherName: user.name,
+                    tag: `call_${chatId}`
                 });
             }
         } catch (err) {
