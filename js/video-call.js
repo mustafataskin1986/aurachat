@@ -46,6 +46,8 @@ let unsubRemoteCandidates = null;
 let micEnabled = true;
 let camEnabled = true;
 let pendingOffer = null;
+let pendingCallerUid = null;
+let pendingCallerName = null;
 let currentFacingMode = 'user';
 
 function callDocRef(chatId) {
@@ -71,10 +73,9 @@ export function watchCallForChat(chatId) {
         const data = snap.data();
 
         // Bana gelen, henüz açık bir arama yoksa ve bağlı değilsem -> göster
-        if (data.status === 'ringing' && data.calleeUid === user.uid && !pc) {
-            showIncomingCall(chatId, data.callerName, data.callerAvatar, data.offer);
+     if (data.status === 'ringing' && data.calleeUid === user.uid && !pc) {
+            showIncomingCall(chatId, data.callerName, data.callerAvatar, data.offer, data.callerUid);
         }
-
      // Karşı taraf kapattı/reddetti
         if (data.status === 'ended' || data.status === 'declined') {
             if (pc) {
@@ -166,10 +167,12 @@ async function startCall(chatId, otherUid) {
 // ------------------------------------------
 // GELEN ARAMA
 // ------------------------------------------
-function showIncomingCall(chatId, callerName, callerAvatar, offer) {
+function showIncomingCall(chatId, callerName, callerAvatar, offer, callerUid) {
     currentCallChatId = chatId;
     isCaller = false;
     pendingOffer = offer;
+    pendingCallerUid = callerUid;
+    pendingCallerName = callerName;
 
     if (incomingCallerName) incomingCallerName.textContent = callerName || 'Bilinmeyen';
     if (incomingCallerAvatar) {
@@ -201,6 +204,10 @@ if (btnDeclineCall) {
         hideIncomingCallUI();
         if (currentCallChatId) {
             await updateDoc(callDocRef(currentCallChatId), { status: 'declined' }).catch(() => {});
+            const user = getCurrentUser();
+            if (pendingCallerUid && user) {
+                logDeclinedCall(currentCallChatId, pendingCallerUid, pendingCallerName, user.uid);
+            }
         }
         resetCallState();
     });
@@ -319,9 +326,11 @@ function resetCallState() {
     if (unsubRemoteCandidates) { unsubRemoteCandidates(); unsubRemoteCandidates = null; }
     if (localVideoEl) localVideoEl.srcObject = null;
     if (remoteVideoEl) remoteVideoEl.srcObject = null;
-    isCaller = false;
+  isCaller = false;
     currentCallChatId = null;
     pendingOffer = null;
+    pendingCallerUid = null;
+    pendingCallerName = null;
     currentFacingMode = 'user';
 }
 
