@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Yalnızca POST kabul edilir.' });
   }
 
-  const { token, title, body, platform, data } = req.body;
+  const { token, title, body, platform, data, tag } = req.body;
 
   if (!token || !title || !body) {
     return res.status(400).json({ error: 'Eksik parametre.' });
@@ -33,6 +33,7 @@ export default async function handler(req, res) {
       }
     });
   }
+  if (tag) safeData.tag = String(tag);
 
   try {
     const message = isWebPlatform
@@ -46,7 +47,10 @@ export default async function handler(req, res) {
           data: safeData,
           android: {
             priority: 'high',
-            notification: { channelId: 'aurachat-high' }
+            notification: {
+              channelId: 'aurachat-high',
+              ...(tag ? { tag: String(tag) } : {})
+            }
           },
           token: token,
         };
