@@ -301,7 +301,7 @@ async function hangupCall() {
                     chatId: currentCallChatId,
                     otherUid: user.uid,
                     otherName: user.name,
-                    tag: `call_${chatId}`
+                    tag: `call_${currentCallChatId}`
                 });
             }
         } catch (err) {
