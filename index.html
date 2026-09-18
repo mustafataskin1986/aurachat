@@ -216,27 +216,33 @@
                 </div>
             </div>
 
-            <!-- SABİT ARAMA BAR (Görseldeki Gibi Oval & Sor Butonlu) -->
-            <div class="p-2.5 bg-[#111b21] flex-shrink-0 border-b border-gray-800/30">
-                <div class="bg-[#202c33] flex items-center px-3.5 py-1.5 rounded-full border border-transparent focus-within:border-emerald-500/50 transition shadow-inner">
-                    <i id="search-icon" class="fa-solid fa-magnifying-glass text-gray-400 text-sm mr-2.5 ml-0.5 flex-shrink-0"></i>
-                    <textarea id="search-contact" rows="1" name="search_contact_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Ara..." class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400 resize-none overflow-hidden leading-tight py-1" style="height:28px; max-height:28px;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
-                    <button id="search-ai-btn" type="button" class="bg-[#2a3942] hover:bg-[#32444f] text-purple-300 text-xs px-3 py-1 rounded-full flex items-center space-x-1.5 flex-shrink-0 transition ml-1 border border-purple-500/20 shadow-sm">
-                        <i class="fa-solid fa-wand-magic-sparkles text-purple-400 text-[11px]"></i>
-                        <span class="font-semibold text-[11px] tracking-wide">Sor</span>
-                    </button>
+<!-- KAYAR ÜST + LİSTE SARMALAYICI (arama barı ve filtre çipleri artık listeyle birlikte kayıyor) -->
+            <div id="chat-scroll-wrapper" class="flex-1 overflow-y-auto min-h-0">
+
+                <!-- ARAMA BAR (Görseldeki Gibi Oval & Sor Butonlu) -->
+                <div class="p-2.5 bg-[#111b21] border-b border-gray-800/30">
+                    <div class="bg-[#202c33] flex items-center px-3.5 py-1.5 rounded-full border border-transparent focus-within:border-emerald-500/50 transition shadow-inner">
+                        <i id="search-icon" class="fa-solid fa-magnifying-glass text-gray-400 text-sm mr-2.5 ml-0.5 flex-shrink-0"></i>
+                        <textarea id="search-contact" rows="1" name="search_contact_field" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-form-type="other" placeholder="Ara..." class="bg-transparent w-full text-sm text-white focus:outline-none placeholder-gray-400 resize-none overflow-hidden leading-tight py-1" style="height:28px; max-height:28px;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
+                        <button id="search-ai-btn" type="button" class="bg-[#2a3942] hover:bg-[#32444f] text-purple-300 text-xs px-3 py-1 rounded-full flex items-center space-x-1.5 flex-shrink-0 transition ml-1 border border-purple-500/20 shadow-sm">
+                            <i class="fa-solid fa-wand-magic-sparkles text-purple-400 text-[11px]"></i>
+                            <span class="font-semibold text-[11px] tracking-wide">Sor</span>
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-        <!-- FİLTRE ÇİPLERİ (Tümü / Okunmamış / Favoriler) -->
-            <div id="chat-filter-tabs" class="px-2.5 pb-2 bg-[#111b21] flex-shrink-0 flex items-center space-x-2 overflow-x-auto">
-                <button data-filter="all" class="chat-filter-chip flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium bg-emerald-600 text-white transition">Tümü</button>
-                <button data-filter="unread" class="chat-filter-chip flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#202c33] text-gray-300 transition">Okunmamış</button>
-                <button data-filter="favorites" class="chat-filter-chip flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#202c33] text-gray-300 transition">Favoriler</button>
-            </div>
+                <!-- FİLTRE ÇİPLERİ (Tümü / Okunmamış / Favoriler) - varsayılan gizli, aşağı çekince açılır -->
+                <div id="chat-filter-tabs-wrapper" class="overflow-hidden" style="max-height:0px;">
+                    <div id="chat-filter-tabs" class="px-2.5 pb-2 bg-[#111b21] flex items-center space-x-2 overflow-x-auto">
+                        <button data-filter="all" class="chat-filter-chip flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium bg-emerald-600 text-white transition">Tümü</button>
+                        <button data-filter="unread" class="chat-filter-chip flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#202c33] text-gray-300 transition">Okunmamış</button>
+                        <button data-filter="favorites" class="chat-filter-chip flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#202c33] text-gray-300 transition">Favoriler</button>
+                    </div>
+                </div>
 
-            <!-- KAYAR ORTA KISIM (Kişiler / Odalar Listesi) -->
-            <div id="contact-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/40 min-h-0"></div>
+                <!-- KAYAR ORTA KISIM (Kişiler / Odalar Listesi) -->
+                <div id="contact-list" class="divide-y divide-gray-800/40"></div>
+            </div>
 
             <!-- SABİT ALT BAR -->
             <div class="bg-[#202c33] border-t border-gray-800 py-2.5 px-6 flex justify-between items-center text-gray-400 flex-shrink-0">
