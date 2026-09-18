@@ -502,6 +502,41 @@ export async function logMissedCall(chatId, callerUid, callerName, calleeUid) {
 }
 
 // ------------------------------------------
+// REDDEDİLEN GÖRÜNTÜLÜ ARAMA KAYDI (video-call.js, decline anında çağırır)
+// ------------------------------------------
+export async function logDeclinedCall(chatId, callerUid, callerName, calleeUid) {
+    try {
+        await addDoc(collection(db, "chats", chatId, "messages"), {
+            type: 'declined_call',
+            text: '',
+            senderUid: callerUid,
+            senderName: callerName,
+            createdAt: serverTimestamp(),
+            read: false
+        });
+
+        await setDoc(doc(db, "users", callerUid, "chats", chatId), {
+            lastMessage: "📞 Reddedilen arama",
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: callerUid,
+            lastMessageRead: false,
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        await setDoc(doc(db, "users", calleeUid, "chats", chatId), {
+            lastMessage: "📞 Reddedilen arama",
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: callerUid,
+            lastMessageRead: false,
+            unreadCount: increment(1),
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+    } catch (err) {
+        console.error("Reddedilen arama kaydedilemedi:", err);
+    }
+}
+
+// ------------------------------------------
 // ÖZET DOKÜMANI (users/{uid}/chats/{chatId}) GÜNCELLEME
 // ------------------------------------------
 async function updateChatSummaries(lastMessageText) {
@@ -1111,8 +1146,10 @@ let bodyHtml;
         bodyHtml = initialImgSrc
             ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`
             : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`;
-    } else if (msg.type === 'missed_call') {
+ } else if (msg.type === 'missed_call') {
         bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic"><i class="fa-solid fa-phone-slash"></i> Cevapsız görüntülü arama</p>`;
+    } else if (msg.type === 'declined_call') {
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic"><i class="fa-solid fa-phone-slash"></i> Reddedilen arama</p>`;
     } else {
         bodyHtml = `<p class="break-words">${escapeHtml(msg.text)}</p>`;
     }
