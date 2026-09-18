@@ -384,8 +384,8 @@ if (btnToggleMic) {
         if (!localStream) return;
         micEnabled = !micEnabled;
         localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
-        btnToggleMic.classList.toggle('bg-rose-600', !micEnabled);
-        btnToggleMic.classList.toggle('bg-white/20', micEnabled);
+        const icon = btnToggleMic.querySelector('i');
+        if (icon) icon.className = micEnabled ? 'fa-solid fa-microphone' : 'fa-solid fa-microphone-slash';
     });
 }
 
@@ -394,8 +394,8 @@ if (btnToggleCam) {
         if (!localStream) return;
         camEnabled = !camEnabled;
         localStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
-        btnToggleCam.classList.toggle('bg-rose-600', !camEnabled);
-        btnToggleCam.classList.toggle('bg-white/20', camEnabled);
+        const icon = btnToggleCam.querySelector('i');
+        if (icon) icon.className = camEnabled ? 'fa-solid fa-video' : 'fa-solid fa-video-slash';
     });
 }
 
