@@ -3,13 +3,19 @@
 // Sadece 1'e 1 sohbetlerde çalışır (global oda desteklenmez).
 // STUN: Google'ın ücretsiz sunucusu. TURN yok - bazı ağlarda
 // (simetrik NAT) bağlantı kurulamayabilir.
+//
+// GÜNCELLEME: chats/{chatId}/call/current dokümanı artık
+// callType alanı taşıyor ('video' | yoksa video sayılır).
+// Sesli arama (voice-call.js) da aynı call dokümanını ve aynı
+// incoming/active overlay DOM elementlerini paylaşıyor; hangisi
+// devreye girecek data.callType / dataset.callType ile ayrışıyor.
 // ==========================================
 
 import { db } from "./firebase-init.js";
 import {
     doc, collection, setDoc, updateDoc, onSnapshot, addDoc, serverTimestamp, getDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getCurrentUser, getCurrentChatId, sendPushToUser, logMissedCall } from "./chat-core.js";
+import { getCurrentUser, getCurrentChatId, sendPushToUser, logMissedCall, logDeclinedCall } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -73,14 +79,16 @@ export function watchCallForChat(chatId) {
         const data = snap.data();
 
         // Bana gelen, henüz açık bir arama yoksa ve bağlı değilsem -> göster
-     if (data.status === 'ringing' && data.calleeUid === user.uid && !pc) {
+        // (sesli arama ise voice-call.js devreye girer, biz karışmayız)
+        if (data.status === 'ringing' && data.calleeUid === user.uid && !pc && data.callType !== 'audio') {
             showIncomingCall(chatId, data.callerName, data.callerAvatar, data.offer, data.callerUid);
         }
-     // Karşı taraf kapattı/reddetti
-        if (data.status === 'ended' || data.status === 'declined') {
+
+        // Karşı taraf kapattı/reddetti
+        if ((data.status === 'ended' || data.status === 'declined') && data.callType !== 'audio') {
             if (pc) {
                 endCallUI(data.status === 'declined' ? 'Arama reddedildi' : 'Arama sonlandı');
-            } else if (incomingCallOverlay && !incomingCallOverlay.classList.contains('hidden')) {
+            } else if (incomingCallOverlay && !incomingCallOverlay.classList.contains('hidden') && incomingCallOverlay.dataset.callType !== 'audio') {
                 // Ben daha cevap vermeden karşı taraf aramayı kapattı -
                 // gelen arama ekranını otomatik kapat.
                 hideIncomingCallUI();
@@ -149,6 +157,7 @@ async function startCall(chatId, otherUid) {
         callerAvatar: user.avatar || '',
         calleeUid: otherUid,
         status: 'ringing',
+        callType: 'video',
         offer: { type: offer.type, sdp: offer.sdp },
         createdAt: serverTimestamp()
     });
@@ -186,6 +195,12 @@ function showIncomingCall(chatId, callerName, callerAvatar, offer, callerUid) {
         }
     }
 
+    const typeLabel = document.getElementById('incoming-call-type-label');
+    const acceptIcon = document.getElementById('btn-accept-call-icon');
+    if (typeLabel) typeLabel.textContent = 'Görüntülü arama';
+    if (acceptIcon) acceptIcon.className = 'fa-solid fa-video';
+    if (incomingCallOverlay) incomingCallOverlay.dataset.callType = 'video';
+
     if (incomingCallOverlay) {
         incomingCallOverlay.classList.remove('hidden');
         incomingCallOverlay.classList.add('flex');
@@ -202,12 +217,13 @@ function hideIncomingCallUI() {
 
 if (btnDeclineCall) {
     btnDeclineCall.addEventListener('click', async () => {
+        if (incomingCallOverlay && incomingCallOverlay.dataset.callType === 'audio') return;
         hideIncomingCallUI();
         if (currentCallChatId) {
             await updateDoc(callDocRef(currentCallChatId), { status: 'declined' }).catch(() => {});
             const user = getCurrentUser();
             if (pendingCallerUid && user) {
-                logDeclinedCall(currentCallChatId, pendingCallerUid, pendingCallerName, user.uid);
+                logDeclinedCall(currentCallChatId, pendingCallerUid, pendingCallerName, user.uid, 'video');
             }
         }
         resetCallState();
@@ -216,6 +232,7 @@ if (btnDeclineCall) {
 
 if (btnAcceptCall) {
     btnAcceptCall.addEventListener('click', async () => {
+        if (incomingCallOverlay && incomingCallOverlay.dataset.callType === 'audio') return;
         hideIncomingCallUI();
         await acceptCall();
     });
@@ -277,7 +294,17 @@ function showActiveCallUI(statusText) {
     if (activeCallOverlay) {
         activeCallOverlay.classList.remove('hidden');
         activeCallOverlay.classList.add('flex');
+        activeCallOverlay.dataset.callType = 'video';
     }
+    if (remoteVideoEl) remoteVideoEl.classList.remove('hidden');
+    if (localVideoEl) localVideoEl.classList.remove('hidden');
+    const voiceDisplay = document.getElementById('voice-call-display');
+    if (voiceDisplay) {
+        voiceDisplay.classList.add('hidden');
+        voiceDisplay.classList.remove('flex');
+    }
+    if (btnToggleCam) btnToggleCam.classList.remove('hidden');
+    if (btnSwitchCamera) btnSwitchCamera.classList.remove('hidden');
     if (callStatusText) callStatusText.textContent = statusText;
     micEnabled = true;
     camEnabled = true;
@@ -293,10 +320,10 @@ async function hangupCall() {
             await updateDoc(callDocRef(currentCallChatId), { status: 'ended' }).catch(() => {});
 
             // Karşı taraf hiç cevap vermeden ben kapattıysam ona
-            // "cevapsız arama" bildirimi gönder.
-        if (wasRinging && isCaller && data.calleeUid) {
+            // "cevapsız arama" bildirimi gönder + kalıcı kayıt bırak.
+            if (wasRinging && isCaller && data.calleeUid) {
                 const user = getCurrentUser();
-                logMissedCall(currentCallChatId, user.uid, user.name, data.calleeUid);
+                logMissedCall(currentCallChatId, user.uid, user.name, data.calleeUid, 'video');
                 sendPushToUser(data.calleeUid, `${user.name}`, "☎️ Cevapsız görüntülü arama", {
                     chatId: currentCallChatId,
                     otherUid: user.uid,
@@ -328,7 +355,7 @@ function resetCallState() {
     if (unsubRemoteCandidates) { unsubRemoteCandidates(); unsubRemoteCandidates = null; }
     if (localVideoEl) localVideoEl.srcObject = null;
     if (remoteVideoEl) remoteVideoEl.srcObject = null;
-  isCaller = false;
+    isCaller = false;
     currentCallChatId = null;
     pendingOffer = null;
     pendingCallerUid = null;
@@ -338,6 +365,7 @@ function resetCallState() {
 
 if (btnHangup) {
     btnHangup.addEventListener('click', () => {
+        if (activeCallOverlay && activeCallOverlay.dataset.callType === 'audio') return;
         hangupCall();
         popBackState();
     });
