@@ -442,6 +442,9 @@ export async function loadContacts() {
         });
 
         attachChatSelectionHandlers(userDiv, chatId);
+        if (chatSelectionMode && selectedChatIds.has(chatId)) {
+            setItemSelectedVisual(userDiv, true);
+        }
         contactElementsMap.set(chatId, {
             element: userDiv,
             lastTimeObj: chatData.lastMessageTime ? chatData.lastMessageTime.toDate() : null,
@@ -483,6 +486,9 @@ export async function loadContacts() {
         });
 
         attachChatSelectionHandlers(userDiv, chatId);
+        if (chatSelectionMode && selectedChatIds.has(chatId)) {
+            setItemSelectedVisual(userDiv, true);
+        }
         contactElementsMap.set(chatId, { element: userDiv, lastTimeObj: null, pinned: false, archived: false, hasChat: false });
         dynamicListContainer.appendChild(userDiv);
     }
