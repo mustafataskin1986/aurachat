@@ -60,6 +60,7 @@ import {
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { watchCallForChat } from "./video-call.js";
+import { watchVoiceCallForChat } from "./voice-call.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
@@ -470,10 +471,12 @@ export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
 // Hem sohbet içine bir mesaj yazar hem de iki tarafın liste
 // özetini (son mesaj) günceller.
 // ------------------------------------------
-export async function logMissedCall(chatId, callerUid, callerName, calleeUid) {
+export async function logMissedCall(chatId, callerUid, callerName, calleeUid, callType = 'video') {
+    const label = callType === 'audio' ? "📞 Cevapsız sesli arama" : "📞 Cevapsız görüntülü arama";
     try {
         await addDoc(collection(db, "chats", chatId, "messages"), {
             type: 'missed_call',
+            callType: callType,
             text: '',
             senderUid: callerUid,
             senderName: callerName,
@@ -482,7 +485,7 @@ export async function logMissedCall(chatId, callerUid, callerName, calleeUid) {
         });
 
         await setDoc(doc(db, "users", callerUid, "chats", chatId), {
-            lastMessage: "📞 Cevapsız görüntülü arama",
+            lastMessage: label,
             lastMessageTime: serverTimestamp(),
             lastSenderUid: callerUid,
             lastMessageRead: false,
@@ -490,7 +493,7 @@ export async function logMissedCall(chatId, callerUid, callerName, calleeUid) {
         }, { merge: true });
 
         await setDoc(doc(db, "users", calleeUid, "chats", chatId), {
-            lastMessage: "📞 Cevapsız görüntülü arama",
+            lastMessage: label,
             lastMessageTime: serverTimestamp(),
             lastSenderUid: callerUid,
             lastMessageRead: false,
@@ -505,10 +508,12 @@ export async function logMissedCall(chatId, callerUid, callerName, calleeUid) {
 // ------------------------------------------
 // REDDEDİLEN GÖRÜNTÜLÜ ARAMA KAYDI (video-call.js, decline anında çağırır)
 // ------------------------------------------
-export async function logDeclinedCall(chatId, callerUid, callerName, calleeUid) {
+export async function logDeclinedCall(chatId, callerUid, callerName, calleeUid, callType = 'video') {
+    const label = callType === 'audio' ? "📞 Reddedilen sesli arama" : "📞 Reddedilen görüntülü arama";
     try {
         await addDoc(collection(db, "chats", chatId, "messages"), {
             type: 'declined_call',
+            callType: callType,
             text: '',
             senderUid: callerUid,
             senderName: callerName,
@@ -517,7 +522,7 @@ export async function logDeclinedCall(chatId, callerUid, callerName, calleeUid) 
         });
 
         await setDoc(doc(db, "users", callerUid, "chats", chatId), {
-            lastMessage: "📞 Reddedilen arama",
+            lastMessage: label,
             lastMessageTime: serverTimestamp(),
             lastSenderUid: callerUid,
             lastMessageRead: false,
@@ -525,7 +530,7 @@ export async function logDeclinedCall(chatId, callerUid, callerName, calleeUid) 
         }, { merge: true });
 
         await setDoc(doc(db, "users", calleeUid, "chats", chatId), {
-            lastMessage: "📞 Reddedilen arama",
+            lastMessage: label,
             lastMessageTime: serverTimestamp(),
             lastSenderUid: callerUid,
             lastMessageRead: false,
@@ -666,6 +671,7 @@ export async function selectChat(otherUser) {
     setTimeout(() => { recentOpenScrollLock = false; }, 1500);
 
     watchCallForChat(chatId);
+    watchVoiceCallForChat(chatId);
 }
 
 function doCloseChatView() {
@@ -1147,10 +1153,12 @@ let bodyHtml;
         bodyHtml = initialImgSrc
             ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`
             : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`;
- } else if (msg.type === 'missed_call') {
-        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic"><i class="fa-solid fa-phone-slash"></i> Cevapsız görüntülü arama</p>`;
+} else if (msg.type === 'missed_call') {
+        const missedLabel = msg.callType === 'audio' ? 'Cevapsız sesli arama' : 'Cevapsız görüntülü arama';
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic"><i class="fa-solid fa-phone-slash"></i> ${missedLabel}</p>`;
     } else if (msg.type === 'declined_call') {
-        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic"><i class="fa-solid fa-phone-slash"></i> Reddedilen arama</p>`;
+        const declinedLabel = msg.callType === 'audio' ? 'Reddedilen sesli arama' : 'Reddedilen görüntülü arama';
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic"><i class="fa-solid fa-phone-slash"></i> ${declinedLabel}</p>`;
     } else {
         bodyHtml = `<p class="break-words">${escapeHtml(msg.text)}</p>`;
     }
