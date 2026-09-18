@@ -28,6 +28,10 @@ const contactList = document.getElementById('contact-list');
 const searchContact = document.getElementById('search-contact');
 const searchIcon = document.getElementById('search-icon');
 
+const archivedModal = document.getElementById('archived-modal');
+const archivedModalClose = document.getElementById('archived-modal-close');
+const archivedChatListEl = document.getElementById('archived-chat-list');
+
 const adminBtn = document.getElementById('admin-btn');
 const adminModal = document.getElementById('admin-modal');
 const adminModalClose = document.getElementById('admin-modal-close');
@@ -226,8 +230,9 @@ export async function loadContacts() {
 
     const dynamicListContainer = document.createElement('div');
 
-    let allUsersById = new Map();
+let allUsersById = new Map();
     let myChats = new Map();
+    let archivedChats = new Map();
     let usersLoaded = false;
     let chatsLoaded = false;
     let listMounted = false;
@@ -244,11 +249,22 @@ export async function loadContacts() {
 
         dynamicListContainer.innerHTML = '';
         contactElementsMap.clear();
+        archivedChats.clear();
         exitChatSelectionMode();
+
+        renderArchivedSummaryRow();
 
         // 1) Gerçek sohbet özetleri (mesajlaşılmış olanlar).
         myChats.forEach((chatData, chatId) => {
-            if (chatData.archived) return;
+            if (chatData.archived) {
+                const liveUser = allUsersById.get(chatData.otherUid);
+                archivedChats.set(chatId, {
+                    ...chatData,
+                    otherName: liveUser ? liveUser.name : chatData.otherName,
+                    otherAvatar: liveUser ? (liveUser.avatar || '') : chatData.otherAvatar
+                });
+                return;
+            }
 
             const clearedAt = chatData.clearedAt;
             const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
@@ -412,6 +428,90 @@ export async function loadContacts() {
         });
         chatsLoaded = true;
         renderAll();
+    });
+}
+
+function renderArchivedSummaryRow() {
+    const existing = document.getElementById('archived-summary-row');
+    if (existing) existing.remove();
+
+    if (archivedChats.size === 0) return;
+
+    const row = document.createElement('div');
+    row.id = 'archived-summary-row';
+    row.className = "contact-list-item flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30";
+    row.innerHTML = `
+        <div class="w-12 h-12 bg-gradient-to-tr from-cyan-700 to-slate-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
+            <i class="fa-solid fa-box-archive"></i>
+        </div>
+        <div class="flex-1 overflow-hidden">
+            <h4 class="text-white font-medium text-sm">Arşivlenmiş Sohbetler</h4>
+            <p class="text-xs text-gray-400 mt-0.5">${archivedChats.size} sohbet</p>
+        </div>
+    `;
+    row.addEventListener('click', () => openArchivedModal());
+    contactList.insertBefore(row, dynamicListContainer);
+}
+
+function openArchivedModal() {
+    if (!archivedModal || !archivedChatListEl) return;
+
+    archivedChatListEl.innerHTML = '';
+
+    if (archivedChats.size === 0) {
+        archivedChatListEl.innerHTML = `<p class="text-xs text-gray-400 text-center py-4">Arşivlenmiş sohbet yok.</p>`;
+    } else {
+        archivedChats.forEach((chatData, chatId) => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = "flex items-center justify-between p-3 bg-[#202c33]/60 hover:bg-[#202c33] rounded-xl border border-gray-800 transition";
+
+            const avatarSlotId = `archived-${chatId}`;
+            itemDiv.innerHTML = `
+                <div class="flex items-center space-x-3 overflow-hidden">
+                    <div data-avatar-slot="${avatarSlotId}" class="flex-shrink-0"></div>
+                    <div class="overflow-hidden">
+                        <h5 class="text-white text-sm font-medium truncate">${escapeHtml(chatData.otherName || '')}</h5>
+                        <p class="text-xs text-gray-400 truncate">${escapeHtml(chatData.lastMessage || '')}</p>
+                    </div>
+                </div>
+                <button class="btn-unarchive bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-2 rounded-xl text-xs font-medium transition flex-shrink-0 ml-2">
+                    Arşivden Çıkar
+                </button>
+            `;
+
+            const avatarSlot = itemDiv.querySelector(`[data-avatar-slot="${avatarSlotId}"]`);
+            renderAvatarInto(avatarSlot, chatData.otherUid, chatData.otherAvatar, chatData.otherName, 'w-10 h-10');
+
+            itemDiv.querySelector('.btn-unarchive').addEventListener('click', async () => {
+                try {
+                    const currentUser = getCurrentUser();
+                    await updateDoc(doc(db, "users", currentUser.uid, "chats", chatId), { archived: false });
+                    itemDiv.remove();
+                    if (archivedChatListEl.children.length === 0) {
+                        archivedChatListEl.innerHTML = `<p class="text-xs text-gray-400 text-center py-4">Arşivlenmiş sohbet yok.</p>`;
+                    }
+                } catch (err) {
+                    alert("Arşivden çıkarılamadı: " + err.message);
+                }
+            });
+
+            archivedChatListEl.appendChild(itemDiv);
+        });
+    }
+
+    archivedModal.classList.remove('hidden');
+    pushBackState(closeArchivedModal);
+}
+
+function closeArchivedModal() {
+    if (!archivedModal) return;
+    archivedModal.classList.add('hidden');
+}
+
+if (archivedModalClose) {
+    archivedModalClose.addEventListener('click', () => {
+        closeArchivedModal();
+        popBackState();
     });
 }
 
