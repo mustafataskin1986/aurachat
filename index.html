@@ -158,6 +158,24 @@
         </div>
     </div>
 
+<!-- ARŞİVLENMİŞ SOHBETLER MODAL -->
+    <div id="archived-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-[#111b21] border border-gray-800 rounded-2xl p-5 w-full max-w-md shadow-2xl flex flex-col max-h-[80vh]">
+            <div class="flex justify-between items-center pb-3 border-b border-gray-800 mb-3">
+                <div class="flex items-center space-x-2 text-cyan-400 font-bold text-base">
+                    <i class="fa-solid fa-box-archive text-lg"></i>
+                    <span>Arşivlenmiş Sohbetler</span>
+                </div>
+                <button id="archived-modal-close" class="text-gray-400 hover:text-white text-lg px-2">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div id="archived-chat-list" class="flex-1 overflow-y-auto space-y-2 pr-1">
+                <p class="text-xs text-gray-400 text-center py-4">Arşivlenmiş sohbet yok.</p>
+            </div>
+        </div>
+    </div>
+
     <!-- ADMİN KULLANICI LİSTESİ MODAL -->
     <div id="admin-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
         <div class="bg-[#111b21] border border-amber-500/30 rounded-2xl p-5 w-full max-w-md shadow-2xl flex flex-col max-h-[80vh]">
