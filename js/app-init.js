@@ -17,7 +17,7 @@
 
 import { db } from "./firebase-init.js";
 import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { setCurrentUser, selectChat } from "./chat-core.js";
+import { setCurrentUser, selectChat, startPresence } from "./chat-core.js";
 import { loadContacts, initAdminPanel } from "./contacts.js";
 
 const sidebar = document.getElementById('sidebar');
@@ -87,6 +87,7 @@ window.initApp = async function () {
 
     setCurrentUser(currentUser);
     initAdminPanel();
+    startPresence();
     await loadContacts();
 
     if (window.initPushForUser) {
