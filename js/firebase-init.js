@@ -21,6 +21,7 @@ export const app = initializeApp(firebaseConfig);
 // girişlerde Firestore önce yerel diskten (IndexedDB) anında gösterir,
 // arka planda sessizce sunucuyla senkronize eder - network beklemesi olmaz.
 export const db = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
     localCache: persistentLocalCache({
         tabManager: persistentSingleTabManager({})
     })
