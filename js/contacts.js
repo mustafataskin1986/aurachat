@@ -314,6 +314,7 @@ export async function loadContacts() {
     dynamicListContainer = document.createElement('div');
 
     let allUsersById = new Map();
+    window.__aurachatUsers = allUsersById; // ilet ekranı bu listeyi kullanıyor
     let myChats = new Map();
     let usersLoaded = false;
     let chatsLoaded = false;
