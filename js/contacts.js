@@ -611,7 +611,7 @@ function exitChatSelectionMode() {
 }
 
 function setItemSelectedVisual(el, isSelected) {
-    el.classList.toggle('bg-emerald-900/40', isSelected);
+    el.classList.toggle('chat-selected', isSelected);
     const checkBadge = el.querySelector('.selection-check');
     if (checkBadge) {
         checkBadge.classList.toggle('hidden', !isSelected);
