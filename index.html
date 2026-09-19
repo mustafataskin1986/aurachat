@@ -261,22 +261,22 @@
        <div id="chat-area" class="w-full lg:flex-1 flex flex-col bg-[#0b141a] absolute lg:relative inset-y-0 right-0 z-30 translate-x-full lg:translate-x-0 transition-transform duration-300 h-full overflow-hidden">
             <!-- Sohbet Üst Barı -->
             <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0 z-10">
-                <div class="flex items-center space-x-3">
+             <div class="flex items-center space-x-3 min-w-0">
                    <button id="back-btn" class="lg:hidden text-gray-400 mr-1 hover:text-white transition text-lg px-1 py-0.5">
                         <i class="fa-solid fa-arrow-left"></i>
                     </button>
                     <div id="active-chat-avatar" class="w-10 h-10 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0">
                         <i class="fa-solid fa-globe text-sm"></i>
                     </div>
-                    <div>
-                        <h4 id="active-chat-name" class="text-white font-medium text-sm md:text-base">Genel Kanka Odası 🌍</h4>
-                        <span id="active-chat-status" class="text-[11px] text-emerald-400 font-medium"></span>
+               <div class="min-w-0">
+                        <h4 id="active-chat-name" class="text-white font-medium text-sm md:text-base truncate">Genel Kanka Odası 🌍</h4>
+                        <span id="active-chat-status" class="block truncate text-[11px] text-emerald-400 font-medium"></span>
                     </div>
                 </div>
            <div class="flex space-x-5 text-gray-400 text-lg">
                     <i class="fa-solid fa-phone cursor-pointer hover:text-white transition" id="voice-call-btn"></i>
                     <i class="fa-solid fa-video cursor-pointer hover:text-white transition" id="video-call-btn"></i>
-                <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
+          
                     <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition"></i>
                 </div>
             </div>
@@ -299,7 +299,7 @@
 
             <!-- Mesaj Yazma Paneli -->
             <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0 z-10 relative">
-                <i class="fa-regular fa-face-smile text-gray-400 text-xl cursor-pointer hover:text-white transition"></i>
+           
                 <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition" id="attach-btn"></i>
                 <input type="file" id="image-input" accept="image/*" class="hidden">
 
