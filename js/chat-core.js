@@ -128,8 +128,8 @@ export function getCurrentUser() {
 // atınca/kapatınca online:false yazılır. Uygulama zorla kapanırsa
 // online:true takılı kalır, o yüzden 2 dk'dan eski lastSeen çevrimdışı sayılır.
 // ------------------------------------------
-const PRESENCE_HEARTBEAT_MS = 45000;
-const PRESENCE_STALE_MS = 120000;
+const PRESENCE_HEARTBEAT_MS = 30000;
+const PRESENCE_STALE_MS = 75000;
 let presenceTimer = null;
 let unsubscribePresence = null;
 let otherPresence = null; // { online, lastSeenMs } - açık sohbetteki karşı taraf
