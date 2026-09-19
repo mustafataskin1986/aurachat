@@ -792,8 +792,9 @@ export async function selectChat(otherUser) {
     watchCallForChat(chatId);
     watchVoiceCallForChat(chatId);
 }
-
+ 
 function doCloseChatView() {
+closeAttachMenu();
     updateMyActiveChatId(null);
     currentChatId = null;
     currentChatName = '';
@@ -1335,26 +1336,49 @@ let bodyHtml;
         bodyHtml = `<p class="break-words">${escapeHtml(msg.text)}</p>`;
     }
 
+  const forwardedLabel = msg.forwarded
+        ? `<div class="text-[11px] text-gray-300 italic px-2 pt-1 pb-0.5"><i class="fa-solid fa-share mr-1"></i>İletildi</div>`
+        : '';
+
+    const forwardBtnHtml = isImage
+        ? `<button type="button" class="flex-shrink-0 self-center w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-gray-300 flex items-center justify-center ${isMine ? 'mr-2' : 'ml-2'}" onclick="forwardImageMessage('${msgId}')"><i class="fa-solid fa-share text-xs"></i></button>`
+        : '';
+
     if (isMine) {
         const tickColor = msg.read ? 'text-[#53bdeb]' : 'text-gray-400';
-        msgDiv.className = "flex justify-end rounded-lg transition-colors";
-        msgDiv.innerHTML = `
-            <div class="bg-[#005c4b] text-white ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
-                ${bodyHtml}
-                <div class="flex items-center justify-end space-x-1 mt-1 ${isImage ? 'px-2 pb-1' : ''}">
+        const timeHtml = isImage
+            ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1 bg-black/45 rounded-full px-1.5 py-0.5">
+                    <span class="text-[10px] text-white">${timeStr}</span>
+                    <i class="fa-solid fa-check-double text-[10px] ${msg.read ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
+               </div>`
+            : `<div class="flex items-center justify-end space-x-1 mt-1">
                     <span class="text-[10px] text-emerald-200">${timeStr}</span>
                     <i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>
-                </div>
+               </div>`;
+
+        msgDiv.className = "flex justify-end rounded-lg transition-colors";
+        msgDiv.innerHTML = `
+            ${forwardBtnHtml}
+            <div class="bg-[#005c4b] text-white ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
+                ${forwardedLabel}
+                ${bodyHtml}
+                ${timeHtml}
             </div>
         `;
     } else {
+        const timeHtml = isImage
+            ? `<div class="absolute bottom-2 right-2 bg-black/45 rounded-full px-1.5 py-0.5"><span class="text-[10px] text-white">${timeStr}</span></div>`
+            : `<span class="text-[10px] text-gray-400 float-right ml-3 mt-1">${timeStr}</span>`;
+
         msgDiv.className = "flex justify-start rounded-lg transition-colors";
         msgDiv.innerHTML = `
             <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
                 ${currentChatId === 'global' ? `<span class="text-[11px] font-bold text-amber-400 block mb-0.5 ${isImage ? 'px-2 pt-1' : ''}">${escapeHtml(msg.senderName)}</span>` : ''}
+                ${forwardedLabel}
                 ${bodyHtml}
-                <span class="text-[10px] text-gray-400 ${isImage ? 'block text-right px-2 pb-1' : 'float-right ml-3 mt-1'}">${timeStr}</span>
+                ${timeHtml}
             </div>
+            ${forwardBtnHtml}
         `;
     }
 
@@ -1476,6 +1500,244 @@ function attachSelectionHandlers(el, msgId) {
         }
     }, true);
 }
+
+// ------------------------------------------
+// "+" MENÜSÜ (WhatsApp tarzı: input'un altında açılır)
+// ------------------------------------------
+let attachMenuEl = null;
+let attachMenuOpen = false;
+
+function ensureAttachMenu() {
+    if (attachMenuEl) return attachMenuEl;
+    const el = document.createElement('div');
+    el.className = 'hidden flex-shrink-0 bg-[#1f2c34] rounded-t-3xl border-t border-gray-800 px-4 pt-3 pb-6';
+    el.innerHTML = `
+        <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-4"></div>
+        <div class="grid grid-cols-4 gap-y-4">
+            <button type="button" data-attach="gallery" class="flex flex-col items-center space-y-1.5">
+                <span class="w-16 h-11 rounded-full border border-gray-700 flex items-center justify-center text-sky-400 text-xl"><i class="fa-solid fa-images"></i></span>
+                <span class="text-gray-300 text-xs">Galeri</span>
+            </button>
+            <button type="button" data-attach="camera" class="flex flex-col items-center space-y-1.5">
+                <span class="w-16 h-11 rounded-full border border-gray-700 flex items-center justify-center text-pink-500 text-xl"><i class="fa-solid fa-camera"></i></span>
+                <span class="text-gray-300 text-xs">Kamera</span>
+            </button>
+        </div>
+    `;
+    messageInput.parentElement.insertAdjacentElement('afterend', el);
+    el.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-attach]');
+        if (btn) handleAttachChoice(btn.dataset.attach);
+    });
+    attachMenuEl = el;
+    return el;
+}
+
+function closeAttachMenuFromBack() {
+    if (attachMenuEl) attachMenuEl.classList.add('hidden');
+    if (attachBtn) attachBtn.style.transform = '';
+    attachMenuOpen = false;
+}
+
+function openAttachMenu() {
+    if (attachMenuOpen) return;
+    const menu = ensureAttachMenu();
+    messageInput.blur();
+    menu.classList.remove('hidden');
+    if (attachBtn) attachBtn.style.transform = 'rotate(45deg)';
+    attachMenuOpen = true;
+    pushBackState(closeAttachMenuFromBack);
+    scrollToBottom();
+}
+
+function closeAttachMenu() {
+    if (!attachMenuOpen) return;
+    closeAttachMenuFromBack();
+    popBackState();
+}
+
+function handleAttachChoice(kind) {
+    closeAttachMenu();
+    if (!imageInput) return;
+    if (kind === 'camera') {
+        imageInput.multiple = false;
+        imageInput.setAttribute('capture', 'environment');
+    } else {
+        imageInput.multiple = true;
+        imageInput.removeAttribute('capture');
+    }
+    imageInput.click();
+}
+
+// ------------------------------------------
+// İLET (resim mesajını başka bir kişiye gönder)
+// ------------------------------------------
+let forwardPickerEl = null;
+let forwardPickerOpen = false;
+let forwardSource = null; // { chatId, msgId }
+
+function closeForwardPickerFromBack() {
+    if (forwardPickerEl) {
+        forwardPickerEl.classList.add('hidden');
+        forwardPickerEl.classList.remove('flex');
+    }
+    forwardPickerOpen = false;
+}
+
+function closeForwardPicker() {
+    if (!forwardPickerOpen) return;
+    closeForwardPickerFromBack();
+    popBackState();
+}
+
+function ensureForwardPicker() {
+    if (forwardPickerEl) return forwardPickerEl;
+    const el = document.createElement('div');
+    el.className = 'fixed inset-0 z-50 bg-[#0b141a] hidden flex-col';
+    el.innerHTML = `
+        <div class="bg-[#202c33] px-4 py-3.5 flex items-center space-x-4 border-b border-gray-800 flex-shrink-0">
+            <button type="button" id="forward-back-btn" class="text-gray-400 hover:text-white transition text-lg px-1">
+                <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <h2 class="text-white font-medium text-base">Şuna ilet</h2>
+        </div>
+        <div id="forward-list" class="flex-1 overflow-y-auto"></div>
+    `;
+    document.body.appendChild(el);
+    el.querySelector('#forward-back-btn').addEventListener('click', closeForwardPicker);
+    forwardPickerEl = el;
+    return el;
+}
+
+function openForwardPicker() {
+    const el = ensureForwardPicker();
+    const listEl = el.querySelector('#forward-list');
+    listEl.innerHTML = '';
+
+    const usersMap = window.__aurachatUsers;
+    const users = usersMap
+        ? Array.from(usersMap.values()).filter((u) => u.uid !== currentUser.uid)
+        : [];
+    users.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+
+    if (!users.length) {
+        listEl.innerHTML = `<p class="text-center text-gray-500 text-xs py-8">İletilecek kişi bulunamadı.</p>`;
+    }
+
+    users.forEach((u) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer border-b border-gray-800/30';
+        const avatarHtml = u.avatar
+            ? `<img src="${u.avatar}" class="w-11 h-11 rounded-full object-cover shadow flex-shrink-0">`
+            : `<div class="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color:${getUserColor(u.name || '?')};">${getInitials(u.name || '?')}</div>`;
+        row.innerHTML = `${avatarHtml}<span class="text-white text-sm font-medium ml-3 truncate">${escapeHtml(u.name || '')}</span>`;
+        row.addEventListener('click', () => forwardImageTo(u));
+        listEl.appendChild(row);
+    });
+
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    forwardPickerOpen = true;
+    pushBackState(closeForwardPickerFromBack);
+}
+
+async function updateSummariesForTarget(chatId, otherUid, otherName, lastMessageText) {
+    if (!currentUser || !otherUid) return;
+    try {
+        await setDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
+            otherUid: otherUid,
+            otherName: otherName,
+            lastMessage: lastMessageText,
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: currentUser.uid,
+            lastMessageRead: false,
+            unreadCount: 0,
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        await setDoc(doc(db, "users", otherUid, "chats", chatId), {
+            otherUid: currentUser.uid,
+            otherName: currentUser.name,
+            lastMessage: lastMessageText,
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: currentUser.uid,
+            lastMessageRead: false,
+            unreadCount: increment(1),
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+    } catch (err) {
+        console.error("İletilen mesajın özeti güncellenemedi:", err);
+    }
+}
+
+async function forwardImageTo(targetUser) {
+    if (!forwardSource || !currentUser) return;
+    const { chatId: srcChatId, msgId } = forwardSource;
+
+    const session = chatSessions.get(srcChatId);
+    const entry = session && (
+        session.messages.find((m) => m.id === msgId) ||
+        session.olderMessagesPrepended.find((m) => m.id === msgId)
+    );
+    if (!entry) { showToast('Mesaj bulunamadı'); return; }
+    const msg = entry.data;
+
+    closeForwardPicker();
+    showToast('İletiliyor...');
+
+    try {
+        const payload = {
+            type: 'image',
+            text: '',
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false,
+            forwarded: true
+        };
+
+        const imagesCount = msg.imagesCount || 0;
+        if (imagesCount > 1) {
+            const arr = Array.isArray(msg.images) ? msg.images : [];
+            const images = [];
+            for (let i = 0; i < imagesCount; i++) {
+                const src = await resolveLocalMedia(srcChatId, msgId, arr[i], i);
+                if (src) images.push(src);
+            }
+            if (!images.length) throw new Error('Resimler bulunamadı');
+            payload.images = images;
+            payload.imagesCount = images.length;
+            payload.imagesDelivered = false;
+        } else {
+            const src = await resolveLocalMedia(srcChatId, msgId, msg.imageUrl);
+            if (!src) throw new Error('Resim bulunamadı');
+            payload.imageUrl = src;
+        }
+
+        const targetChatId = getChatId(currentUser.uid, targetUser.uid);
+        await addDoc(collection(db, "chats", targetChatId, "messages"), payload);
+
+        const isAlbum = payload.imagesCount > 1;
+        await updateSummariesForTarget(targetChatId, targetUser.uid, targetUser.name, isAlbum ? `📷 ${payload.imagesCount} Fotoğraf` : '📷 Fotoğraf');
+
+        sendPushToUser(targetUser.uid, `${currentUser.name}`, isAlbum ? `📷 ${payload.imagesCount} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi", {
+            chatId: targetChatId,
+            otherUid: currentUser.uid,
+            otherName: currentUser.name
+        });
+
+        showToast(`${targetUser.name} kişisine iletildi`);
+    } catch (err) {
+        console.error("İletme hatası:", err);
+        showToast('İletilemedi');
+    }
+}
+
+window.forwardImageMessage = function (msgId) {
+    if (!currentChatId || !currentUser) return;
+    forwardSource = { chatId: currentChatId, msgId: msgId };
+    openForwardPicker();
+};
 
 function scrollToBottom() {
     requestAnimationFrame(() => {
@@ -1795,7 +2057,11 @@ function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
 
 if (attachBtn && imageInput) {
     imageInput.multiple = true;
-    attachBtn.addEventListener('click', () => imageInput.click());
+    attachBtn.addEventListener('click', () => {
+        if (attachMenuOpen) closeAttachMenu(); else openAttachMenu();
+    });
+    messageInput.addEventListener('focus', closeAttachMenu);
+    messageContainer.addEventListener('click', closeAttachMenu);
 
     imageInput.addEventListener('change', async (e) => {
         const files = Array.from(e.target.files || []);
