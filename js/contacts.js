@@ -1029,4 +1029,4 @@ if (adminModalClose) {
         closeAdminModal();
         popBackState();
     });
-}}
+}
