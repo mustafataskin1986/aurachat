@@ -1117,14 +1117,8 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
         const Filesystem = getFilesystemPlugin();
 
         if (Filesystem) {
-            const now = new Date();
-const timestamp = now.getFullYear().toString() +
-    String(now.getMonth() + 1).padStart(2, '0') +
-    String(now.getDate()).padStart(2, '0') + '_' +
-    String(now.getHours()).padStart(2, '0') +
-    String(now.getMinutes()).padStart(2, '0') +
-    String(now.getSeconds()).padStart(2, '0');
-
+            const fileName = `AuraChat_${chatId}_${msgId}${suffix}.jpg`;
+            const filePath = `Pictures/AuraChat/${fileName}`;
 const fileName = `AuraChat_${timestamp}${suffix}.jpg`;
 
 
