@@ -1503,14 +1503,17 @@ function attachSelectionHandlers(el, msgId) {
 
 // ------------------------------------------
 // "+" MENÜSÜ (WhatsApp tarzı: input'un altında açılır)
+// Input çubuğuyla aynı renk, köşe yok, boşluk yok: input'un devamı gibi durur.
+// Aşağı sürüklenince ya da geri tuşuyla kapanır.
 // ------------------------------------------
 let attachMenuEl = null;
 let attachMenuOpen = false;
+let attachDragStartY = null;
 
 function ensureAttachMenu() {
     if (attachMenuEl) return attachMenuEl;
     const el = document.createElement('div');
-    el.className = 'hidden flex-shrink-0 bg-[#1f2c34] rounded-t-3xl border-t border-gray-800 px-4 pt-3 pb-6';
+    el.className = 'hidden flex-shrink-0 bg-[#202c33] px-4 pt-2 pb-6';
     el.innerHTML = `
         <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-4"></div>
         <div class="grid grid-cols-4 gap-y-4">
@@ -1525,17 +1528,53 @@ function ensureAttachMenu() {
         </div>
     `;
     messageInput.parentElement.insertAdjacentElement('afterend', el);
+
     el.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-attach]');
         if (btn) handleAttachChoice(btn.dataset.attach);
     });
+
+    // Aşağı sürükleyerek kapatma
+    el.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        attachDragStartY = e.touches[0].clientY;
+        el.style.transition = 'none';
+    }, { passive: true });
+
+    el.addEventListener('touchmove', (e) => {
+        if (attachDragStartY === null) return;
+        const dy = e.touches[0].clientY - attachDragStartY;
+        el.style.transform = dy > 0 ? `translateY(${dy}px)` : '';
+    }, { passive: true });
+
+    el.addEventListener('touchend', (e) => {
+        if (attachDragStartY === null) return;
+        const dy = e.changedTouches[0].clientY - attachDragStartY;
+        attachDragStartY = null;
+        if (dy > 60) {
+            closeAttachMenu();
+        } else {
+            el.style.transition = 'transform 0.15s ease-out';
+            el.style.transform = '';
+        }
+    });
+
+    el.addEventListener('touchcancel', () => {
+        attachDragStartY = null;
+        el.style.transition = 'transform 0.15s ease-out';
+        el.style.transform = '';
+    });
+
     attachMenuEl = el;
     return el;
 }
 
 function closeAttachMenuFromBack() {
-    if (attachMenuEl) attachMenuEl.classList.add('hidden');
-    if (attachBtn) attachBtn.style.transform = '';
+    if (attachMenuEl) {
+        attachMenuEl.classList.add('hidden');
+        attachMenuEl.style.transition = '';
+        attachMenuEl.style.transform = '';
+    }
     attachMenuOpen = false;
 }
 
@@ -1543,8 +1582,9 @@ function openAttachMenu() {
     if (attachMenuOpen) return;
     const menu = ensureAttachMenu();
     messageInput.blur();
+    menu.style.transition = '';
+    menu.style.transform = '';
     menu.classList.remove('hidden');
-    if (attachBtn) attachBtn.style.transform = 'rotate(45deg)';
     attachMenuOpen = true;
     pushBackState(closeAttachMenuFromBack);
     scrollToBottom();
