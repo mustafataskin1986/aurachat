@@ -54,7 +54,7 @@
 
 import { db } from "./firebase-init.js";
 import {
-    collection, addDoc, onSnapshot, query, orderBy, limitToLast, limit, startAfter, where, getDocs,
+    collection, addDoc as rawAddDoc, onSnapshot, query, orderBy, limitToLast, limit, startAfter, where, getDocs,
     serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, getDoc, increment, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
@@ -92,6 +92,17 @@ const selectedMessageIds = new Set();
 const messageElementsById = new Map();
 let recentOpenScrollLock = false;
 let unreadDivider = null; // { chatId, msgId, count }
+
+// Son eklenen mesajın kimliğini tutar: bildirime mesaja özel tag vermek için
+let lastAddedMsg = null;
+async function addDoc(colRef, data) {
+    const ref = await rawAddDoc(colRef, data);
+    try {
+        const parts = colRef.path.split('/'); // chats/{chatId}/messages
+        lastAddedMsg = { chatId: parts[1], id: ref.id };
+    } catch (e) {}
+    return ref;
+}
 
 export function setCurrentUser(user) {
     currentUser = user;
@@ -540,6 +551,12 @@ function markVisibleMessagesRead(session) {
 // BİLDİRİM GÖNDERME YARDIMCI FONKSİYONU
 // ------------------------------------------
 export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
+    // Her mesajın bildirimine mesaja özel tag veriyoruz: mesaj silinince
+    // aynı tag'li yeni bildirim eskisinin yerine geçebilsin diye
+    const pushTag = (extraData && extraData.tag)
+        ? extraData.tag
+        : ((lastAddedMsg && extraData && lastAddedMsg.chatId === extraData.chatId) ? `msg-${lastAddedMsg.id}` : undefined);
+
     if (!receiverUid) {
         console.warn("⚠️ sendPushToUser: receiverUid eksik.");
         return;
@@ -585,7 +602,7 @@ export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
                 body: body,
                 platform: userData?.platform || '',
                 data: extraData,
-                tag: extraData && extraData.tag ? extraData.tag : undefined
+                tag: pushTag
             })
         });
 
@@ -935,6 +952,7 @@ if (selectionDeleteBtn) {
         }
 
         const chatIdAtDeleteTime = currentChatId;
+        const everyoneDeletedIds = new Set();
 
         try {
             for (const id of ids) {
@@ -942,7 +960,34 @@ if (selectionDeleteBtn) {
                 const isMine = el && el.dataset.mine === 'true';
 
                 if (deleteForEveryone && isMine) {
-                    await deleteDoc(doc(db, "chats", chatIdAtDeleteTime, "messages", id));
+                    const sessionForDelete = chatSessions.get(chatIdAtDeleteTime);
+                    const delEntry = sessionForDelete && (
+                        sessionForDelete.messages.find((m) => m.id === id) ||
+                        sessionForDelete.olderMessagesPrepended.find((m) => m.id === id)
+                    );
+                    const wasUnread = !!(delEntry && delEntry.data.read === false);
+
+                    await updateDoc(doc(db, "chats", chatIdAtDeleteTime, "messages", id), {
+                        type: 'deleted',
+                        deleted: true,
+                        text: '',
+                        imageUrl: null,
+                        images: null,
+                        imagesCount: 0,
+                        lat: null,
+                        lng: null
+                    });
+                    everyoneDeletedIds.add(id);
+
+                    // Karşı taraf mesajı henüz okumadıysa bildirimi "silindi" ile değiştir
+                    if (wasUnread && chatIdAtDeleteTime !== 'global' && currentOtherUid) {
+                        sendPushToUser(currentOtherUid, `${currentUser.name}`, "🚫 Bu mesaj silindi", {
+                            chatId: chatIdAtDeleteTime,
+                            otherUid: currentUser.uid,
+                            otherName: currentUser.name,
+                            tag: `msg-${id}`
+                        });
+                    }
                 } else {
                     await updateDoc(doc(db, "chats", chatIdAtDeleteTime, "messages", id), {
                         deletedFor: arrayUnion(currentUser.uid)
@@ -955,8 +1000,15 @@ if (selectionDeleteBtn) {
 
         const session = chatSessions.get(chatIdAtDeleteTime);
         if (session) {
+            const removeLocally = ids.filter((x) => !everyoneDeletedIds.has(x));
             session.olderMessagesPrepended = session.olderMessagesPrepended.filter(
-                (m) => !ids.includes(m.id)
+                (m) => !removeLocally.includes(m.id)
+            );
+            session.messages = session.messages.filter((m) => !removeLocally.includes(m.id));
+            everyoneDeletedIds.forEach((x) => {
+                const e = session.messages.find((m) => m.id === x) || session.olderMessagesPrepended.find((m) => m.id === x);
+                if (e) Object.assign(e.data, { type: 'deleted', deleted: true, text: '', imageUrl: null, images: null, imagesCount: 0, lat: null, lng: null });
+            });
             );
             session.messages = session.messages.filter((m) => !ids.includes(m.id));
             if (currentChatId === chatIdAtDeleteTime) {
@@ -1371,6 +1423,8 @@ let bodyHtml;
             <p class="text-[11px] text-gray-300">${Number(msg.lat).toFixed(5)}, ${Number(msg.lng).toFixed(5)}</p>
             <p class="text-[11px] text-sky-300 mt-0.5">Haritada aç</p>
         </div>`;
+  } else if (msg.type === 'deleted') {
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-gray-400 italic text-[13px]"><i class="fa-solid fa-ban text-xs"></i> ${isMine ? 'Bu mesajı sildin' : 'Bu mesaj silindi'}</p>`;
     } else if (msg.type === 'missed_call') {
         const missedLabel = msg.callType === 'audio' ? 'Cevapsız sesli arama' : 'Cevapsız görüntülü arama';
         bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${msg.callType === 'audio' ? 'audio' : 'video'}')"><i class="fa-solid fa-phone-slash"></i> ${missedLabel}</p>`;
