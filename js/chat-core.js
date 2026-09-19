@@ -1820,7 +1820,8 @@ function formatDayLabel(date) {
     startOfDay.setHours(0, 0, 0, 0);
     const diffDays = Math.round((startOfToday - startOfDay) / 86400000);
     if (diffDays === 0) return 'Bugün';
-    if (diffDays === 1) return 'Dün';
+if (diffDays === 1) return 'Dün';
+    if (diffDays > 1 && diffDays <= 6) return date.toLocaleDateString('tr-TR', { weekday: 'long' });
     return date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
