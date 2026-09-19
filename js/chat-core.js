@@ -120,6 +120,106 @@ export function getCurrentUser() {
     return currentUser;
 }
 
+
+// ------------------------------------------
+// ÇEVRİMİÇİ / SON GÖRÜLME (presence/{uid})
+// Uygulama açıkken 45 sn'de bir lastSeen güncellenir; arka plana
+// atınca/kapatınca online:false yazılır. Uygulama zorla kapanırsa
+// online:true takılı kalır, o yüzden 2 dk'dan eski lastSeen çevrimdışı sayılır.
+// ------------------------------------------
+const PRESENCE_HEARTBEAT_MS = 45000;
+const PRESENCE_STALE_MS = 120000;
+let presenceTimer = null;
+let unsubscribePresence = null;
+let otherPresence = null; // { online, lastSeenMs } - açık sohbetteki karşı taraf
+let presenceStatusTimer = null;
+
+function writePresence(online) {
+    if (!currentUser || !currentUser.uid) return;
+    setDoc(doc(db, "presence", currentUser.uid), {
+        online: online,
+        lastSeen: serverTimestamp()
+    }, { merge: true }).catch(() => {});
+}
+
+export function startPresence() {
+    if (presenceTimer) return;
+    writePresence(document.visibilityState === 'visible');
+    presenceTimer = setInterval(() => {
+        if (document.visibilityState === 'visible') writePresence(true);
+    }, PRESENCE_HEARTBEAT_MS);
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (!presenceTimer) return;
+    writePresence(document.visibilityState === 'visible');
+});
+
+window.addEventListener('pagehide', () => {
+    if (presenceTimer) writePresence(false);
+});
+
+function formatLastSeen(ms) {
+    const d = new Date(ms);
+    const now = new Date();
+    const timeStr = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (ms >= startOfToday) return `son görülme bugün ${timeStr}`;
+    if (ms >= startOfToday - 86400000) return `son görülme dün ${timeStr}`;
+    return `son görülme ${d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })}`;
+}
+
+// Başlıktaki durum satırı: önce "yazıyor...", sonra çevrimiçi, sonra son görülme
+function renderChatStatus() {
+    if (!currentChatId || currentChatId === 'global') return;
+
+    if (presenceStatusTimer) { clearTimeout(presenceStatusTimer); presenceStatusTimer = null; }
+
+    const session = chatSessions.get(currentChatId);
+    if (session && session.otherTyping) {
+        activeChatStatus.innerHTML = `<span class="text-emerald-400 font-medium animate-pulse">yazıyor...</span>`;
+        return;
+    }
+
+    if (!otherPresence || !otherPresence.lastSeenMs) {
+        activeChatStatus.textContent = '';
+        return;
+    }
+
+    const age = Date.now() - otherPresence.lastSeenMs;
+    if (otherPresence.online && age < PRESENCE_STALE_MS) {
+        activeChatStatus.innerHTML = `<span class="text-emerald-400 font-medium">çevrimiçi</span>`;
+        // Karşı taraf sessizce kaybolursa (app öldürüldü) süre dolunca kendiliğinden düşsün
+        presenceStatusTimer = setTimeout(renderChatStatus, PRESENCE_STALE_MS - age + 500);
+    } else {
+        activeChatStatus.innerHTML = `<span class="text-gray-400 font-medium">${formatLastSeen(otherPresence.lastSeenMs)}</span>`;
+    }
+}
+
+function stopWatchingPresence() {
+    if (unsubscribePresence) { unsubscribePresence(); unsubscribePresence = null; }
+    if (presenceStatusTimer) { clearTimeout(presenceStatusTimer); presenceStatusTimer = null; }
+    otherPresence = null;
+}
+
+function watchOtherPresence(chatId, otherUid) {
+    stopWatchingPresence();
+    if (!otherUid) return;
+    unsubscribePresence = onSnapshot(doc(db, "presence", otherUid), (snap) => {
+        if (currentChatId !== chatId) return;
+        if (snap.exists()) {
+            const d = snap.data();
+            otherPresence = {
+                online: !!d.online,
+                lastSeenMs: d.lastSeen ? d.lastSeen.toMillis() : 0
+            };
+        } else {
+            otherPresence = null;
+        }
+        renderChatStatus();
+    }, () => {});
+}
+
 // ------------------------------------------
 // MESAJLARIN DİSK ÖNBELLEĞİ (Firestore'dan bağımsız, cihazın kendi diskinde)
 // ------------------------------------------
@@ -355,16 +455,10 @@ async function ensureChatSession(chatId, otherUid) {
 
     if (chatId !== 'global') {
         session.unsubscribeChatDoc = onSnapshot(doc(db, "chats", chatId), (docSnap) => {
-            if (currentChatId !== chatId) return;
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                const isOtherTyping = otherUid && data[`typing_${otherUid}`];
-                if (isOtherTyping) {
-                    activeChatStatus.innerHTML = `<span class="text-emerald-400 font-medium animate-pulse">yazıyor...</span>`;
-                } else {
-                    activeChatStatus.textContent = "";
-                }
-            }
+            if (!docSnap.exists()) return;
+            const data = docSnap.data();
+            session.otherTyping = !!(otherUid && data[`typing_${otherUid}`]);
+            if (currentChatId === chatId) renderChatStatus();
         });
     }
 
@@ -674,6 +768,8 @@ export async function selectChat(otherUser) {
     currentOtherUid = otherUid;
     currentOtherAvatar = otherAvatar;
     updateMyActiveChatId(chatId);
+    watchOtherPresence(chatId, otherUid);
+    renderChatStatus();
 
     if (window.innerWidth < 1024) {
         sidebar.classList.add('-translate-x-full');
@@ -703,6 +799,7 @@ function doCloseChatView() {
     currentChatName = '';
     currentOtherUid = null;
     currentOtherAvatar = '';
+    stopWatchingPresence();
     messageContainer.innerHTML = '';
     messageElementsById.clear();
     exitSelectionMode();
