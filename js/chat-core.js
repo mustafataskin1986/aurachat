@@ -1100,7 +1100,64 @@ async function pwaDbSet(key, value) {
 }
 
 
+// ------------------------------------------
+// GALERİ DOSYA ADLARI
+// Resim yalnızca galeriye (Pictures/AuraChat) yazılır, başka kopya yok.
+// Ad: AuraChat_TARİH_SAAT_<mesajId>[_sıra].jpg - mesaj kimliği adın
+// içinde olduğu için ayrı indekse gerek yok; klasör taranarak her
+// resim kendi mesajına geri bağlanır.
+// ------------------------------------------
+const GALLERY_DIR = 'Pictures/AuraChat';
+const GALLERY_NAME_RE = /^AuraChat_\d{8}_\d{6}_([A-Za-z0-9]{20})(?:_(\d+))?\.jpg$/;
+let galleryFileMap = null; // "msgId" veya "msgId_idx" -> dosya adı
+let galleryFileMapPromise = null;
 
+function galleryKey(msgId, idx) {
+    return (idx === null || idx === undefined) ? msgId : `${msgId}_${idx}`;
+}
+
+function loadGalleryFileMap() {
+    if (galleryFileMapPromise) return galleryFileMapPromise;
+    galleryFileMapPromise = (async () => {
+        galleryFileMap = new Map();
+        const Filesystem = getFilesystemPlugin();
+        if (!Filesystem) return galleryFileMap;
+        try {
+            const dir = await Filesystem.readdir({ path: GALLERY_DIR, directory: 'EXTERNAL_STORAGE' });
+            for (const f of (dir.files || [])) {
+                const name = typeof f === 'string' ? f : f.name;
+                const m = name && name.match(GALLERY_NAME_RE);
+                if (m) {
+                    const idx = m[2] ? parseInt(m[2], 10) - 1 : null;
+                    galleryFileMap.set(galleryKey(m[1], idx), name);
+                }
+            }
+        } catch (e) {
+            // klasör henüz yok, ilk resim yazılınca oluşur
+        }
+        return galleryFileMap;
+    })();
+    return galleryFileMapPromise;
+}
+
+function getMessageTimeMs(chatId, msgId) {
+    const s = chatSessions.get(chatId);
+    if (s) {
+        const m = s.messages.find((x) => x.id === msgId) || s.olderMessagesPrepended.find((x) => x.id === msgId);
+        if (m && m.data.createdAt) return m.data.createdAt.toMillis();
+    }
+    return Date.now();
+}
+
+function buildGalleryFileName(timeMs, msgId, idx) {
+    const d = new Date(timeMs);
+    const p = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+    const idxPart = (idx === null || idx === undefined) ? '' : `_${idx + 1}`;
+    return `AuraChat_${stamp}_${msgId}${idxPart}.jpg`;
+}
+
+const toImageSrc = (raw) => (typeof raw === 'string' && raw.startsWith('data:')) ? raw : `data:image/jpeg;base64,${raw}`;
 
 async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
     if (!chatId || !msgId) return base64Data || null;
@@ -1117,48 +1174,47 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
         const Filesystem = getFilesystemPlugin();
 
         if (Filesystem) {
-            const fileName = `AuraChat_${chatId}_${msgId}${suffix}.jpg`;
-            const filePath = `Pictures/AuraChat/${fileName}`;
-const fileName = `AuraChat_${timestamp}${suffix}.jpg`;
+            const map = await loadGalleryFileMap();
+            const key = galleryKey(msgId, idx);
+            const knownName = map.get(key);
 
-
-            // 1. Doğrudan Galerideki (ortak) klasörden oku
-            try {
-                const existing = await Filesystem.readFile({ 
-                    path: filePath, 
-                    directory: 'EXTERNAL_STORAGE'
-                });
-                
-                const rawData = typeof existing.data === 'string' ? existing.data : existing.data;
-                const src = rawData.startsWith('data:') ? rawData : `data:image/jpeg;base64,${rawData}`;
-                
-                mediaUriCache.set(cacheKey, src);
-                return src;
-            } catch (e) {
-                // Galeriden silindiyse veya dosya yoksa buraya düşer
+            // 1. Galeride bu mesajın resmi varsa oradan oku
+            if (knownName) {
+                try {
+                    const found = await Filesystem.readFile({
+                        path: `${GALLERY_DIR}/${knownName}`,
+                        directory: 'EXTERNAL_STORAGE'
+                    });
+                    const src = toImageSrc(found.data);
+                    mediaUriCache.set(cacheKey, src);
+                    return src;
+                } catch (e) {
+                    map.delete(key); // galeriden silinmiş
+                }
             }
 
-            // Galeride yoksa ve internetten gelen base64 da temizlendiyse gösterilmez
-            if (!base64Data) return null; 
+            // 2. Galeride yok, sunucudan gelen veri de yoksa gösterilecek bir şey kalmadı
+            if (!base64Data) return null;
 
+            // 3. Yeni kayıt: sadece galeriye yaz
             try {
                 const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-                
-                await ensureDirOnce(Filesystem, 'Pictures/AuraChat');
-                
-                // Resim tek bir yere (Galeriye) yazılır
-                await Filesystem.writeFile({ 
-                    path: filePath, 
-                    data: pureBase64, 
-                    directory: 'EXTERNAL_STORAGE'
+                const fileName = buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx);
+
+                await Filesystem.writeFile({
+                    path: `${GALLERY_DIR}/${fileName}`,
+                    data: pureBase64,
+                    directory: 'EXTERNAL_STORAGE',
+                    recursive: true
                 });
+                map.set(key, fileName);
 
                 const src = `data:image/jpeg;base64,${pureBase64}`;
                 mediaUriCache.set(cacheKey, src);
                 return src;
             } catch (err) {
                 console.warn("Medya galeriye yazılamadı:", err);
-                return null; 
+                return null;
             }
         }
 
@@ -1171,7 +1227,7 @@ const fileName = `AuraChat_${timestamp}${suffix}.jpg`;
 
         if (!base64Data) return null;
 
-        const src = base64Data.startsWith('data:') ? base64Data : `data:image/jpeg;base64,${base64Data}`;
+        const src = toImageSrc(base64Data);
         await pwaDbSet(cacheKey, src);
         mediaUriCache.set(cacheKey, src);
         return src;
@@ -1184,8 +1240,6 @@ const fileName = `AuraChat_${timestamp}${suffix}.jpg`;
         mediaResolveInFlight.delete(cacheKey);
     }
 }
-
-
 
 // Firebase = kurye. Resim gerçekten bu cihaza (diske) indiyse ve ben
 // ALICIYSAM (gönderen değilsem), Firestore'daki kopyayı temizle.
