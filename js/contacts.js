@@ -140,6 +140,8 @@ function buildAvatarPlaceholder(name, sizeClasses) {
     return `<div class="${sizeClasses} rounded-full flex items-center justify-center text-white font-bold text-sm shadow" style="background-color: ${color};">${initials}</div>`;
 }
 
+let localAvatarBroken = false; // yerel dosya src'si bu cihazda yüklenmiyorsa bir daha denenmez
+
 function renderAvatarInto(containerEl, uid, avatarBase64, name, sizeClasses) {
     if (!containerEl) return;
 
@@ -148,18 +150,25 @@ function renderAvatarInto(containerEl, uid, avatarBase64, name, sizeClasses) {
         return;
     }
 
-    const cacheKey = `${uid}:${shortAvatarHash(avatarBase64)}`;
-    const cached = avatarUriCache.get(cacheKey);
-    if (cached) {
-        containerEl.innerHTML = `<img src="${cached}" class="${sizeClasses} rounded-full object-cover shadow">`;
-        return;
-    }
+    const imgHtml = (src) => `<img src="${src}" class="${sizeClasses} rounded-full object-cover shadow">`;
 
-    containerEl.innerHTML = buildAvatarPlaceholder(name, sizeClasses);
+    // Her zaman önce base64 göster: boş/kırık avatar asla kalmaz
+    containerEl.innerHTML = imgHtml(avatarBase64);
+
+    if (localAvatarBroken) return;
+
     resolveLocalAvatar(uid, avatarBase64).then((src) => {
-        if (src && containerEl.isConnected) {
-            containerEl.innerHTML = `<img src="${src}" class="${sizeClasses} rounded-full object-cover shadow">`;
-        }
+        if (!src || src === avatarBase64 || !containerEl.isConnected) return;
+
+        // Yerel dosyaya SADECE gerçekten yükleniyorsa geç
+        const probe = new Image();
+        probe.onload = () => {
+            if (containerEl.isConnected) containerEl.innerHTML = imgHtml(src);
+        };
+        probe.onerror = () => {
+            localAvatarBroken = true;
+        };
+        probe.src = src;
     });
 }
 
