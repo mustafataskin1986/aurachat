@@ -27,6 +27,11 @@
             -webkit-user-select: text;
             user-select: text;
         }
+        /* Sohbet listesi seçili satır (mobil hover'ı ezer) */
+        .contact-list-item.chat-selected,
+        .contact-list-item.chat-selected:hover {
+            background-color: rgba(16, 185, 129, 0.18) !important;
+        }
     </style>
 </head>
 <body class="bg-[#050b14] w-screen font-sans flex items-center justify-center p-0 lg:p-4">
@@ -558,14 +563,10 @@
                 initWebPush(user);
             }
         };
+        </script>
+    
         
-        /* Sohbet listesi seçili satır (mobil hover'ı ezer) */
-        .contact-list-item.chat-selected,
-        .contact-list-item.chat-selected:hover {
-            background-color: rgba(16, 185, 129, 0.18) !important;
-        }
-        
-    </script>
+
 
     <script>
         function syncViewport() {
