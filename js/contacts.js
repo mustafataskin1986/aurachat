@@ -73,33 +73,40 @@ function shortAvatarHash(base64Str) {
 // Base64 avatarı cihaza dosya olarak yazar (bir kez), sonraki
 // çağrılarda direkt yerel dosyadan okur. Capacitor Filesystem yoksa
 // (web/PWA) eski davranışa döner: base64'ü olduğu gibi kullanır.
-async function resolveLocalAvatar(uid, base64Avatar) {
-    if (!base64Avatar) return null;
+const avatarInflight = new Map(); // cacheKey -> Promise
 
-    const hash = shortAvatarHash(base64Avatar);
-    const cacheKey = `${uid}:${hash}`;
-    if (avatarUriCache.has(cacheKey)) return avatarUriCache.get(cacheKey);
+function resolveLocalAvatar(uid, base64Avatar) {
+    if (!base64Avatar) return Promise.resolve(null);
 
+    const cacheKey = `${uid}:${shortAvatarHash(base64Avatar)}`;
+    if (avatarUriCache.has(cacheKey)) return Promise.resolve(avatarUriCache.get(cacheKey));
+    if (avatarInflight.has(cacheKey)) return avatarInflight.get(cacheKey);
+
+    const p = doResolveLocalAvatar(uid, base64Avatar, cacheKey)
+        .finally(() => avatarInflight.delete(cacheKey));
+    avatarInflight.set(cacheKey, p);
+    return p;
+}
+
+async function doResolveLocalAvatar(uid, base64Avatar, cacheKey) {
     const Filesystem = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
     if (!Filesystem || !window.Capacitor.convertFileSrc) {
         return base64Avatar;
     }
 
+    const hash = cacheKey.split(':')[1];
     const fileName = `${AVATAR_CACHE_DIR}/${uid}_${hash}.jpg`;
 
     try {
-        // stat() dosyanın GERÇEKTEN var olup olmadığını kontrol eder -
-        // getUri() sadece bir yol üretir, dosya yoksa bile hata
-        // vermeyebilir. Bu yüzden hiç yazılmamış avatarlar "var"
-        // sanılıp kırık bir URI önbelleğe alınıyordu.
-        await Filesystem.stat({ path: fileName, directory: 'DATA' });
-        const existing = await Filesystem.getUri({ path: fileName, directory: 'DATA' });
-        const src = window.Capacitor.convertFileSrc(existing.uri);
-        avatarUriCache.set(cacheKey, src);
-        return src;
+        const st = await Filesystem.stat({ path: fileName, directory: 'DATA' });
+        if (st && st.size > 0) {
+            const existing = await Filesystem.getUri({ path: fileName, directory: 'DATA' });
+            const src = window.Capacitor.convertFileSrc(existing.uri);
+            avatarUriCache.set(cacheKey, src);
+            return src;
+        }
     } catch (e) {
-        // Dosya cihazda henüz yok (ya da avatar değişmiş, eski dosya
-        // farklı isimde duruyor), ilk kez yazılacak
+        // dosya yok, yazılacak
     }
 
     try {
@@ -108,6 +115,18 @@ async function resolveLocalAvatar(uid, base64Avatar) {
         const written = await Filesystem.writeFile({ path: fileName, data: base64Data, directory: 'DATA' });
         const src = window.Capacitor.convertFileSrc(written.uri);
         avatarUriCache.set(cacheKey, src);
+
+        // Aynı kullanıcının eski avatar dosyalarını temizle
+        try {
+            const dir = await Filesystem.readdir({ path: AVATAR_CACHE_DIR, directory: 'DATA' });
+            for (const f of (dir.files || [])) {
+                const name = typeof f === 'string' ? f : f.name;
+                if (name && name.startsWith(`${uid}_`) && name !== `${uid}_${hash}.jpg`) {
+                    await Filesystem.deleteFile({ path: `${AVATAR_CACHE_DIR}/${name}`, directory: 'DATA' }).catch(() => {});
+                }
+            }
+        } catch (e) {}
+
         return src;
     } catch (err) {
         console.warn("Avatar yerel diske yazılamadı:", err);
