@@ -553,9 +553,20 @@ export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
 
         const userData = userDoc.data();
 
-        // Alıcı zaten bu sohbeti açık tutuyorsa bildirim atma - zaten görüyor.
+     // Alıcı bu sohbeti GERÇEKTEN açık tutuyorsa bildirim atma. activeChatId
+        // uygulama aniden kapanınca Firestore'da takılı kalabiliyor, o yüzden
+        // alıcının presence kaydı da taze ve çevrimiçi olmalı.
         if (userData?.activeChatId && extraData && extraData.chatId && userData.activeChatId === extraData.chatId) {
-            return;
+            let receiverReallyHere = false;
+            try {
+                const presSnap = await getDoc(doc(db, "presence", receiverUid));
+                if (presSnap.exists()) {
+                    const p = presSnap.data();
+                    const ageMs = p.lastSeen ? Date.now() - p.lastSeen.toMillis() : Infinity;
+                    receiverReallyHere = !!p.online && ageMs < PRESENCE_STALE_MS;
+                }
+            } catch (e) {}
+            if (receiverReallyHere) return;
         }
 
         const receiverToken = userData?.fcmToken || userData?.fcm_token || userData?.pushToken;
