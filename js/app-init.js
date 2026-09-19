@@ -47,7 +47,24 @@ async function ensureUid(user) {
 // Bildirime tıklanınca (Capacitor native veya PWA) çağrılır
 window.openChatFromNotification = function (otherUser) {
     if (!otherUser || !otherUser.uid) return;
-    selectChat(otherUser);
+
+    // Bildirim verisinde avatar yok, yüklü kişi listesinden bul
+    let target = otherUser;
+    try {
+        const usersMap = window.__aurachatUsers;
+        if (usersMap) {
+            const known = Array.from(usersMap.values()).find((u) => u.uid === otherUser.uid);
+            if (known) {
+                target = {
+                    ...otherUser,
+                    name: known.name || otherUser.name,
+                    avatar: known.avatar || otherUser.avatar || ''
+                };
+            }
+        }
+    } catch (e) {}
+
+    selectChat(target);
 };
 
 // PWA - uygulama zaten açıkken sw.js'ten gelen "bildirime tıklandı" mesajı
