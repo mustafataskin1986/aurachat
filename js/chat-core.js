@@ -1814,146 +1814,133 @@ window.openImageLightbox = function (src) {
 };
 
 // ------------------------------------------
-// ALBÜM GÖRÜNTÜLEYİCİ (4'ten fazla resimde "+N" karesine dokununca
-// açılır, ok tuşlarıyla veya parmakla sola/sağa kaydırarak albümdeki
-// TÜM resimler gezilebilir; geçişte kısa bir kayma animasyonu olur)
+// ALBÜM GÖRÜNTÜLEYİCİ (WhatsApp tarzı: resimler alt alta akar)
+// Albümdeki tüm resimler dikey bir listede alt alta dizilir, parmakla
+// yukarı/aşağı kaydırılır. Üst ortada, ekranın ortasındaki resmin
+// "kaçıncı / kaç" bilgisi görünür. Sol üstteki ok görüntüleyiciyi kapatır.
 // ------------------------------------------
 let albumViewerState = null;
+let swipeStartX = null; // doCloseLightbox bunları sıfırlıyor, kalsınlar
+let swipeStartY = null;
+
+function findAlbumSourceImage(chatId, msgId, index) {
+    const s = chatSessions.get(chatId);
+    if (!s) return null;
+    const entry = s.messages.find((m) => m.id === msgId) || s.olderMessagesPrepended.find((m) => m.id === msgId);
+    return entry && Array.isArray(entry.data.images) ? (entry.data.images[index] || null) : null;
+}
 
 function updateAlbumViewerCounter() {
     if (!albumViewerState) return;
+    const scrollEl = document.getElementById('lightbox-album-scroll');
     const counterEl = document.getElementById('lightbox-album-counter');
-    if (counterEl) counterEl.textContent = `${albumViewerState.index + 1} / ${albumViewerState.imagesCount}`;
-}
+    if (!scrollEl || !counterEl) return;
 
-async function renderAlbumViewerImage(direction = 0) {
-    if (!albumViewerState) return;
-    const { chatId, msgId, index } = albumViewerState;
-    const lightboxImg = document.getElementById('lightbox-img');
-    if (!lightboxImg) return;
-
-    if (direction !== 0) {
-        lightboxImg.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
-        lightboxImg.style.transform = `translateX(${direction > 0 ? '-24px' : '24px'})`;
-        lightboxImg.style.opacity = '0.2';
+    // Ekranın tam ortasındaki resmi bul
+    const mid = scrollEl.scrollTop + scrollEl.clientHeight / 2;
+    const slots = scrollEl.children;
+    let current = 0;
+    for (let i = 0; i < slots.length; i++) {
+        if (slots[i].offsetTop <= mid) current = i;
+        else break;
     }
-
-    const cacheKey = `${chatId}/${msgId}_${index}`;
-    let src = mediaUriCache.get(cacheKey);
-    if (!src) {
-        src = await resolveLocalMedia(chatId, msgId, null, index);
-    }
-
-    if (!(albumViewerState && albumViewerState.chatId === chatId && albumViewerState.msgId === msgId && albumViewerState.index === index)) {
-        return; // kullanıcı bu sırada başka bir kareye geçti
-    }
-
-    if (src) {
-        if (direction !== 0) {
-            lightboxImg.style.transition = 'none';
-            lightboxImg.style.transform = `translateX(${direction > 0 ? '24px' : '-24px'})`;
-            lightboxImg.src = src;
-            void lightboxImg.offsetWidth; // reflow'u zorla, transition'ın yeniden tetiklenmesi için
-            lightboxImg.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
-            lightboxImg.style.transform = 'translateX(0)';
-            lightboxImg.style.opacity = '1';
-        } else {
-            lightboxImg.src = src;
-            lightboxImg.style.transform = 'translateX(0)';
-            lightboxImg.style.opacity = '1';
-        }
-    }
-    updateAlbumViewerCounter();
-}
-
-function albumViewerStep(delta) {
-    if (!albumViewerState) return;
-    const newIndex = albumViewerState.index + delta;
-    if (newIndex < 0 || newIndex >= albumViewerState.imagesCount) return;
-    albumViewerState.index = newIndex;
-    renderAlbumViewerImage(delta);
-}
-
-let swipeStartX = null;
-let swipeStartY = null;
-
-function attachSwipeHandlersOnce(lightbox) {
-    if (!lightbox || lightbox.dataset.swipeBound === '1') return;
-    lightbox.dataset.swipeBound = '1';
-
-    lightbox.addEventListener('touchstart', (e) => {
-        if (!albumViewerState || e.touches.length !== 1) return;
-        swipeStartX = e.touches[0].clientX;
-        swipeStartY = e.touches[0].clientY;
-    }, { passive: true });
-
-    lightbox.addEventListener('touchend', (e) => {
-        if (!albumViewerState || swipeStartX === null) return;
-        const touch = e.changedTouches[0];
-        const deltaX = touch.clientX - swipeStartX;
-        const deltaY = touch.clientY - swipeStartY;
-        swipeStartX = null;
-        swipeStartY = null;
-        if (Math.abs(deltaX) < 40 || Math.abs(deltaX) < Math.abs(deltaY)) return;
-        albumViewerStep(deltaX < 0 ? 1 : -1);
-    }, { passive: true });
+    albumViewerState.index = current;
+    counterEl.textContent = `${current + 1} / ${albumViewerState.imagesCount}`;
 }
 
 function ensureAlbumViewerControls() {
     const lightbox = document.getElementById('image-lightbox');
-    if (!lightbox) return;
-    attachSwipeHandlersOnce(lightbox);
-    if (document.getElementById('lightbox-album-prev')) return;
-
-    const prevBtn = document.createElement('button');
-    prevBtn.id = 'lightbox-album-prev';
-    prevBtn.innerHTML = '<i class="fa-solid fa-chevron-left"></i>';
-    prevBtn.className = 'absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white w-10 h-10 rounded-full flex items-center justify-center z-10';
-    prevBtn.addEventListener('click', (e) => { e.stopPropagation(); albumViewerStep(-1); });
-
-    const nextBtn = document.createElement('button');
-    nextBtn.id = 'lightbox-album-next';
-    nextBtn.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
-    nextBtn.className = 'absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white w-10 h-10 rounded-full flex items-center justify-center z-10';
-    nextBtn.addEventListener('click', (e) => { e.stopPropagation(); albumViewerStep(1); });
+    if (!lightbox || document.getElementById('lightbox-album-counter')) return;
 
     const counter = document.createElement('div');
     counter.id = 'lightbox-album-counter';
-    counter.className = 'absolute top-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-3 py-1 rounded-full z-10';
+    counter.className = 'absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-3 py-1 rounded-full z-20';
 
-    lightbox.appendChild(prevBtn);
-    lightbox.appendChild(nextBtn);
+    const backBtn = document.createElement('button');
+    backBtn.id = 'lightbox-album-back';
+    backBtn.innerHTML = '<i class="fa-solid fa-arrow-left"></i>';
+    backBtn.className = 'absolute top-3 left-3 bg-black/60 text-white w-9 h-9 rounded-full flex items-center justify-center z-20';
+    backBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.closeImageLightboxUI();
+    });
+
     lightbox.appendChild(counter);
+    lightbox.appendChild(backBtn);
 }
 
 function hideAlbumViewerControls() {
-    ['lightbox-album-prev', 'lightbox-album-next', 'lightbox-album-counter'].forEach((id) => {
+    ['lightbox-album-counter', 'lightbox-album-back', 'lightbox-album-scroll'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.remove();
     });
+    // Tek resim görüntüleyicisi bu elemanı kullanıyor, geri göster
+    const lightboxImg = document.getElementById('lightbox-img');
+    if (lightboxImg) lightboxImg.classList.remove('hidden');
 }
 
-window.openAlbumLightbox = function (chatId, msgId, imagesCount, startIndex) {
+window.openAlbumLightbox = async function (chatId, msgId, imagesCount, startIndex) {
     const lightbox = document.getElementById('image-lightbox');
     const lightboxImg = document.getElementById('lightbox-img');
     if (!lightbox || !lightboxImg) return;
 
+    hideAlbumViewerControls();
     albumViewerState = { chatId, msgId, imagesCount, index: startIndex };
+    lightboxImg.classList.add('hidden');
+
+    const scrollEl = document.createElement('div');
+    scrollEl.id = 'lightbox-album-scroll';
+    scrollEl.className = 'absolute inset-0 overflow-y-auto';
+    scrollEl.style.overscrollBehavior = 'contain';
+    // Kaydırırken ya da resme dokunurken görüntüleyici kapanmasın
+    scrollEl.addEventListener('click', (e) => e.stopPropagation());
+    scrollEl.addEventListener('scroll', updateAlbumViewerCounter, { passive: true });
+
+    // Resimler gelene kadar yer tutucular
+    for (let i = 0; i < imagesCount; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'flex items-center justify-center py-1';
+        slot.style.minHeight = '40vh';
+        slot.innerHTML = '<i class="fa-solid fa-image text-gray-600 text-2xl"></i>';
+        scrollEl.appendChild(slot);
+    }
+
+    lightbox.appendChild(scrollEl);
     ensureAlbumViewerControls();
-
-    lightboxImg.style.transition = 'none';
-    lightboxImg.style.transform = 'translateX(0)';
-    lightboxImg.style.opacity = '1';
-
-    const cacheKey = `${chatId}/${msgId}_${startIndex}`;
-    const cachedSrc = mediaUriCache.get(cacheKey);
-    lightboxImg.src = cachedSrc || '';
     updateAlbumViewerCounter();
-    if (!cachedSrc) renderAlbumViewerImage();
 
     lightbox.classList.remove('hidden');
     lightbox.classList.add('flex');
     pushBackState(doCloseLightbox);
+
+    const loads = [];
+    for (let i = 0; i < imagesCount; i++) {
+        const slot = scrollEl.children[i];
+        loads.push((async () => {
+            let src = mediaUriCache.get(`${chatId}/${msgId}_${i}`);
+            if (!src) src = await resolveLocalMedia(chatId, msgId, findAlbumSourceImage(chatId, msgId, i), i);
+            if (!src || !slot.isConnected) return;
+
+            const img = new Image();
+            img.className = 'w-full h-auto block mx-auto';
+            img.style.maxWidth = '900px';
+            img.src = src;
+            try { await img.decode(); } catch (e) {}
+            if (!slot.isConnected) return;
+
+            slot.style.minHeight = '';
+            slot.innerHTML = '';
+            slot.appendChild(img);
+        })());
+    }
+    await Promise.all(loads);
+
+    // Dokunulan resmin olduğu yere kaydır
+    if (!scrollEl.isConnected) return;
+    if (startIndex > 0 && scrollEl.children[startIndex]) {
+        scrollEl.scrollTop = scrollEl.children[startIndex].offsetTop;
+    }
+    updateAlbumViewerCounter();
 };
 
 function doCloseLightbox() {
