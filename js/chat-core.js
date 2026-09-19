@@ -91,6 +91,7 @@ let selectionMode = false;
 const selectedMessageIds = new Set();
 const messageElementsById = new Map();
 let recentOpenScrollLock = false;
+let unreadDivider = null; // { chatId, msgId, count }
 
 export function setCurrentUser(user) {
     currentUser = user;
@@ -444,10 +445,24 @@ async function ensureChatSession(chatId, otherUid) {
 
         writeChatDiskCache(chatId, session);
 
-        if (currentChatId === chatId) {
+    if (currentChatId === chatId) {
+            // Sohbet yeni açıldıysa ve ilk veride okunmamış mesaj geldiyse çizgiyi şimdi kur
+            if (recentOpenScrollLock && (!unreadDivider || unreadDivider.chatId !== chatId)) {
+                unreadDivider = findUnreadDivider(session);
+            }
+            const keepPosition = !!(unreadDivider && unreadDivider.chatId === chatId) && !isNearBottom();
+            const prevScrollTop = messageContainer.scrollTop;
+
             renderSession(session);
             markVisibleMessagesRead(session);
-            scrollToBottom();
+
+            if (keepPosition) {
+                messageContainer.scrollTop = prevScrollTop;
+            } else if (unreadDivider && unreadDivider.chatId === chatId && recentOpenScrollLock) {
+                scrollToUnreadOrBottom();
+            } else {
+                scrollToBottom();
+            }
         }
     }, (error) => {
         console.error("Mesajlar yüklenirken hata:", error);
@@ -782,9 +797,10 @@ export async function selectChat(otherUser) {
     if (currentChatId !== chatId) return;
 
     session.lastUsed = ++sessionTick;
+    unreadDivider = findUnreadDivider(session);
     renderSession(session);
     markVisibleMessagesRead(session);
-    scrollToBottom();
+    scrollToUnreadOrBottom();
 
     recentOpenScrollLock = true;
     setTimeout(() => { recentOpenScrollLock = false; }, 1500);
@@ -795,6 +811,7 @@ export async function selectChat(otherUser) {
  
 function doCloseChatView() {
 closeAttachMenu();
+unreadDivider = null;
     updateMyActiveChatId(null);
     currentChatId = null;
     currentChatName = '';
@@ -953,15 +970,25 @@ function renderSession(session) {
     }
 
     const fragment = document.createDocumentFragment();
+    const all = session.olderMessagesPrepended.concat(session.messages);
+    let lastDayKey = null;
 
-    session.olderMessagesPrepended.forEach(({ id, data: msg }) => {
+    all.forEach(({ id, data: msg }) => {
         if (currentUser && Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) return;
-        const isMine = !!(currentUser && currentUser.uid && msg.senderUid === currentUser.uid);
-        fragment.appendChild(buildMessageElement(msg, isMine, id));
-    });
 
-    session.messages.forEach(({ id, data: msg }) => {
-        if (currentUser && Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) return;
+        // Gün değişince tarih etiketi
+        const msgDate = msg.createdAt ? msg.createdAt.toDate() : new Date();
+        const dayKey = dayKeyOf(msgDate);
+        if (dayKey !== lastDayKey) {
+            fragment.appendChild(buildDateChipElement(msgDate));
+            lastDayKey = dayKey;
+        }
+
+        // İlk okunmamış mesajın üstüne "N okunmamış mesaj" çizgisi
+        if (unreadDivider && unreadDivider.chatId === session.chatId && unreadDivider.msgId === id) {
+            fragment.appendChild(buildUnreadDividerElement(unreadDivider.count));
+        }
+
         const isMine = !!(currentUser && currentUser.uid && msg.senderUid === currentUser.uid);
         fragment.appendChild(buildMessageElement(msg, isMine, id));
     });
