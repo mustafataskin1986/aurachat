@@ -95,6 +95,11 @@ async function doResolveLocalAvatar(uid, base64Avatar, cacheKey) {
         return base64Avatar;
     }
 
+    // Avatar bir internet adresiyse (örn. Google profil fotoğrafı) diske base64 gibi yazılamaz, olduğu gibi kullan
+    if (typeof base64Avatar !== 'string' || /^https?:\/\//i.test(base64Avatar)) {
+        return base64Avatar;
+    }
+
     const hash = cacheKey.split(':')[1];
     const fileName = `${AVATAR_CACHE_DIR}/${uid}_${hash}.jpg`;
 
@@ -111,7 +116,7 @@ async function doResolveLocalAvatar(uid, base64Avatar, cacheKey) {
     }
 
     try {
-        const base64Data = base64Avatar.includes(',') ? base64Avatar.split(',')[1] : base64Avatar;
+        const base64Data = (base64Avatar.includes(',') ? base64Avatar.split(',')[1] : base64Avatar).replace(/\s/g, '');
         await Filesystem.mkdir({ path: AVATAR_CACHE_DIR, directory: 'DATA', recursive: true }).catch(() => {});
         const written = await Filesystem.writeFile({ path: fileName, data: base64Data, directory: 'DATA' });
         const src = window.Capacitor.convertFileSrc(written.uri);
