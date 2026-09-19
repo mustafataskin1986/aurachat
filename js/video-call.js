@@ -370,6 +370,11 @@ function resetCallState() {
     pendingCallerUid = null;
     pendingCallerName = null;
     currentFacingMode = 'user';
+    if (localIsMain) {
+        localVideoEl.className = 'absolute bottom-24 right-4 w-28 h-40 rounded-xl object-cover shadow-lg border border-white/20 z-10 bg-gray-900';
+        remoteVideoEl.className = 'absolute inset-0 w-full h-full object-cover bg-black';
+        localIsMain = false;
+    }
 }
 
 if (btnHangup) {
@@ -432,4 +437,19 @@ async function switchCamera() {
 
 if (btnSwitchCamera) {
     btnSwitchCamera.addEventListener('click', () => switchCamera());
+}
+
+// Küçük (kendi) ekrana dokununca büyük ekranla yer değiştirir (WhatsApp tarzı)
+let localIsMain = false;
+if (localVideoEl && remoteVideoEl) {
+    localVideoEl.addEventListener('click', () => {
+        localIsMain = !localIsMain;
+        if (localIsMain) {
+            localVideoEl.className = 'absolute inset-0 w-full h-full object-cover bg-black';
+            remoteVideoEl.className = 'absolute bottom-24 right-4 w-28 h-40 rounded-xl object-cover shadow-lg border border-white/20 z-10 bg-gray-900';
+        } else {
+            remoteVideoEl.className = 'absolute inset-0 w-full h-full object-cover bg-black';
+            localVideoEl.className = 'absolute bottom-24 right-4 w-28 h-40 rounded-xl object-cover shadow-lg border border-white/20 z-10 bg-gray-900';
+        }
+    });
 }
