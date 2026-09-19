@@ -29,7 +29,8 @@ const searchContact = document.getElementById('search-contact');
 const searchIcon = document.getElementById('search-icon');
 const filterTabsContainer = document.getElementById('chat-filter-tabs');
 
-const adminBtn = document.getElementById('admin-btn');
+const appTitle = document.getElementById('app-title');
+let isAdminUser = false;
 const adminModal = document.getElementById('admin-modal');
 const adminModalClose = document.getElementById('admin-modal-close');
 const adminUserList = document.getElementById('admin-user-list');
@@ -816,20 +817,33 @@ searchIcon.addEventListener('click', () => {
 });
 
 // ------------------------------------------
-// FİLTRE ÇİPLERİNİ AÇ/KAPA (WhatsApp'taki "aşağı çekince görün" hissi)
-// Sadece listenin en tepesindeyken (scrollTop 0) aşağı doğru parmak
-// sürüklemesi filtre çubuğunu açar; yeterince çekilmezse ya da liste
-// zaten aşağı kaydırılmışsa kapalı/gizli kalır - böylece yukarı
-// ittirince arama barı ve çipler listeyle birlikte kayıp gidiyor.
+// LİSTE KAYDIRMA + FİLTRE ÇİPLERİ (WhatsApp mantığı)
+// Arama barı, çipler ve liste tek kaydırma alanında: yukarı itince
+// hepsi birlikte kayar. Liste en üstteyken aşağı çekince çipler açılır.
+// Çipler görüş alanından tamamen çıkınca kendiliğinden kapanır.
 // ------------------------------------------
 const chatScrollWrapper = document.getElementById('chat-scroll-wrapper');
 const chatFilterTabsWrapper = document.getElementById('chat-filter-tabs-wrapper');
 
 if (chatScrollWrapper && chatFilterTabsWrapper) {
+    const searchBarEl = chatScrollWrapper.firstElementChild; // arama barı
     let pullStartY = null;
     let isPulling = false;
+    let settleTimer = null;
     const PULL_OPEN_THRESHOLD = 28;
     const PULL_MAX = 60;
+
+    // Liste kısa olsa bile arama barı + çipler yukarı kayabilsin diye
+    // listeye en az kaydırma alanı yüksekliği kadar minimum yükseklik ver.
+    function updateListSlack() {
+        contactList.style.minHeight = chatScrollWrapper.clientHeight + 'px';
+    }
+    updateListSlack();
+    window.addEventListener('load', updateListSlack);
+    window.addEventListener('resize', updateListSlack);
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', updateListSlack);
+    }
 
     function getFilterTabsNaturalHeight() {
         const inner = document.getElementById('chat-filter-tabs');
@@ -851,7 +865,10 @@ if (chatScrollWrapper && chatFilterTabsWrapper) {
     }
 
     chatScrollWrapper.addEventListener('touchstart', (e) => {
-        if (chatScrollWrapper.scrollTop <= 0 && e.touches.length === 1) {
+        updateListSlack();
+        // Çipler zaten açıksa çekme başlatma: yukarı itince normal kaydırma
+        // çipleri ve arama barını listeyle birlikte kaydırır.
+        if (chatScrollWrapper.scrollTop <= 0 && e.touches.length === 1 && !isFilterTabsOpen()) {
             pullStartY = e.touches[0].clientY;
             isPulling = false;
         } else {
@@ -889,32 +906,54 @@ if (chatScrollWrapper && chatFilterTabsWrapper) {
         closeFilterTabs();
     });
 
-    // Liste yukarı kaydırılıp çipler görünüm dışına çıktığında bir
-    // dahaki açılış temiz başlasın diye sıfırla.
+    // Kaydırma durunca: çipler tamamen görüş dışındaysa sessizce kapat
+    // (scrollTop'u da aynı miktar düşürerek görüntü yerinde kalır, sıçrama olmaz)
     chatScrollWrapper.addEventListener('scroll', () => {
         if (isPulling) return;
-        if (chatScrollWrapper.scrollTop > getFilterTabsNaturalHeight() && isFilterTabsOpen()) {
-            closeFilterTabs();
-        }
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(() => {
+            if (!isFilterTabsOpen()) return;
+            const searchH = searchBarEl ? searchBarEl.offsetHeight : 0;
+            const chipsH = chatFilterTabsWrapper.offsetHeight;
+            if (chipsH > 0 && chatScrollWrapper.scrollTop >= searchH + chipsH) {
+                chatFilterTabsWrapper.style.transition = 'none';
+                chatFilterTabsWrapper.style.maxHeight = '0px';
+                chatScrollWrapper.scrollTop -= chipsH;
+            }
+        }, 150);
     });
 }
 
 // ------------------------------------------
-// ADMİN PANEL
+// ADMİN PANEL (AuraChat yazısına tıklayınca açılır, sadece admin)
 // ------------------------------------------
 export function initAdminPanel() {
     const currentUser = getCurrentUser();
-    if (!currentUser) return;
+    if (!currentUser || !appTitle) return;
 
-    if (currentUser.email && currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-        adminBtn.classList.remove('hidden');
-    } else {
-        adminBtn.classList.add('hidden');
-    }
+    isAdminUser = !!(currentUser.email && ADMIN_EMAIL && currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase());
+
+    appTitle.classList.toggle('text-amber-400', isAdminUser);
+    appTitle.classList.toggle('text-emerald-500', !isAdminUser);
+    appTitle.classList.toggle('cursor-pointer', isAdminUser);
 }
 
-if (adminBtn) {
-    adminBtn.addEventListener('click', async () => {
+function openAdminModal() {
+    adminModal.classList.remove('hidden');
+    adminModal.classList.add('flex');
+}
+
+function closeAdminModal() {
+    if (!adminModal) return;
+    adminModal.classList.add('hidden');
+    adminModal.classList.remove('flex');
+}
+
+if (appTitle) {
+    appTitle.addEventListener('click', async () => {
+        if (!isAdminUser) return;
+        if (!adminModal.classList.contains('hidden')) return;
+
         const currentUser = getCurrentUser();
 
         adminUserList.innerHTML = `
@@ -922,7 +961,7 @@ if (adminBtn) {
                 <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-amber-400"></i>
                 <p class="text-xs">Veritabanından tüm kullanıcılar çekiliyor...</p>
             </div>`;
-        adminModal.classList.remove('hidden');
+        openAdminModal();
         pushBackState(closeAdminModal);
 
         try {
@@ -985,14 +1024,9 @@ if (adminBtn) {
     });
 }
 
-function closeAdminModal() {
-    if (!adminModal) return;
-    adminModal.classList.add('hidden');
-}
-
 if (adminModalClose) {
     adminModalClose.addEventListener('click', () => {
         closeAdminModal();
         popBackState();
     });
-}
+}}
