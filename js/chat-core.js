@@ -1353,7 +1353,14 @@ let bodyHtml;
         bodyHtml = initialImgSrc
             ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`
             : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`;
-} else if (msg.type === 'missed_call') {
+} else if (msg.type === 'location') {
+        bodyHtml = `<div class="cursor-pointer" style="min-width:200px;" onclick="openLocation(${Number(msg.lat)},${Number(msg.lng)})">
+            <div class="rounded-lg bg-black/25 flex items-center justify-center" style="height:90px;"><i class="fa-solid fa-location-dot text-rose-500 text-4xl"></i></div>
+            <p class="mt-1.5 font-medium text-sm">📍 Konum</p>
+            <p class="text-[11px] text-gray-300">${Number(msg.lat).toFixed(5)}, ${Number(msg.lng).toFixed(5)}</p>
+            <p class="text-[11px] text-sky-300 mt-0.5">Haritada aç</p>
+        </div>`;
+    } else if (msg.type === 'missed_call') {
         const missedLabel = msg.callType === 'audio' ? 'Cevapsız sesli arama' : 'Cevapsız görüntülü arama';
         bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${msg.callType === 'audio' ? 'audio' : 'video'}')"><i class="fa-solid fa-phone-slash"></i> ${missedLabel}</p>`;
     } else if (msg.type === 'declined_call') {
@@ -1550,7 +1557,11 @@ function ensureAttachMenu() {
             </button>
             <button type="button" data-attach="camera" class="flex flex-col items-center space-y-1.5">
                 <span class="w-16 h-11 rounded-full border border-gray-700 flex items-center justify-center text-pink-500 text-xl"><i class="fa-solid fa-camera"></i></span>
-                <span class="text-gray-300 text-xs">Kamera</span>
+              <span class="text-gray-300 text-xs">Kamera</span>
+            </button>
+            <button type="button" data-attach="location" class="flex flex-col items-center space-y-1.5">
+                <span class="w-16 h-11 rounded-full border border-gray-700 flex items-center justify-center text-emerald-400 text-xl"><i class="fa-solid fa-location-dot"></i></span>
+                <span class="text-gray-300 text-xs">Konum</span>
             </button>
         </div>
     `;
@@ -1625,6 +1636,10 @@ function closeAttachMenu() {
 
 function handleAttachChoice(kind) {
     closeAttachMenu();
+    if (kind === 'location') {
+        sendCurrentLocation();
+        return;
+    }
     if (!imageInput) return;
     if (kind === 'camera') {
         imageInput.multiple = false;
@@ -2331,4 +2346,54 @@ if (attachBtn && imageInput) {
             }
         }
     });
+}
+
+window.openLocation = function (lat, lng) {
+    window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
+};
+
+async function sendCurrentLocation() {
+    if (!currentUser || !currentChatId) return;
+    const chatIdAtStart = currentChatId;
+    showToast('Konum alınıyor...', 4000);
+
+    try {
+        const Geo = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Geolocation;
+        let pos;
+        if (Geo) {
+            pos = await Geo.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 });
+        } else {
+            pos = await new Promise((resolve, reject) => {
+                if (!navigator.geolocation) { reject(new Error('Bu cihaz konumu desteklemiyor')); return; }
+                navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000 });
+            });
+        }
+
+        if (currentChatId !== chatIdAtStart) return;
+
+        await addDoc(collection(db, "chats", chatIdAtStart, "messages"), {
+            type: 'location',
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            text: '',
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false
+        });
+
+        await updateChatSummaries('📍 Konum');
+
+        if (chatIdAtStart !== 'global' && currentOtherUid) {
+            sendPushToUser(currentOtherUid, `${currentUser.name}`, "📍 Konum gönderdi", {
+                chatId: chatIdAtStart,
+                otherUid: currentUser.uid,
+                otherName: currentUser.name
+            });
+        }
+
+        scrollToBottom();
+    } catch (err) {
+        showToast('Konum alınamadı: ' + ((err && err.message) ? err.message : 'izni ve GPS\'i kontrol et'), 3500);
+    }
 }
