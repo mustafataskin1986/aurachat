@@ -828,22 +828,11 @@ const chatFilterTabsWrapper = document.getElementById('chat-filter-tabs-wrapper'
 if (chatScrollWrapper && chatFilterTabsWrapper) {
     const searchBarEl = chatScrollWrapper.firstElementChild; // arama barı
     let pullStartY = null;
+    let pushStartY = null;
     let isPulling = false;
     let settleTimer = null;
     const PULL_OPEN_THRESHOLD = 28;
     const PULL_MAX = 60;
-
-    // Liste kısa olsa bile arama barı + çipler yukarı kayabilsin diye
-    // listeye en az kaydırma alanı yüksekliği kadar minimum yükseklik ver.
-    function updateListSlack() {
-        contactList.style.minHeight = chatScrollWrapper.clientHeight + 'px';
-    }
-    updateListSlack();
-    window.addEventListener('load', updateListSlack);
-    window.addEventListener('resize', updateListSlack);
-    if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', updateListSlack);
-    }
 
     function getFilterTabsNaturalHeight() {
         const inner = document.getElementById('chat-filter-tabs');
@@ -865,18 +854,31 @@ if (chatScrollWrapper && chatFilterTabsWrapper) {
     }
 
     chatScrollWrapper.addEventListener('touchstart', (e) => {
-        updateListSlack();
-        // Çipler zaten açıksa çekme başlatma: yukarı itince normal kaydırma
-        // çipleri ve arama barını listeyle birlikte kaydırır.
-        if (chatScrollWrapper.scrollTop <= 0 && e.touches.length === 1 && !isFilterTabsOpen()) {
-            pullStartY = e.touches[0].clientY;
-            isPulling = false;
+        isPulling = false;
+        pullStartY = null;
+        pushStartY = null;
+        if (chatScrollWrapper.scrollTop > 0 || e.touches.length !== 1) return;
+
+        if (isFilterTabsOpen()) {
+            pushStartY = e.touches[0].clientY;   // açıkken: yukarı itme takibi
         } else {
-            pullStartY = null;
+            pullStartY = e.touches[0].clientY;   // kapalıyken: aşağı çekme takibi
         }
     }, { passive: true });
 
     chatScrollWrapper.addEventListener('touchmove', (e) => {
+        // Çipler açık + liste kısa (kaydırılamıyor): yukarı itince çipleri kapat.
+        // Liste uzunsa normal kaydırma zaten hepsini birlikte kaydırır.
+        if (pushStartY !== null) {
+            const up = pushStartY - e.touches[0].clientY;
+            const scrollable = chatScrollWrapper.scrollHeight - chatScrollWrapper.clientHeight > 4;
+            if (up > 24 && !scrollable) {
+                closeFilterTabs();
+                pushStartY = null;
+            }
+            return;
+        }
+
         if (pullStartY === null || chatScrollWrapper.scrollTop > 0) return;
         const delta = e.touches[0].clientY - pullStartY;
         if (delta <= 0) return;
@@ -888,6 +890,7 @@ if (chatScrollWrapper && chatFilterTabsWrapper) {
     }, { passive: true });
 
     chatScrollWrapper.addEventListener('touchend', () => {
+        pushStartY = null;
         if (!isPulling) { pullStartY = null; return; }
         isPulling = false;
         pullStartY = null;
@@ -901,13 +904,16 @@ if (chatScrollWrapper && chatFilterTabsWrapper) {
     });
 
     chatScrollWrapper.addEventListener('touchcancel', () => {
-        isPulling = false;
+        pushStartY = null;
         pullStartY = null;
-        closeFilterTabs();
+        if (isPulling) {
+            isPulling = false;
+            closeFilterTabs();
+        }
     });
 
-    // Kaydırma durunca: çipler tamamen görüş dışındaysa sessizce kapat
-    // (scrollTop'u da aynı miktar düşürerek görüntü yerinde kalır, sıçrama olmaz)
+    // Uzun listede: çipler tamamen görüş dışına çıkınca sessizce kapat
+    // (scrollTop da aynı miktar düşer, görüntü yerinde kalır)
     chatScrollWrapper.addEventListener('scroll', () => {
         if (isPulling) return;
         clearTimeout(settleTimer);
