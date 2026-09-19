@@ -1806,6 +1806,113 @@ window.forwardImageMessage = function (msgId) {
     openForwardPicker();
 };
 
+// ------------------------------------------
+// GÜN ETİKETLERİ, "OKUNMAMIŞ MESAJ" ÇİZGİSİ VE KAYAN TARİH
+// ------------------------------------------
+function dayKeyOf(date) {
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function formatDayLabel(date) {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((startOfToday - startOfDay) / 86400000);
+    if (diffDays === 0) return 'Bugün';
+    if (diffDays === 1) return 'Dün';
+    return date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function buildDateChipElement(date) {
+    const el = document.createElement('div');
+    el.dataset.dateChip = '1';
+    el.dataset.label = formatDayLabel(date);
+    el.className = 'flex justify-center';
+    el.innerHTML = `<span class="bg-[#182229] text-gray-300 text-xs px-3 py-1 rounded-lg shadow">${el.dataset.label}</span>`;
+    return el;
+}
+
+function buildUnreadDividerElement(count) {
+    const el = document.createElement('div');
+    el.dataset.unreadDivider = '1';
+    el.className = 'flex justify-center';
+    el.innerHTML = `<span class="bg-[#182229] text-emerald-300 text-xs font-medium px-3 py-1 rounded-lg shadow">${count} okunmamış mesaj</span>`;
+    return el;
+}
+
+// Sohbet açılırken, karşı tarafın okunmamış mesajları varsa ilkinin
+// kimliğini ve sayıyı döndürür. Okundu işaretlenmeden ÖNCE çağrılmalı.
+function findUnreadDivider(session) {
+    if (session.chatId === 'global' || !currentUser) return null;
+    const all = session.olderMessagesPrepended.concat(session.messages);
+    let firstId = null;
+    let count = 0;
+    for (const { id, data: msg } of all) {
+        if (Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) continue;
+        const isMine = msg.senderUid === currentUser.uid;
+        if (!isMine && msg.read === false) {
+            if (!firstId) firstId = id;
+            count++;
+        }
+    }
+    return firstId ? { chatId: session.chatId, msgId: firstId, count: count } : null;
+}
+
+function scrollToUnreadOrBottom() {
+    requestAnimationFrame(() => {
+        const divider = messageContainer.querySelector('[data-unread-divider]');
+        if (divider) {
+            const delta = divider.getBoundingClientRect().top - messageContainer.getBoundingClientRect().top;
+            messageContainer.scrollTop += delta - 60;
+        } else {
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+    });
+}
+
+// Kaydırırken üst barın altında beliren gün etiketi (kaydırma bitince kaybolur)
+let floatingDateEl = null;
+let floatingDateHideTimer = null;
+let lastUserScrollInputAt = 0;
+
+function ensureFloatingDate() {
+    if (floatingDateEl) return floatingDateEl;
+    const el = document.createElement('div');
+    el.style.cssText = 'position:absolute;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:10;opacity:0;transition:opacity .2s;';
+    el.innerHTML = '<span class="bg-[#182229] text-gray-300 text-xs px-3 py-1 rounded-lg shadow"></span>';
+    messageContainer.parentElement.appendChild(el);
+    floatingDateEl = el;
+    return el;
+}
+
+['touchstart', 'touchmove', 'wheel'].forEach((evt) => {
+    messageContainer.addEventListener(evt, () => { lastUserScrollInputAt = Date.now(); }, { passive: true });
+});
+
+messageContainer.addEventListener('scroll', () => {
+    // Sohbet açılırken otomatik kaydırmada etiket görünmesin, sadece parmakla kaydırırken
+    if (Date.now() - lastUserScrollInputAt > 2500) return;
+
+    const chips = messageContainer.querySelectorAll('[data-date-chip]');
+    if (!chips.length) return;
+
+    const topEdge = messageContainer.getBoundingClientRect().top + 4;
+    let label = chips[0].dataset.label;
+    for (const chip of chips) {
+        if (chip.getBoundingClientRect().top <= topEdge) label = chip.dataset.label;
+        else break;
+    }
+
+    const el = ensureFloatingDate();
+    el.style.top = (messageContainer.offsetTop + 8) + 'px';
+    el.firstElementChild.textContent = label;
+    el.style.opacity = '1';
+
+    clearTimeout(floatingDateHideTimer);
+    floatingDateHideTimer = setTimeout(() => { el.style.opacity = '0'; }, 1200);
+}, { passive: true });
+
 function scrollToBottom() {
     requestAnimationFrame(() => {
         messageContainer.scrollTop = messageContainer.scrollHeight;
