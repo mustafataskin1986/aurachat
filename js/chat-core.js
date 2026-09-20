@@ -2353,6 +2353,7 @@ async function sendMessage() {
         });
 
 
+        await updateChatSummaries(text);
         pushToGroupMembers(text);
 
         if (currentChatId !== 'global' && currentOtherUid) {
