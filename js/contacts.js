@@ -309,7 +309,7 @@ export async function loadContacts() {
     onSnapshot(query(collection(db, "chats", "global", "messages"), orderBy("createdAt", "desc")), (msgSnap) => {
         if (!msgSnap.empty) {
             const lastMsg = msgSnap.docs[0].data();
-            globalPreview.textContent = (lastMsg.type === 'image') ? '📷 Fotoğraf' : lastMsg.text;
+            globalPreview.textContent = lastMsg.type === 'deleted' ? '🚫 Bu mesaj silindi' : lastMsg.type === 'location' ? '📍 Konum' : lastMsg.type === 'image' ? '📷 Fotoğraf' : lastMsg.text;
             if (lastMsg.createdAt) {
                 globalTimeSpan.textContent = formatTimestamp(lastMsg.createdAt.toDate());
             }
