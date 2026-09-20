@@ -55,7 +55,7 @@
 import { db } from "./firebase-init.js";
 import {
     collection, addDoc as rawAddDoc, onSnapshot, query, orderBy, limitToLast, limit, startAfter, where, getDocs,
-    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, getDoc, increment, Timestamp
+    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, getDoc, increment, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
@@ -85,6 +85,7 @@ let currentChatId = null;
 let currentChatName = '';
 let currentOtherUid = null;
 let currentOtherAvatar = '';
+let currentIsGroup = false;
 let typingTimeout = null;
 
 let selectionMode = false;
@@ -184,6 +185,13 @@ function formatLastSeen(ms) {
 // Başlıktaki durum satırı: önce "yazıyor...", sonra çevrimiçi, sonra son görülme
 function renderChatStatus() {
     if (!currentChatId || currentChatId === 'global') return;
+
+    if (currentIsGroup) {
+        const gs = chatSessions.get(currentChatId);
+        const memberCount = gs && gs.groupData && Array.isArray(gs.groupData.members) ? gs.groupData.members.length : 0;
+        activeChatStatus.textContent = memberCount ? `${memberCount} üye` : '';
+        return;
+    }
 
     if (presenceStatusTimer) { clearTimeout(presenceStatusTimer); presenceStatusTimer = null; }
 
@@ -348,13 +356,17 @@ function evictLruSession(protectedChatId) {
     if (lruId) {
         const s = chatSessions.get(lruId);
         if (s.unsubscribeMessages) s.unsubscribeMessages();
-        if (s.unsubscribeChatDoc) s.unsubscribeChatDoc();
+       if (s.unsubscribeChatDoc) s.unsubscribeChatDoc();
+        if (s.unsubscribeGroupDoc) s.unsubscribeGroupDoc();
         chatSessions.delete(lruId);
     }
 }
 
 async function ensureChatSession(chatId, otherUid) {
+    const isGroup = isGroupChat(chatId);
+    if (isGroup) otherUid = null;
     const existing = chatSessions.get(chatId);
+    if (existing && isGroup) existing.isGroup = true;
     if (existing) {
         existing.lastUsed = ++sessionTick;
         return existing;
@@ -363,6 +375,9 @@ async function ensureChatSession(chatId, otherUid) {
     const session = {
         chatId,
         otherUid,
+        isGroup,
+        groupData: null,
+        unsubscribeGroupDoc: null,
         messages: [],
         olderMessagesPrepended: [],
         oldestLoadedCreatedAt: null,
@@ -479,7 +494,18 @@ async function ensureChatSession(chatId, otherUid) {
         console.error("Mesajlar yüklenirken hata:", error);
     });
 
-    if (chatId !== 'global') {
+ if (isGroup) {
+        session.unsubscribeGroupDoc = onSnapshot(doc(db, "groups", chatId), (gSnap) => {
+            if (!gSnap.exists()) return;
+            session.groupData = gSnap.data();
+            if (currentChatId === chatId) {
+                activeChatName.textContent = session.groupData.name || currentChatName;
+                renderChatStatus();
+            }
+        }, () => {});
+    }
+
+    if (chatId !== 'global' && !isGroup) {
         session.unsubscribeChatDoc = onSnapshot(doc(db, "chats", chatId), (docSnap) => {
             if (!docSnap.exists()) return;
             const data = docSnap.data();
@@ -525,6 +551,14 @@ export async function prewarmChatMedia(chatId, otherUid) {
 }
 
 function markVisibleMessagesRead(session) {
+    if (session.isGroup) {
+        // Grupta okundu bilgisi tutulmuyor, sadece kendi okunmamış sayacını sıfırla
+        if (currentUser && document.visibilityState === 'visible' && session.groupResetLen !== session.messages.length) {
+            session.groupResetLen = session.messages.length;
+            updateDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), { unreadCount: 0 }).catch(() => {});
+        }
+        return;
+    }
     if (session.chatId === 'global' || !currentUser || !session.otherUid) return;
     if (document.visibilityState !== 'visible') return;
 
@@ -705,6 +739,9 @@ export async function logDeclinedCall(chatId, callerUid, callerName, calleeUid, 
 // ÖZET DOKÜMANI (users/{uid}/chats/{chatId}) GÜNCELLEME
 // ------------------------------------------
 async function updateChatSummaries(lastMessageText) {
+if (currentIsGroup) {
+        return updateGroupSummaries(lastMessageText);
+    }
     if (currentChatId === 'global' || !currentOtherUid || !currentUser) return;
 
     try {
@@ -750,7 +787,8 @@ export async function clearChatForMe(chatId) {
         const session = chatSessions.get(chatId);
         if (session) {
             if (session.unsubscribeMessages) session.unsubscribeMessages();
-            if (session.unsubscribeChatDoc) session.unsubscribeChatDoc();
+        if (session.unsubscribeChatDoc) session.unsubscribeChatDoc();
+            if (session.unsubscribeGroupDoc) session.unsubscribeGroupDoc();
             chatSessions.delete(chatId);
         }
         await deleteChatDiskCache(chatId);
@@ -765,6 +803,8 @@ export async function clearChatForMe(chatId) {
 // ------------------------------------------
 export async function selectChat(otherUser) {
     exitSelectionMode();
+    currentIsGroup = false;
+    toggleCallButtonsForGroup(false);
 
     let chatId, chatName, otherUid, otherAvatar;
 
@@ -779,6 +819,21 @@ export async function selectChat(otherUser) {
         activeChatAvatar.className = "w-10 h-10 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0";
         activeChatAvatar.innerHTML = `<i class="fa-solid fa-globe text-sm"></i>`;
         activeChatStatus.textContent = "Herkes çevrimiçi";
+    } else if (otherUser && otherUser.isGroup) {
+        chatId = otherUser.groupId;
+        chatName = otherUser.name || 'Grup';
+        otherUid = null;
+        otherAvatar = '';
+        currentIsGroup = true;
+        toggleCallButtonsForGroup(true);
+        window.__aurachatGroupIds = window.__aurachatGroupIds || new Set();
+        window.__aurachatGroupIds.add(chatId);
+
+        activeChatName.textContent = chatName;
+        activeChatStatus.textContent = '';
+        activeChatAvatar.style.backgroundColor = getUserColor(chatName);
+        activeChatAvatar.className = "w-10 h-10 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0";
+        activeChatAvatar.innerHTML = `<i class="fa-solid fa-user-group text-sm"></i>`;
     } else {
         if (!currentUser || !currentUser.uid) {
             console.warn("selectChat: currentUser.uid yok, önce setCurrentUser çağrılmalı");
@@ -833,8 +888,10 @@ export async function selectChat(otherUser) {
     recentOpenScrollLock = true;
     setTimeout(() => { recentOpenScrollLock = false; }, 1500);
 
-    watchCallForChat(chatId);
-    watchVoiceCallForChat(chatId);
+    if (!currentIsGroup) {
+        watchCallForChat(chatId);
+        watchVoiceCallForChat(chatId);
+    }
 }
  
 function doCloseChatView() {
@@ -1351,7 +1408,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
 // ALICIYSAM (gönderen değilsem), Firestore'daki kopyayı temizle.
 // Global odada dokunmuyoruz (paylaşımlı arşiv).
 function maybeStripDeliveredImage(chatId, msgId, msg) {
-    if (chatId === 'global') return;
+    if (chatId === 'global' || isGroupChat(chatId)) return;
     if (!currentUser || !msg.imageUrl) return;
     if (msg.senderUid === currentUser.uid) return;
 
@@ -1372,7 +1429,7 @@ function maybeStripDeliveredImage(chatId, msgId, msg) {
 // resimler yerel diske/IndexedDB'ye başarıyla yazıldıysa, Firestore'daki
 // images dizisini temizler (imagesDelivered:true bırakır).
 function maybeStripAlbumImages(chatId, msgId, msg, imagesCount) {
-    if (chatId === 'global') return;
+    if (chatId === 'global' || isGroupChat(chatId)) return;
     if (!currentUser || msg.senderUid === currentUser.uid) return;
     if (!Array.isArray(msg.images) || !msg.images.length) return; // zaten temizlenmiş ya da hiç yoktu
     if (!imagesCount) return;
@@ -1487,7 +1544,7 @@ let bodyHtml;
         msgDiv.className = "flex justify-start rounded-lg transition-colors";
         msgDiv.innerHTML = `
             <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
-                ${currentChatId === 'global' ? `<span class="text-[11px] font-bold text-amber-400 block mb-0.5 ${isImage ? 'px-2 pt-1' : ''}">${escapeHtml(msg.senderName)}</span>` : ''}
+              ${(currentChatId === 'global' || currentIsGroup) ? `<span class="text-[11px] font-bold text-amber-400 block mb-0.5 ${isImage ? 'px-2 pt-1' : ''}">${escapeHtml(msg.senderName)}</span>` : ''}
                 ${forwardedLabel}
                 ${bodyHtml}
                 ${timeHtml}
@@ -1940,7 +1997,7 @@ function buildUnreadDividerElement(count) {
 // Sohbet açılırken, karşı tarafın okunmamış mesajları varsa ilkinin
 // kimliğini ve sayıyı döndürür. Okundu işaretlenmeden ÖNCE çağrılmalı.
 function findUnreadDivider(session) {
-    if (session.chatId === 'global' || !currentUser) return null;
+  if (session.chatId === 'global' || session.isGroup || !currentUser) return null;
     const all = session.olderMessagesPrepended.concat(session.messages);
     let firstId = null;
     let count = 0;
@@ -2197,7 +2254,7 @@ async function sendMessage() {
     if (!text || !currentUser || !currentChatId) return;
 
     try {
-        if (currentChatId !== 'global') {
+      if (currentChatId !== 'global' && !currentIsGroup) {
             await setDoc(doc(db, "chats", currentChatId), {
                 [`typing_${currentUser.uid}`]: false
             }, { merge: true });
@@ -2214,7 +2271,7 @@ async function sendMessage() {
         });
 
 
-        await updateChatSummaries(text);
+        pushToGroupMembers(text);
 
         if (currentChatId !== 'global' && currentOtherUid) {
             sendPushToUser(currentOtherUid, `${currentUser.name}`, text, {
@@ -2240,7 +2297,7 @@ messageInput.addEventListener('keypress', (e) => {
 });
 
 messageInput.addEventListener('input', () => {
-    if (!currentChatId || currentChatId === 'global' || !currentUser) return;
+  if (!currentChatId || currentChatId === 'global' || currentIsGroup || !currentUser) return;
 
     setDoc(doc(db, "chats", currentChatId), {
         [`typing_${currentUser.uid}`]: true
@@ -2401,6 +2458,7 @@ if (attachBtn && imageInput) {
             }
 
             await updateChatSummaries(compressed.length > 1 ? `📷 ${compressed.length} Fotoğraf` : '📷 Fotoğraf');
+            pushToGroupMembers(compressed.length > 1 ? `📷 ${compressed.length} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi");
 
             if (currentChatId !== 'global' && currentOtherUid) {
                 sendPushToUser(currentOtherUid, `${currentUser.name}`, compressed.length > 1 ? `📷 ${compressed.length} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi", {
@@ -2463,6 +2521,7 @@ async function sendCurrentLocation() {
         });
 
         await updateChatSummaries('📍 Konum');
+        pushToGroupMembers("📍 Konum gönderdi");
 
         if (chatIdAtStart !== 'global' && currentOtherUid) {
             sendPushToUser(currentOtherUid, `${currentUser.name}`, "📍 Konum gönderdi", {
@@ -2475,5 +2534,94 @@ async function sendCurrentLocation() {
         scrollToBottom();
     } catch (err) {
         showToast('Konum alınamadı: ' + ((err && err.message) ? err.message : 'izni ve GPS\'i kontrol et'), 3500);
+    }
+}
+
+// ------------------------------------------
+// GRUP YARDIMCILARI
+// ------------------------------------------
+function toggleCallButtonsForGroup(isGroup) {
+    ['voice-call-btn', 'video-call-btn'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = isGroup ? 'none' : '';
+    });
+}
+
+function isGroupChat(chatId) {
+    if (window.__aurachatGroupIds && window.__aurachatGroupIds.has(chatId)) return true;
+    const s = chatSessions.get(chatId);
+    return !!(s && s.isGroup);
+}
+
+async function getGroupData(chatId) {
+    const s = chatSessions.get(chatId);
+    if (s && s.groupData) return s.groupData;
+    const snap = await getDoc(doc(db, "groups", chatId));
+    return snap.exists() ? snap.data() : null;
+}
+
+// Grupta her üyenin liste özetini günceller (son mesaj + okunmamış sayacı)
+async function updateGroupSummaries(lastMessageText) {
+    if (!currentUser || !currentChatId) return;
+    const groupId = currentChatId;
+    try {
+        const gd = await getGroupData(groupId);
+        if (!gd) return;
+
+        await Promise.all((gd.members || []).map((memberUid) => setDoc(doc(db, "users", memberUid, "chats", groupId), {
+            isGroup: true,
+            groupName: gd.name,
+            lastMessage: lastMessageText,
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: currentUser.uid,
+            lastSenderName: currentUser.name,
+            lastMessageRead: false,
+            unreadCount: memberUid === currentUser.uid ? 0 : increment(1),
+            updatedAt: serverTimestamp()
+        }, { merge: true })));
+    } catch (err) {
+        console.error("Grup özetleri güncellenemedi:", err);
+    }
+}
+
+// Grup mesajında gönderen hariç herkese bildirim
+async function pushToGroupMembers(bodyText) {
+    if (!currentIsGroup || !currentChatId || !currentUser) return;
+    const groupId = currentChatId;
+    try {
+        const gd = await getGroupData(groupId);
+        if (!gd) return;
+        (gd.members || []).forEach((memberUid) => {
+            if (memberUid === currentUser.uid) return;
+            sendPushToUser(memberUid, gd.name || 'Grup', `${currentUser.name}: ${bodyText}`, {
+                chatId: groupId,
+                otherUid: groupId,
+                otherName: gd.name || 'Grup'
+            });
+        });
+    } catch (err) {
+        console.warn("Grup bildirimi gönderilemedi:", err);
+    }
+}
+
+export async function leaveGroup(groupId) {
+    if (!currentUser || !groupId) return;
+
+    const session = chatSessions.get(groupId);
+    if (session) {
+        if (session.unsubscribeMessages) session.unsubscribeMessages();
+        if (session.unsubscribeGroupDoc) session.unsubscribeGroupDoc();
+        chatSessions.delete(groupId);
+    }
+
+    await updateDoc(doc(db, "groups", groupId), { members: arrayRemove(currentUser.uid) });
+    await deleteDoc(doc(db, "users", currentUser.uid, "chats", groupId));
+    await deleteChatDiskCache(groupId);
+    if (window.__aurachatGroupIds) window.__aurachatGroupIds.delete(groupId);
+
+    if (currentChatId === groupId) {
+        const wasMobile = window.innerWidth < 1024;
+        doCloseChatView();
+        if (wasMobile) popBackState();
     }
 }
