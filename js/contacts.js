@@ -1,19 +1,18 @@
 // ==========================================
 // KİŞİ LİSTESİ + ADMİN PANEL
 //
-// GÜNCELLEME: Avatarlar WhatsApp mantığıyla cihaza yerel dosya
-// olarak önbelleğe alınıyor (Capacitor Filesystem). İlk açılışta
-// baş harf/initials placeholder gösteriliyor, arkaplanda avatar
-// cihaza yazılıyor/okunuyor, hazır olunca yerine geçiyor.
+// Avatarlar cihaza yerel dosya olarak önbelleğe alınıyor (Capacitor
+// Filesystem). İlk açılışta baş harf placeholder'ı gösteriliyor,
+// arkaplanda avatar cihaza yazılıp hazır olunca yerine geçiyor.
 //
-// GÜNCELLEME (filtre çipleri): Modal tabanlı "Arşiv" yaklaşımı
-// kaldırıldı, yerine WhatsApp'taki gibi anlık filtre çipleri geldi
-// (Tümü / Okunmamış / Favoriler). "archived" alanı artık aynı
-// Firestore alanı üzerinden "favori" anlamına geliyor - gizlenmiyor,
-// Favoriler sekmesinde canlı olarak listede kalıyor. Sohbet seçim
-// modunda avatarın sağ alt köşesinde yeşil tik rozeti gösteriliyor,
-// Sabitle ve Favorile butonları var (pinned/archived alanları
+// Filtre çipleri: Tümü / Okunmamış / Favoriler / Gruplar.
+// "archived" alanı "favori" anlamına geliyor. Sohbet seçim modunda
+// avatarın sağ alt köşesinde yeşil tik rozeti çıkıyor, Sabitle ve
+// Favorile butonları var (pinned/archived alanları
 // users/{uid}/chats/{chatId} dokümanında tutuluyor).
+//
+// Gruplar: users/{uid}/chats/{groupId} özet dokümanında isGroup:true
+// ve groupName alanı var, liste satırı 1'e 1 sohbetle aynı çizilir.
 // ==========================================
 
 import { db, ADMIN_EMAIL } from "./firebase-init.js";
@@ -44,12 +43,11 @@ const chatSelectionArchiveBtn = document.getElementById('chat-selection-archive-
 
 const contactElementsMap = new Map();
 let dynamicListContainer = null;
-let globalDivRef = null;
 
 let chatSelectionMode = false;
 const selectedChatIds = new Set();
 
-// Filtre çipi durumu - 'all' | 'unread' | 'favorites'
+// Filtre çipi durumu - 'all' | 'unread' | 'favorites' | 'groups'
 let activeFilter = 'all';
 
 // Yeniden çizim tetikleyicisi - filtre çipine basınca dışarıdan çağrılır
@@ -62,7 +60,6 @@ const AVATAR_CACHE_DIR = 'avatars';
 const avatarUriCache = new Map(); // "uid:hash" -> yerel dosyanın gösterilebilir src'si
 
 // Avatar her değiştiğinde farklı bir dosya adı üretmek için basit hash.
-// Kriptografik güvenlik gerekmiyor, sadece "bu avatar değişti mi" ayrımı.
 function shortAvatarHash(base64Str) {
     let hash = 0;
     for (let i = 0; i < base64Str.length; i += 37) {
@@ -71,9 +68,6 @@ function shortAvatarHash(base64Str) {
     return Math.abs(hash).toString(36);
 }
 
-// Base64 avatarı cihaza dosya olarak yazar (bir kez), sonraki
-// çağrılarda direkt yerel dosyadan okur. Capacitor Filesystem yoksa
-// (web/PWA) eski davranışa döner: base64'ü olduğu gibi kullanır.
 const avatarInflight = new Map(); // cacheKey -> Promise
 
 function resolveLocalAvatar(uid, base64Avatar) {
@@ -95,7 +89,7 @@ async function doResolveLocalAvatar(uid, base64Avatar, cacheKey) {
         return base64Avatar;
     }
 
-    // Avatar bir internet adresiyse (örn. Google profil fotoğrafı) diske base64 gibi yazılamaz, olduğu gibi kullan
+    // Avatar bir internet adresiyse (örn. Google profil fotoğrafı) olduğu gibi kullan
     if (typeof base64Avatar !== 'string' || /^https?:\/\//i.test(base64Avatar)) {
         return base64Avatar;
     }
@@ -240,6 +234,7 @@ function updateFilterChipLabels(unreadCount, favoritesCount) {
     if (unreadChip) unreadChip.textContent = unreadCount > 0 ? `Okunmamış ${unreadCount}` : 'Okunmamış';
     if (favChip) favChip.textContent = favoritesCount > 0 ? `Favoriler ${favoritesCount}` : 'Favoriler';
 }
+
 // ------------------------------------------
 // KİŞİLERİ YÜKLE
 // ------------------------------------------
@@ -284,16 +279,31 @@ export async function loadContacts() {
         console.warn("Rehber okunurken bir durum oluştu:", err);
     }
 
-    
-
     dynamicListContainer = document.createElement('div');
 
     let allUsersById = new Map();
-    window.__aurachatUsers = allUsersById; // ilet ekranı bu listeyi kullanıyor
+    window.__aurachatUsers = allUsersById; // ilet ekranı ve grup ekranları bu listeyi kullanıyor
     let myChats = new Map();
     let usersLoaded = false;
     let chatsLoaded = false;
     let listMounted = false;
+
+    function mergeLiveUser(chatData) {
+        const liveUser = allUsersById.get(chatData.otherUid);
+        return {
+            ...chatData,
+            otherName: liveUser ? liveUser.name : chatData.otherName,
+            otherAvatar: liveUser ? (liveUser.avatar || '') : chatData.otherAvatar
+        };
+    }
+
+    function isClearedChat(chatData) {
+        const clearedAt = chatData.clearedAt;
+        if (!clearedAt) return false;
+        const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
+        const clearedAtMs = clearedAt.toDate().getTime();
+        return lastTimeMs <= clearedAtMs;
+    }
 
     function renderAll() {
         if (!usersLoaded || !chatsLoaded) return;
@@ -303,7 +313,6 @@ export async function loadContacts() {
             contactList.appendChild(dynamicListContainer);
             listMounted = true;
         }
-
 
         let unreadChatsCount = 0;
         let favoritesCount = 0;
@@ -319,16 +328,11 @@ export async function loadContacts() {
         contactElementsMap.clear();
         exitChatSelectionMode();
 
-     if (activeFilter === 'groups') {
+        if (activeFilter === 'groups') {
             // Sadece grup sohbetleri
             myChats.forEach((chatData, chatId) => {
                 if (!chatData.isGroup) return;
-
-                const clearedAt = chatData.clearedAt;
-                const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
-                const clearedAtMs = clearedAt ? clearedAt.toDate().getTime() : 0;
-                if (clearedAt && lastTimeMs <= clearedAtMs) return;
-
+                if (isClearedChat(chatData)) return;
                 renderChatItem(chatId, chatData);
             });
 
@@ -339,57 +343,30 @@ export async function loadContacts() {
             // Sadece favorilenen (eski adıyla "archived") sohbetler
             myChats.forEach((chatData, chatId) => {
                 if (!chatData.archived) return;
-                const liveUser = allUsersById.get(chatData.otherUid);
-                const mergedChatData = {
-                    ...chatData,
-                    otherName: liveUser ? liveUser.name : chatData.otherName,
-                    otherAvatar: liveUser ? (liveUser.avatar || '') : chatData.otherAvatar
-                };
-                renderChatItem(chatId, mergedChatData);
+                renderChatItem(chatId, mergeLiveUser(chatData));
             });
 
             if (dynamicListContainer.children.length === 0) {
                 renderEmptyStateRow("Henüz favori sohbetin yok kanka. Bir sohbeti uzun basıp favorile.");
             }
-} else if (activeFilter === 'unread') {
+        } else if (activeFilter === 'unread') {
             // Sadece okunmamış mesajı olan sohbetler (favoriler dahil)
             myChats.forEach((chatData, chatId) => {
                 const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
                 const unreadCount = isLastMsgMine ? 0 : (chatData.unreadCount || 0);
                 if (unreadCount <= 0) return;
-
-                const clearedAt = chatData.clearedAt;
-                const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
-                const clearedAtMs = clearedAt ? clearedAt.toDate().getTime() : 0;
-                if (clearedAt && lastTimeMs <= clearedAtMs) return;
-
-                const liveUser = allUsersById.get(chatData.otherUid);
-                const mergedChatData = {
-                    ...chatData,
-                    otherName: liveUser ? liveUser.name : chatData.otherName,
-                    otherAvatar: liveUser ? (liveUser.avatar || '') : chatData.otherAvatar
-                };
-                renderChatItem(chatId, mergedChatData);
+                if (isClearedChat(chatData)) return;
+                renderChatItem(chatId, mergeLiveUser(chatData));
             });
 
             if (dynamicListContainer.children.length === 0) {
                 renderEmptyStateRow("Okunmamış mesajın yok kanka.");
             }
-   } else {
-            // "Tümü" - favoriler dahil hepsi
+        } else {
+            // "Tümü" - favoriler ve gruplar dahil hepsi
             myChats.forEach((chatData, chatId) => {
-                const clearedAt = chatData.clearedAt;
-                const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
-                const clearedAtMs = clearedAt ? clearedAt.toDate().getTime() : 0;
-                if (clearedAt && lastTimeMs <= clearedAtMs) return;
-
-                const liveUser = allUsersById.get(chatData.otherUid);
-                const mergedChatData = {
-                    ...chatData,
-                    otherName: liveUser ? liveUser.name : chatData.otherName,
-                    otherAvatar: liveUser ? (liveUser.avatar || '') : chatData.otherAvatar
-                };
-                renderChatItem(chatId, mergedChatData);
+                if (isClearedChat(chatData)) return;
+                renderChatItem(chatId, mergeLiveUser(chatData));
             });
 
             allUsersById.forEach((user, uid) => {
@@ -420,7 +397,7 @@ export async function loadContacts() {
 
     function prewarmTopChats() {
         const warmCandidates = Array.from(contactElementsMap.entries())
-            ..filter(([, item]) => item.hasChat && (item.otherUid || item.isGroup))
+            .filter(([, item]) => item.hasChat && (item.otherUid || item.isGroup))
             .sort((a, b) => {
                 const ai = a[1], bi = b[1];
                 if (ai.pinned && !bi.pinned) return -1;
@@ -432,13 +409,14 @@ export async function loadContacts() {
             .slice(0, 3);
 
         warmCandidates.forEach(([chatId, item]) => {
-            prewarmChatSession(chatId, item.otherUid);
+            prewarmChatSession(chatId, item.otherUid || null);
         });
     }
 
     function renderChatItem(chatId, chatData) {
         const isGroup = !!chatData.isGroup;
         const displayName = isGroup ? (chatData.groupName || 'Grup') : (chatData.otherName || '');
+
         const userDiv = document.createElement('div');
         userDiv.className = "contact-list-item flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
         userDiv.dataset.chatId = chatId;
@@ -456,17 +434,24 @@ export async function loadContacts() {
 
         const pinIconHtml = chatData.pinned ? `<i class="fa-solid fa-thumbtack text-[10px] text-amber-400 mr-1"></i>` : '';
 
+        let previewPrefix = '';
+        if (isLastMsgMine) {
+            previewPrefix = 'Siz: ';
+        } else if (isGroup && chatData.lastSenderName) {
+            previewPrefix = escapeHtml(chatData.lastSenderName) + ': ';
+        }
+
         userDiv.innerHTML = `
             ${wrapAvatarWithSelectionBadge(chatId)}
             <div class="flex-1 overflow-hidden ml-3">
                 <div class="flex justify-between items-baseline">
-                 <h4 class="text-white font-medium text-sm">${pinIconHtml}${escapeHtml(displayName)}</h4>
+                    <h4 class="text-white font-medium text-sm">${pinIconHtml}${escapeHtml(displayName)}</h4>
                     <span class="text-[11px] text-gray-400">${lastTime}</span>
                 </div>
                 <div class="flex justify-between items-center mt-0.5">
                     <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
                         ${tickHtml}
-                       <span class="preview-text truncate">${isLastMsgMine ? 'Siz: ' : (isGroup && chatData.lastSenderName ? escapeHtml(chatData.lastSenderName) + ': ' : '')}${escapeHtml(lastText)}</span>
+                        <span class="preview-text truncate">${previewPrefix}${escapeHtml(lastText)}</span>
                     </p>
                     ${unreadCount > 0 ? `<div class="unread-badge bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2">${unreadCount}</div>` : ''}
                 </div>
@@ -481,12 +466,11 @@ export async function loadContacts() {
         }
 
         userDiv.addEventListener('click', () => {
-            if (!chatSelectionMode) {
-                if (isGroup) {
-                    selectChat({ isGroup: true, groupId: chatId, name: displayName });
-                } else {
-                    selectChat({ uid: chatData.otherUid, name: chatData.otherName, avatar: chatData.otherAvatar || '' });
-                }
+            if (chatSelectionMode) return;
+            if (isGroup) {
+                selectChat({ isGroup: true, groupId: chatId, name: displayName });
+            } else {
+                selectChat({ uid: chatData.otherUid, name: chatData.otherName, avatar: chatData.otherAvatar || '' });
             }
         });
 
@@ -501,7 +485,7 @@ export async function loadContacts() {
             archived: !!chatData.archived,
             hasChat: true,
             otherUid: chatData.otherUid,
-            isGroup: !!chatData.isGroup
+            isGroup: isGroup
         });
         dynamicListContainer.appendChild(userDiv);
     }
@@ -558,10 +542,12 @@ export async function loadContacts() {
 
     onSnapshot(query(collection(db, "users", currentUser.uid, "chats"), orderBy("updatedAt", "desc")), (snapshot) => {
         myChats.clear();
+        if (!window.__aurachatGroupIds) window.__aurachatGroupIds = new Set();
         snapshot.forEach((docSnap) => {
-            myChats.set(docSnap.id, docSnap.data());
-            if (docSnap.data().isGroup) {
-                (window.__aurachatGroupIds = window.__aurachatGroupIds || new Set()).add(docSnap.id);
+            const data = docSnap.data();
+            myChats.set(docSnap.id, data);
+            if (data.isGroup) {
+                window.__aurachatGroupIds.add(docSnap.id);
             }
         });
         chatsLoaded = true;
