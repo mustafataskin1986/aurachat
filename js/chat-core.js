@@ -186,10 +186,21 @@ function formatLastSeen(ms) {
 function renderChatStatus() {
     if (!currentChatId || currentChatId === 'global') return;
 
-    if (currentIsGroup) {
+if (currentIsGroup) {
         const gs = chatSessions.get(currentChatId);
-        const memberCount = gs && gs.groupData && Array.isArray(gs.groupData.members) ? gs.groupData.members.length : 0;
-        activeChatStatus.textContent = memberCount ? `${memberCount} üye` : '';
+        if (gs && gs.typingNames && gs.typingNames.length) {
+            const label = gs.typingNames.length <= 2 ? gs.typingNames.join(', ') + ' yazıyor...' : gs.typingNames.length + ' kişi yazıyor...';
+            activeChatStatus.innerHTML = `<span class="text-emerald-400 font-medium animate-pulse">${escapeHtml(label)}</span>`;
+            return;
+        }
+        const memberUids = gs && gs.groupData && Array.isArray(gs.groupData.members) ? gs.groupData.members : [];
+        const usersMap = window.__aurachatUsers;
+        const names = memberUids.map((uid) => {
+            if (currentUser && uid === currentUser.uid) return 'Sen';
+            const u = usersMap && usersMap.get(uid);
+            return u && u.name ? u.name : '';
+        }).filter(Boolean);
+        activeChatStatus.innerHTML = `<span class="text-gray-400 font-medium">${escapeHtml(names.join(', '))}</span>`;
         return;
     }
 
@@ -392,6 +403,13 @@ async function ensureChatSession(chatId, otherUid) {
     evictLruSession(chatId);
     if (!chatSessions.has(chatId)) return session;
 
+    if (isGroup) {
+        try {
+            const gSnap = await getDoc(doc(db, "groups", chatId));
+            if (gSnap.exists()) session.groupData = gSnap.data();
+        } catch (e) {}
+    }
+
     const diskCache = await readChatDiskCache(chatId);
     if (diskCache) {
         session.messages = diskCache.messages;
@@ -505,11 +523,21 @@ async function ensureChatSession(chatId, otherUid) {
         }, () => {});
     }
 
-    if (chatId !== 'global' && !isGroup) {
+ if (chatId !== 'global') {
         session.unsubscribeChatDoc = onSnapshot(doc(db, "chats", chatId), (docSnap) => {
             if (!docSnap.exists()) return;
             const data = docSnap.data();
-            session.otherTyping = !!(otherUid && data[`typing_${otherUid}`]);
+            if (isGroup) {
+                const usersMapT = window.__aurachatUsers;
+                session.typingNames = Object.keys(data)
+                    .filter((k) => k.startsWith('typing_') && data[k] === true && k !== `typing_${currentUser ? currentUser.uid : ''}`)
+                    .map((k) => {
+                        const u = usersMapT && usersMapT.get(k.slice(7));
+                        return u && u.name ? u.name : 'Biri';
+                    });
+            } else {
+                session.otherTyping = !!(otherUid && data[`typing_${otherUid}`]);
+            }
             if (currentChatId === chatId) renderChatStatus();
         });
     }
@@ -551,11 +579,32 @@ export async function prewarmChatMedia(chatId, otherUid) {
 }
 
 function markVisibleMessagesRead(session) {
-    if (session.isGroup) {
-        // Grupta okundu bilgisi tutulmuyor, sadece kendi okunmamış sayacını sıfırla
-        if (currentUser && document.visibilityState === 'visible' && session.groupResetLen !== session.messages.length) {
-            session.groupResetLen = session.messages.length;
+if (session.isGroup) {
+        if (!currentUser || document.visibilityState !== 'visible') return;
+
+        let markedAny = false;
+        session.messages.forEach(({ id, data: msg }) => {
+            if (msg.senderUid === currentUser.uid || msg.type === 'system') return;
+            const readBy = Array.isArray(msg.readBy) ? msg.readBy : [];
+            if (!readBy.includes(currentUser.uid)) {
+                updateDoc(doc(db, "chats", session.chatId, "messages", id), { readBy: arrayUnion(currentUser.uid) }).catch(() => {});
+                markedAny = true;
+            }
+        });
+
+        if (markedAny) {
             updateDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), { unreadCount: 0 }).catch(() => {});
+
+            // Son mesajı herkes okuduysa gönderenin listesinde tik maviye dönsün
+            const lastEntry = session.messages[session.messages.length - 1];
+            const members = session.groupData && Array.isArray(session.groupData.members) ? session.groupData.members : [];
+            if (lastEntry && lastEntry.data.senderUid !== currentUser.uid && lastEntry.data.type !== 'system' && members.length) {
+                const readSoFar = (Array.isArray(lastEntry.data.readBy) ? lastEntry.data.readBy : []).concat([currentUser.uid]);
+                const allRead = members.filter((uid) => uid !== lastEntry.data.senderUid).every((uid) => readSoFar.includes(uid));
+                if (allRead) {
+                    updateDoc(doc(db, "users", lastEntry.data.senderUid, "chats", session.chatId), { lastMessageRead: true }).catch(() => {});
+                }
+            }
         }
         return;
     }
@@ -739,7 +788,7 @@ export async function logDeclinedCall(chatId, callerUid, callerName, calleeUid, 
 // ÖZET DOKÜMANI (users/{uid}/chats/{chatId}) GÜNCELLEME
 // ------------------------------------------
 async function updateChatSummaries(lastMessageText) {
-if (currentIsGroup) {
+if (currentIsGroup || isGroupChat(currentChatId)) {
         return updateGroupSummaries(lastMessageText);
     }
     if (currentChatId === 'global' || !currentOtherUid || !currentUser) return;
@@ -1035,6 +1084,20 @@ if (selectionDeleteBtn) {
                         lng: null
                     });
                     everyoneDeletedIds.add(id);
+// Grup: mesajı henüz okumamış üyelerin bildirimini "silindi" ile değiştir
+                    if (currentIsGroup && delEntry && sessionForDelete && sessionForDelete.groupData) {
+                        const gdDel = sessionForDelete.groupData;
+                        const readByDel = Array.isArray(delEntry.data.readBy) ? delEntry.data.readBy : [];
+                        (gdDel.members || []).forEach((memberUid) => {
+                            if (memberUid === currentUser.uid || readByDel.includes(memberUid)) return;
+                            sendPushToUser(memberUid, gdDel.name || 'Grup', "🚫 Bu mesaj silindi", {
+                                chatId: chatIdAtDeleteTime,
+                                otherUid: chatIdAtDeleteTime,
+                                otherName: gdDel.name || 'Grup',
+                                tag: `msg-${id}`
+                            });
+                        });
+                    }
 
                     // Karşı taraf mesajı henüz okumadıysa bildirimi "silindi" ile değiştir
                     if (wasUnread && chatIdAtDeleteTime !== 'global' && currentOtherUid) {
@@ -1059,6 +1122,11 @@ if (selectionDeleteBtn) {
         try {
             const sessForSummary = chatSessions.get(chatIdAtDeleteTime);
             const lastEntry = sessForSummary && sessForSummary.messages[sessForSummary.messages.length - 1];
+        if (lastEntry && everyoneDeletedIds.has(lastEntry.id) && currentIsGroup && sessForSummary.groupData) {
+                await Promise.allSettled((sessForSummary.groupData.members || []).map((memberUid) =>
+                    setDoc(doc(db, "users", memberUid, "chats", chatIdAtDeleteTime), { lastMessage: '🚫 Bu mesaj silindi' }, { merge: true })
+                ));
+            }
             if (lastEntry && everyoneDeletedIds.has(lastEntry.id) && chatIdAtDeleteTime !== 'global' && currentOtherUid) {
                 await setDoc(doc(db, "users", currentUser.uid, "chats", chatIdAtDeleteTime), { lastMessage: '🚫 Bu mesaj silindi' }, { merge: true });
                 await setDoc(doc(db, "users", currentOtherUid, "chats", chatIdAtDeleteTime), { lastMessage: '🚫 Bu mesaj silindi' }, { merge: true });
@@ -1526,11 +1594,12 @@ let bodyHtml;
         : '';
 
     if (isMine) {
-        const tickColor = msg.read ? 'text-[#53bdeb]' : 'text-gray-400';
+        const isReadByAll = currentIsGroup ? groupMessageReadByAll(msg) : !!msg.read;
+        const tickColor = isReadByAll ? 'text-[#53bdeb]' : 'text-gray-400';
         const timeHtml = isImage
             ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1 bg-black/45 rounded-full px-1.5 py-0.5">
                     <span class="text-[10px] text-white">${timeStr}</span>
-                    <i class="fa-solid fa-check-double text-[10px] ${msg.read ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
+                <i class="fa-solid fa-check-double text-[10px] ${isReadByAll ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
                </div>`
             : `<div class="flex items-center justify-end space-x-1 mt-1">
                     <span class="text-[10px] text-emerald-200">${timeStr}</span>
@@ -2007,14 +2076,17 @@ function buildUnreadDividerElement(count) {
 // Sohbet açılırken, karşı tarafın okunmamış mesajları varsa ilkinin
 // kimliğini ve sayıyı döndürür. Okundu işaretlenmeden ÖNCE çağrılmalı.
 function findUnreadDivider(session) {
-  if (session.chatId === 'global' || session.isGroup || !currentUser) return null;
+if (session.chatId === 'global' || !currentUser) return null;
     const all = session.olderMessagesPrepended.concat(session.messages);
     let firstId = null;
     let count = 0;
     for (const { id, data: msg } of all) {
         if (Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) continue;
         const isMine = msg.senderUid === currentUser.uid;
-        if (!isMine && msg.read === false) {
+        const unreadForMe = session.isGroup
+            ? (msg.type !== 'system' && !(Array.isArray(msg.readBy) && msg.readBy.includes(currentUser.uid)))
+            : msg.read === false;
+        if (!isMine && unreadForMe) {
             if (!firstId) firstId = id;
             count++;
         }
@@ -2264,7 +2336,7 @@ async function sendMessage() {
     if (!text || !currentUser || !currentChatId) return;
 
     try {
-      if (currentChatId !== 'global' && !currentIsGroup) {
+   if (currentChatId !== 'global') {
             await setDoc(doc(db, "chats", currentChatId), {
                 [`typing_${currentUser.uid}`]: false
             }, { merge: true });
@@ -2307,7 +2379,7 @@ messageInput.addEventListener('keypress', (e) => {
 });
 
 messageInput.addEventListener('input', () => {
-  if (!currentChatId || currentChatId === 'global' || currentIsGroup || !currentUser) return;
+if (!currentChatId || currentChatId === 'global' || !currentUser) return;
 
     setDoc(doc(db, "chats", currentChatId), {
         [`typing_${currentUser.uid}`]: true
@@ -2608,7 +2680,7 @@ async function updateGroupSummaries(lastMessageText) {
 
 // Grup mesajında gönderen hariç herkese bildirim
 async function pushToGroupMembers(bodyText) {
-    if (!currentIsGroup || !currentChatId || !currentUser) return;
+if (!currentChatId || !isGroupChat(currentChatId) || !currentUser) return;
     const groupId = currentChatId;
     try {
         const gd = await getGroupData(groupId);
@@ -2687,4 +2759,12 @@ export async function leaveGroup(groupId) {
         doCloseChatView();
         if (wasMobile) popBackState();
     }
+}
+
+function groupMessageReadByAll(msg) {
+    const s = chatSessions.get(currentChatId);
+    const members = s && s.groupData && Array.isArray(s.groupData.members) ? s.groupData.members : [];
+    const readBy = Array.isArray(msg.readBy) ? msg.readBy : [];
+    const others = members.filter((uid) => uid !== msg.senderUid);
+    return others.length > 0 && others.every((uid) => readBy.includes(uid));
 }
