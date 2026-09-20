@@ -2,12 +2,15 @@
 <html lang="tr">
 <head>
 <script>
-(function () {
+((function () {
     var shown = 0;
+    var seen = {};
     function report(kind, msg, src, line, col) {
         try {
             var file = (src || '').split('/').pop().split('?')[0] || 'bilinmeyen dosya';
             var text = kind + ': ' + msg + '\n' + file + (line ? ' satır ' + line + (col ? ':' + col : '') : '');
+            if (seen[text]) return; // aynı hata tekrar tekrar çıkmasın
+            seen[text] = true;
             var box = document.getElementById('aura-error-box');
             if (!box) {
                 box = document.createElement('div');
@@ -22,20 +25,33 @@
             item.style.cssText = 'padding:4px 0;border-bottom:1px solid rgba(255,255,255,.25);';
             item.textContent = text;
             box.appendChild(item);
+            clearTimeout(box._hideTimer);
+            box._hideTimer = setTimeout(function () { box.remove(); shown = 0; }, 12000);
         } catch (e) {}
     }
     window.addEventListener('error', function (e) {
         var t = e.target;
-        if (t && t !== window && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) {
-            report('Dosya yüklenemedi', '', t.src || t.href, 0, 0);
+        if (t && t !== window) {
+            // Resim/video/ses yüklenemedi olayları gürültü: sadece script/css dosyası yüklenemezse bildir
+            if (t.tagName === 'SCRIPT' || t.tagName === 'LINK') {
+                report('Dosya yüklenemedi', '', t.src || t.href, 0, 0);
+            }
             return;
         }
+        if (/ResizeObserver loop/.test(e.message || '')) return;
+        if (!e.message && !e.filename) return; // içi boş hata olayı
         report('Hata', e.message || 'bilinmeyen', e.filename, e.lineno, e.colno);
     }, true);
     window.addEventListener('unhandledrejection', function (e) {
         var r = e.reason;
+        if (r === undefined || r === null) return; // içi boş söz hatası: bilgi yok
         var m = (r && r.stack) ? String(r.stack).match(/([^\s()]+):(\d+):(\d+)/) : null;
-        report('Söz hatası', (r && r.message) ? r.message : String(r), m ? m[1] : '', m ? m[2] : 0, m ? m[3] : 0);
+        var msg = (r && r.message) ? r.message : '';
+        if (!msg) {
+            try { msg = (typeof r === 'string') ? r : JSON.stringify(r); } catch (err) { msg = String(r); }
+        }
+        if (!msg || msg === '{}') return;
+        report('Söz hatası', String(msg).slice(0, 300), m ? m[1] : '', m ? m[2] : 0, m ? m[3] : 0);
     });
 })();
 </script>
