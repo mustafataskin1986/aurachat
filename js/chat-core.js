@@ -1468,6 +1468,16 @@ function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
 }
 
 function buildMessageElement(msg, isMine, msgId) {
+    // Sistem mesajı (örn. "X gruptan ayrıldı"): ortada küçük etiket
+    if (msg.type === 'system') {
+        const sysDiv = document.createElement('div');
+        sysDiv.dataset.msgId = msgId;
+        sysDiv.dataset.mine = 'false';
+        sysDiv.className = 'flex justify-center';
+        sysDiv.innerHTML = `<span class="bg-[#182229] text-gray-300 text-xs px-3 py-1 rounded-lg shadow">${escapeHtml(msg.text || '')}</span>`;
+        messageElementsById.set(msgId, sysDiv);
+        return sysDiv;
+    }
     const msgDiv = document.createElement('div');
     msgDiv.dataset.msgId = msgId;
     msgDiv.dataset.mine = isMine ? 'true' : 'false';
@@ -2564,23 +2574,35 @@ async function getGroupData(chatId) {
 async function updateGroupSummaries(lastMessageText) {
     if (!currentUser || !currentChatId) return;
     const groupId = currentChatId;
-    try {
-        const gd = await getGroupData(groupId);
-        if (!gd) return;
 
-        await Promise.all((gd.members || []).map((memberUid) => setDoc(doc(db, "users", memberUid, "chats", groupId), {
-            isGroup: true,
-            groupName: gd.name,
-            lastMessage: lastMessageText,
-            lastMessageTime: serverTimestamp(),
-            lastSenderUid: currentUser.uid,
-            lastSenderName: currentUser.name,
-            lastMessageRead: false,
-            unreadCount: memberUid === currentUser.uid ? 0 : increment(1),
-            updatedAt: serverTimestamp()
-        }, { merge: true })));
+    let gd = null;
+    try {
+        gd = await getGroupData(groupId);
     } catch (err) {
-        console.error("Grup özetleri güncellenemedi:", err);
+        showToast('Grup bilgisi okunamadı: ' + (err.message || err), 4000);
+        return;
+    }
+    if (!gd) {
+        showToast('Grup bulunamadı', 3000);
+        return;
+    }
+
+    const results = await Promise.allSettled((gd.members || []).map((memberUid) => setDoc(doc(db, "users", memberUid, "chats", groupId), {
+        isGroup: true,
+        groupName: gd.name,
+        lastMessage: lastMessageText,
+        lastMessageTime: serverTimestamp(),
+        lastSenderUid: currentUser.uid,
+        lastSenderName: currentUser.name,
+        lastMessageRead: false,
+        unreadCount: memberUid === currentUser.uid ? 0 : increment(1),
+        updatedAt: serverTimestamp()
+    }, { merge: true })));
+
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length) {
+        const reason = failed[0].reason;
+        showToast(`Liste güncellenemedi (${failed.length} üye): ` + ((reason && reason.message) || reason), 6000);
     }
 }
 
@@ -2606,6 +2628,47 @@ async function pushToGroupMembers(bodyText) {
 
 export async function leaveGroup(groupId) {
     if (!currentUser || !groupId) return;
+
+    // Ayrılmadan ÖNCE (hâlâ üyeyken): gruba "ayrıldı" mesajı yaz, diğer üyelerin listesini ve bildirimini güncelle
+    try {
+        const gd = await getGroupData(groupId);
+        if (gd) {
+            const leaveText = `${currentUser.name} gruptan ayrıldı`;
+
+            await addDoc(collection(db, "chats", groupId, "messages"), {
+                type: 'system',
+                text: leaveText,
+                senderUid: currentUser.uid,
+                senderName: currentUser.name,
+                createdAt: serverTimestamp(),
+                read: false
+            });
+
+            const others = (gd.members || []).filter((uid) => uid !== currentUser.uid);
+
+            await Promise.allSettled(others.map((memberUid) => setDoc(doc(db, "users", memberUid, "chats", groupId), {
+                isGroup: true,
+                groupName: gd.name,
+                lastMessage: leaveText,
+                lastMessageTime: serverTimestamp(),
+                lastSenderUid: currentUser.uid,
+                lastSenderName: '',
+                lastMessageRead: false,
+                unreadCount: increment(1),
+                updatedAt: serverTimestamp()
+            }, { merge: true })));
+
+            others.forEach((memberUid) => {
+                sendPushToUser(memberUid, gd.name || 'Grup', leaveText, {
+                    chatId: groupId,
+                    otherUid: groupId,
+                    otherName: gd.name || 'Grup'
+                });
+            });
+        }
+    } catch (err) {
+        console.warn("Ayrılma mesajı yazılamadı:", err);
+    }
 
     const session = chatSessions.get(groupId);
     if (session) {
