@@ -1,6 +1,44 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
+<script>
+(function () {
+    var shown = 0;
+    function report(kind, msg, src, line, col) {
+        try {
+            var file = (src || '').split('/').pop().split('?')[0] || 'bilinmeyen dosya';
+            var text = kind + ': ' + msg + '\n' + file + (line ? ' satır ' + line + (col ? ':' + col : '') : '');
+            var box = document.getElementById('aura-error-box');
+            if (!box) {
+                box = document.createElement('div');
+                box.id = 'aura-error-box';
+                box.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483647;max-height:45%;overflow:auto;background:#7f1d1d;color:#fff;font:12px/1.4 monospace;padding:8px 10px;white-space:pre-wrap;word-break:break-word;';
+                box.addEventListener('click', function () { box.remove(); shown = 0; });
+                (document.body || document.documentElement).appendChild(box);
+            }
+            if (shown >= 5) return;
+            shown++;
+            var item = document.createElement('div');
+            item.style.cssText = 'padding:4px 0;border-bottom:1px solid rgba(255,255,255,.25);';
+            item.textContent = text;
+            box.appendChild(item);
+        } catch (e) {}
+    }
+    window.addEventListener('error', function (e) {
+        var t = e.target;
+        if (t && t !== window && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) {
+            report('Dosya yüklenemedi', '', t.src || t.href, 0, 0);
+            return;
+        }
+        report('Hata', e.message || 'bilinmeyen', e.filename, e.lineno, e.colno);
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        var m = (r && r.stack) ? String(r.stack).match(/([^\s()]+):(\d+):(\d+)/) : null;
+        report('Söz hatası', (r && r.message) ? r.message : String(r), m ? m[1] : '', m ? m[2] : 0, m ? m[3] : 0);
+    });
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
 <script>eruda.init();</script>
     <base href="https://aurachat-amber.vercel.app">
