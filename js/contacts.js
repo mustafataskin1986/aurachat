@@ -420,7 +420,7 @@ export async function loadContacts() {
 
     function prewarmTopChats() {
         const warmCandidates = Array.from(contactElementsMap.entries())
-            .filter(([, item]) => item.hasChat && item.otherUid)
+            ..filter(([, item]) => item.hasChat && (item.otherUid || item.isGroup))
             .sort((a, b) => {
                 const ai = a[1], bi = b[1];
                 if (ai.pinned && !bi.pinned) return -1;
@@ -500,7 +500,8 @@ export async function loadContacts() {
             pinned: !!chatData.pinned,
             archived: !!chatData.archived,
             hasChat: true,
-            otherUid: chatData.otherUid
+            otherUid: chatData.otherUid,
+            isGroup: !!chatData.isGroup
         });
         dynamicListContainer.appendChild(userDiv);
     }
