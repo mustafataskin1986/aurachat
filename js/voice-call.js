@@ -12,7 +12,7 @@ import { db } from "./firebase-init.js";
 import {
     doc, collection, setDoc, updateDoc, onSnapshot, addDoc, serverTimestamp, getDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getCurrentUser, getCurrentChatId, sendPushToUser, logMissedCall, logDeclinedCall, showToast } from "./chat-core.js";
+import { getCurrentUser, getCurrentChatId, sendPushToUser, logMissedCall, logDeclinedCall, logCallDuration, showToast } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -54,6 +54,7 @@ let micEnabled = true;
 let pendingOffer = null;
 let pendingCallerUid = null;
 let pendingCallerName = null;
+let callStartTime = null;
 
 function callDocRef(chatId) {
     return doc(db, "chats", chatId, "call", "current");
@@ -92,7 +93,11 @@ export function watchVoiceCallForChat(chatId) {
         }
 
         if (data.status === 'active' && isCaller && data.answer && pc && !pc.currentRemoteDescription) {
-            pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            callStartTime = null;
+            pc.onconnectionstatechange = () => {
+                if (pc && pc.connectionState === 'connected' && !callStartTime) callStartTime = Date.now();
+            };
             if (callStatusText) callStatusText.textContent = 'Bağlanıyor...';
         }
     });
@@ -272,6 +277,10 @@ async function acceptVoiceCall() {
     });
 
     listenRemoteCandidates(currentCallChatId, 'callerCandidates');
+    callStartTime = null;
+    pc.onconnectionstatechange = () => {
+        if (pc && pc.connectionState === 'connected' && !callStartTime) callStartTime = Date.now();
+    };
     showActiveVoiceCallUI('Bağlanıyor...', pendingCallerName, '');
     pushBackState(() => { hangupVoiceCall(); });
 }
@@ -327,7 +336,19 @@ async function hangupVoiceCall() {
             const data = snap.exists() ? snap.data() : null;
             const wasRinging = data && data.status === 'ringing';
 
+            // Konuşma süresini hemen al ve sıfırla (çift çağrılırsa ikinci seferde yazılmaz)
+            const wasConnected = !!callStartTime;
+            const talkSeconds = wasConnected ? Math.round((Date.now() - callStartTime) / 1000) : 0;
+            callStartTime = null;
+
             await updateDoc(callDocRef(currentCallChatId), { status: 'ended' }).catch(() => {});
+
+            // Bağlantı kurulmuş bir arama ise iki sohbete de süre mesajı yaz
+            if (wasConnected && data && data.status === 'active' && data.callerUid && data.calleeUid) {
+                const me = getCurrentUser();
+                const otherUid = data.callerUid === me.uid ? data.calleeUid : data.callerUid;
+                logCallDuration(currentCallChatId, me.uid, me.name, otherUid, 'audio', talkSeconds);
+            }
 
             if (wasRinging && isCaller && data.calleeUid) {
                 const user = getCurrentUser();
