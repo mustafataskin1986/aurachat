@@ -107,6 +107,8 @@ async function addDoc(colRef, data) {
 
 export function setCurrentUser(user) {
     currentUser = user;
+    // Başka uygulamadan (galeri vb.) "Paylaş" ile gelen resim varsa yakala
+    try { checkPendingShare(); } catch (e) {}
 }
 
 // Basit, engellemeyen bildirim balonu - alert() yerine
@@ -1944,6 +1946,7 @@ function closeForwardPickerFromBack() {
         forwardPickerEl.classList.remove('flex');
     }
     forwardPickerOpen = false;
+    pendingShare = null;
 }
 
 function closeForwardPicker() {
@@ -1973,6 +1976,8 @@ function ensureForwardPicker() {
 
 function openForwardPicker() {
     const el = ensureForwardPicker();
+    const titleEl = el.querySelector('h2');
+    if (titleEl) titleEl.textContent = pendingShare ? 'Şuna gönder' : 'Şuna ilet';
     const listEl = el.querySelector('#forward-list');
     listEl.innerHTML = '';
 
@@ -2033,6 +2038,7 @@ async function updateSummariesForTarget(chatId, otherUid, otherName, lastMessage
 }
 
 async function forwardImageTo(targetUser) {
+   if (pendingShare) { return sendSharedImagesTo(targetUser); }
     if (!forwardSource || !currentUser) return;
     const { chatId: srcChatId, msgId } = forwardSource;
 
@@ -2092,6 +2098,123 @@ async function forwardImageTo(targetUser) {
     } catch (err) {
         console.error("İletme hatası:", err);
         showToast('İletilemedi');
+    }
+}
+
+// ------------------------------------------
+// BAŞKA UYGULAMADAN (galeri vb.) "Paylaş > AuraChat" İLE GELEN RESİMLER
+// MainActivity.java resimleri hazırlar, window.AuraShare.consume() ile verir.
+// Kişi seçme ekranı "ilet" ekranıyla aynı.
+// ------------------------------------------
+let pendingShare = null; // File[]
+let shareCheckTimer = null;
+
+function stopShareCheck() {
+    if (shareCheckTimer) { clearInterval(shareCheckTimer); shareCheckTimer = null; }
+}
+
+function dataUrlToFile(dataUrl, name) {
+    const bin = atob((dataUrl.split(',')[1]) || '');
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new File([bytes], name, { type: 'image/jpeg' });
+}
+
+// { state: 'none' | 'busy' | 'ok', files }
+function consumeSharedImages() {
+    try {
+        if (!window.AuraShare || !window.AuraShare.consume) return { state: 'none' };
+        const raw = window.AuraShare.consume();
+        if (!raw) return { state: 'none' };
+        if (raw === 'busy') return { state: 'busy' };
+        const list = JSON.parse(raw);
+        if (!Array.isArray(list) || !list.length) return { state: 'none' };
+        return { state: 'ok', files: list.map((d, i) => dataUrlToFile(d, `shared_${i}.jpg`)) };
+    } catch (e) {
+        return { state: 'none' };
+    }
+}
+
+function checkPendingShare() {
+    if (shareCheckTimer) return;
+    let tries = 0;
+    shareCheckTimer = setInterval(() => {
+        tries++;
+        if (tries > 60) { stopShareCheck(); return; }
+        if (!currentUser) return; // giriş yapılana kadar bekle (paylaşım native tarafta saklı kalır)
+        if (!pendingShare) {
+            const res = consumeSharedImages();
+            if (res.state === 'none') { stopShareCheck(); return; }
+            if (res.state === 'busy') return;
+            pendingShare = res.files;
+        }
+        // Kişi listesi yüklenene kadar bekle
+        if (!window.__aurachatUsers || window.__aurachatUsers.size === 0) return;
+        stopShareCheck();
+        openForwardPicker();
+    }, 500);
+}
+
+window.addEventListener('aurachat-share', checkPendingShare);
+
+async function sendSharedImagesTo(targetUser) {
+    const files = pendingShare;
+    pendingShare = null;
+    if (!files || !files.length || !currentUser) return;
+
+    closeForwardPicker();
+    showToast('Gönderiliyor...', 3000);
+
+    try {
+        const perImageTarget = files.length > 1 ? 150 * 1024 : 300 * 1024;
+        const maxTotalBytes = 900 * 1024;
+        const compressed = [];
+        let totalBytes = 0;
+
+        for (const file of files) {
+            try {
+                const dataUrl = await compressImageToDataUrl(file, perImageTarget);
+                const approxBytes = dataUrl.length * 0.75;
+                if (totalBytes + approxBytes > maxTotalBytes) break;
+                compressed.push(dataUrl);
+                totalBytes += approxBytes;
+            } catch (innerErr) {}
+        }
+        if (!compressed.length) throw new Error('Resim hazırlanamadı');
+
+        const targetChatId = getChatId(currentUser.uid, targetUser.uid);
+        const payload = {
+            type: 'image',
+            text: '',
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false
+        };
+        if (compressed.length === 1) {
+            payload.imageUrl = compressed[0];
+        } else {
+            payload.images = compressed;
+            payload.imagesCount = compressed.length;
+            payload.imagesDelivered = false;
+        }
+        await addDoc(collection(db, "chats", targetChatId, "messages"), payload);
+
+        const isAlbum = compressed.length > 1;
+        await updateSummariesForTarget(targetChatId, targetUser.uid, targetUser.name, isAlbum ? `📷 ${compressed.length} Fotoğraf` : '📷 Fotoğraf');
+        sendPushToUser(targetUser.uid, `${currentUser.name}`, isAlbum ? `📷 ${compressed.length} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi", {
+            chatId: targetChatId,
+            otherUid: currentUser.uid,
+            otherName: currentUser.name
+        });
+
+        if (currentChatId !== targetChatId) selectChat(targetUser);
+        if (compressed.length < files.length) {
+            showToast(`Boyut sınırı yüzünden ${compressed.length}/${files.length} fotoğraf gönderildi`, 4000);
+        }
+    } catch (err) {
+        console.error("Paylaşılan resim gönderilemedi:", err);
+        showToast('Gönderilemedi');
     }
 }
 
