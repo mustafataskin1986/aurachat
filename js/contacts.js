@@ -284,37 +284,7 @@ export async function loadContacts() {
         console.warn("Rehber okunurken bir durum oluştu:", err);
     }
 
-    const globalDiv = document.createElement('div');
-    globalDivRef = globalDiv;
-    globalDiv.className = "contact-list-item flex items-center px-4 py-3 bg-[#202c33]/40 hover:bg-[#202c33] cursor-pointer transition border-b border-gray-800/30";
-    globalDiv.innerHTML = `
-        <div class="w-12 h-12 bg-gradient-to-tr from-emerald-600 to-cyan-600 rounded-full flex items-center text-white font-bold justify-center mr-3 shadow flex-shrink-0">
-            <i class="fa-solid fa-globe"></i>
-        </div>
-        <div class="flex-1 overflow-hidden">
-            <div class="flex justify-between items-baseline">
-                <h4 class="text-white font-medium text-sm">Genel Kanka Odası 🌍</h4>
-                <span class="text-[11px] text-gray-400 global-time"></span>
-            </div>
-            <p class="text-xs text-gray-400 truncate mt-0.5 global-preview">Ortak sohbet alanı</p>
-        </div>
-    `;
-    globalDiv.addEventListener('click', () => {
-        if (!chatSelectionMode) selectChat('global');
-    });
-
-    const globalTimeSpan = globalDiv.querySelector('.global-time');
-    const globalPreview = globalDiv.querySelector('.global-preview');
-
-    onSnapshot(query(collection(db, "chats", "global", "messages"), orderBy("createdAt", "desc")), (msgSnap) => {
-        if (!msgSnap.empty) {
-            const lastMsg = msgSnap.docs[0].data();
-            globalPreview.textContent = lastMsg.type === 'deleted' ? '🚫 Bu mesaj silindi' : lastMsg.type === 'location' ? '📍 Konum' : lastMsg.type === 'image' ? '📷 Fotoğraf' : lastMsg.text;
-            if (lastMsg.createdAt) {
-                globalTimeSpan.textContent = formatTimestamp(lastMsg.createdAt.toDate());
-            }
-        }
-    });
+    
 
     dynamicListContainer = document.createElement('div');
 
@@ -330,13 +300,10 @@ export async function loadContacts() {
 
         if (!listMounted) {
             contactList.innerHTML = '';
-            contactList.appendChild(globalDiv);
             contactList.appendChild(dynamicListContainer);
             listMounted = true;
         }
 
-        // Genel Kanka Odası sadece "Tümü" sekmesinde görünür
-        globalDiv.style.display = (activeFilter === 'all') ? 'flex' : 'none';
 
         let unreadChatsCount = 0;
         let favoritesCount = 0;
@@ -352,7 +319,23 @@ export async function loadContacts() {
         contactElementsMap.clear();
         exitChatSelectionMode();
 
-        if (activeFilter === 'favorites') {
+     if (activeFilter === 'groups') {
+            // Sadece grup sohbetleri
+            myChats.forEach((chatData, chatId) => {
+                if (!chatData.isGroup) return;
+
+                const clearedAt = chatData.clearedAt;
+                const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
+                const clearedAtMs = clearedAt ? clearedAt.toDate().getTime() : 0;
+                if (clearedAt && lastTimeMs <= clearedAtMs) return;
+
+                renderChatItem(chatId, chatData);
+            });
+
+            if (dynamicListContainer.children.length === 0) {
+                renderEmptyStateRow("Henüz bir grubun yok kanka. Sağ üstteki üç noktadan yeni grup oluşturabilirsin.");
+            }
+        } else if (activeFilter === 'favorites') {
             // Sadece favorilenen (eski adıyla "archived") sohbetler
             myChats.forEach((chatData, chatId) => {
                 if (!chatData.archived) return;
@@ -451,11 +434,11 @@ export async function loadContacts() {
         warmCandidates.forEach(([chatId, item]) => {
             prewarmChatSession(chatId, item.otherUid);
         });
-
-        prewarmChatSession('global', null);
     }
 
     function renderChatItem(chatId, chatData) {
+        const isGroup = !!chatData.isGroup;
+        const displayName = isGroup ? (chatData.groupName || 'Grup') : (chatData.otherName || '');
         const userDiv = document.createElement('div');
         userDiv.className = "contact-list-item flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
         userDiv.dataset.chatId = chatId;
@@ -477,13 +460,13 @@ export async function loadContacts() {
             ${wrapAvatarWithSelectionBadge(chatId)}
             <div class="flex-1 overflow-hidden ml-3">
                 <div class="flex justify-between items-baseline">
-                    <h4 class="text-white font-medium text-sm">${pinIconHtml}${escapeHtml(chatData.otherName || '')}</h4>
+                 <h4 class="text-white font-medium text-sm">${pinIconHtml}${escapeHtml(displayName)}</h4>
                     <span class="text-[11px] text-gray-400">${lastTime}</span>
                 </div>
                 <div class="flex justify-between items-center mt-0.5">
                     <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
                         ${tickHtml}
-                        <span class="preview-text truncate">${isLastMsgMine ? 'Siz: ' : ''}${escapeHtml(lastText)}</span>
+                       <span class="preview-text truncate">${isLastMsgMine ? 'Siz: ' : (isGroup && chatData.lastSenderName ? escapeHtml(chatData.lastSenderName) + ': ' : '')}${escapeHtml(lastText)}</span>
                     </p>
                     ${unreadCount > 0 ? `<div class="unread-badge bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2">${unreadCount}</div>` : ''}
                 </div>
@@ -491,11 +474,19 @@ export async function loadContacts() {
         `;
 
         const avatarSlot = userDiv.querySelector(`[data-avatar-slot="${chatId}"]`);
-        renderAvatarInto(avatarSlot, chatData.otherUid, chatData.otherAvatar, chatData.otherName, 'w-12 h-12');
+        if (isGroup) {
+            avatarSlot.innerHTML = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white shadow" style="background-color:${getUserColor(displayName)};"><i class="fa-solid fa-user-group"></i></div>`;
+        } else {
+            renderAvatarInto(avatarSlot, chatData.otherUid, chatData.otherAvatar, chatData.otherName, 'w-12 h-12');
+        }
 
         userDiv.addEventListener('click', () => {
             if (!chatSelectionMode) {
-                selectChat({ uid: chatData.otherUid, name: chatData.otherName, avatar: chatData.otherAvatar || '' });
+                if (isGroup) {
+                    selectChat({ isGroup: true, groupId: chatId, name: displayName });
+                } else {
+                    selectChat({ uid: chatData.otherUid, name: chatData.otherName, avatar: chatData.otherAvatar || '' });
+                }
             }
         });
 
@@ -568,6 +559,9 @@ export async function loadContacts() {
         myChats.clear();
         snapshot.forEach((docSnap) => {
             myChats.set(docSnap.id, docSnap.data());
+            if (docSnap.data().isGroup) {
+                (window.__aurachatGroupIds = window.__aurachatGroupIds || new Set()).add(docSnap.id);
+            }
         });
         chatsLoaded = true;
         renderAll();
