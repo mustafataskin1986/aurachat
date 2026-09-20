@@ -1,8 +1,9 @@
 // ==========================================
 // GRUPLAR + ÜÇ NOKTA MENÜSÜ
-// - Sağ üstteki üç nokta: Yeni grup / Ayarlar menüsü
+// - Ana ekran sağ üstteki üç nokta: Yeni grup / Ayarlar menüsü
 // - Yeni grup: kişi seç, isim ver, oluştur
-// - Grup bilgisi: sohbet başlığına dokununca açılır (üyeler, gruptan ayrıl)
+// - Grup bilgisi: sohbet başlığına dokununca ya da sohbetin
+//   üç nokta menüsünden açılır (üyeler, gruptan ayrıl)
 // ==========================================
 
 import { db } from "./firebase-init.js";
@@ -12,7 +13,9 @@ import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
 const sidebar = document.getElementById('sidebar');
+const chatAreaEl = document.getElementById('chat-area');
 const menuBtn = document.getElementById('main-menu-btn');
+const chatMenuBtn = document.getElementById('chat-menu-btn');
 
 function avatarHtml(u, size) {
     if (u.avatar) {
@@ -21,8 +24,12 @@ function avatarHtml(u, size) {
     return `<div class="${size} rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color:${getUserColor(u.name || '?')};">${getInitials(u.name || '?')}</div>`;
 }
 
+function isGroupId(id) {
+    return !!(id && window.__aurachatGroupIds && window.__aurachatGroupIds.has(id));
+}
+
 // ------------------------------------------
-// ÜÇ NOKTA MENÜSÜ
+// ANA EKRAN ÜÇ NOKTA MENÜSÜ
 // ------------------------------------------
 let menuEl = null;
 
@@ -64,10 +71,6 @@ if (menuBtn) {
         el.classList.toggle('hidden');
     });
 }
-
-document.addEventListener('click', (e) => {
-    if (menuEl && !menuEl.contains(e.target)) closeMenu();
-});
 
 // ------------------------------------------
 // YENİ GRUP PANELİ
@@ -192,7 +195,7 @@ async function createGroup() {
     btn.disabled = true;
 
     try {
-        const members = [me.uid, ...Array.from(selectedUids)];
+        const members = [me.uid].concat(Array.from(selectedUids));
         const groupRef = doc(collection(db, "groups"));
         const groupId = groupRef.id;
 
@@ -223,6 +226,9 @@ async function createGroup() {
                 otherName: name
             });
         });
+
+        window.__aurachatGroupIds = window.__aurachatGroupIds || new Set();
+        window.__aurachatGroupIds.add(groupId);
 
         closeCreatePanel();
         selectChat({ isGroup: true, groupId: groupId, name: name });
@@ -360,10 +366,6 @@ async function openGroupInfo(groupId) {
 }
 
 // Grup sohbetinde başlığa (avatar veya isim) dokununca grup bilgisi açılır
-function isGroupId(id) {
-    return !!(id && window.__aurachatGroupIds && window.__aurachatGroupIds.has(id));
-}
-
 const headerName = document.getElementById('active-chat-name');
 const headerAvatar = document.getElementById('active-chat-avatar');
 [headerAvatar, headerName ? headerName.parentElement : null].forEach((el) => {
@@ -377,8 +379,6 @@ const headerAvatar = document.getElementById('active-chat-avatar');
 // ------------------------------------------
 // SOHBET ÜST BARINDAKİ ÜÇ NOKTA MENÜSÜ (sadece grup sohbetinde açılır)
 // ------------------------------------------
-const chatAreaEl = document.getElementById('chat-area');
-const chatMenuBtn = document.getElementById('chat-menu-btn');
 let chatMenuEl = null;
 
 function closeChatMenu() {
@@ -433,6 +433,8 @@ if (chatMenuBtn) {
     });
 }
 
+// Menülerin dışına dokununca ikisini de kapat
 document.addEventListener('click', (e) => {
+    if (menuEl && !menuEl.contains(e.target)) closeMenu();
     if (chatMenuEl && !chatMenuEl.contains(e.target)) closeChatMenu();
 });
