@@ -487,12 +487,15 @@
             if (!PushNotifications) return;
 
             try {
+                // Eski kanalda ses tanımsızdı ve Android kanal ayarını sonradan değiştirmeye izin vermiyor: yeni kanal
+                try { await PushNotifications.deleteChannel({ id: 'aurachat-high' }); } catch (e) {}
                 await PushNotifications.createChannel({
-                    id: 'aurachat-high',
+                    id: 'aurachat-messages',
                     name: 'Mesaj Bildirimleri',
+                    description: 'Yeni mesaj bildirimleri',
                     importance: 5,
                     visibility: 1,
-                    sound: 'default'
+                    vibration: true
                 });
 
                 let permStatus = await PushNotifications.checkPermissions();
