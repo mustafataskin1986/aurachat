@@ -1009,8 +1009,13 @@ if (selectionDeleteBtn) {
                 const e = session.messages.find((m) => m.id === x) || session.olderMessagesPrepended.find((m) => m.id === x);
                 if (e) Object.assign(e.data, { type: 'deleted', deleted: true, text: '', imageUrl: null, images: null, imagesCount: 0, lat: null, lng: null });
             });
-            );
-            session.messages = session.messages.filter((m) => !ids.includes(m.id));
+          everyoneDeletedIds.forEach((x) => {
+                const e = session.messages.find((m) => m.id === x) || session.olderMessagesPrepended.find((m) => m.id === x);
+                if (e) Object.assign(e.data, { type: 'deleted', deleted: true, text: '', imageUrl: null, images: null, imagesCount: 0, lat: null, lng: null });
+            });
+            if (currentChatId === chatIdAtDeleteTime) {
+                renderSession(session);
+            }
             if (currentChatId === chatIdAtDeleteTime) {
                 renderSession(session);
             }
