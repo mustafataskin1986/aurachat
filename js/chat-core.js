@@ -785,6 +785,53 @@ export async function logDeclinedCall(chatId, callerUid, callerName, calleeUid, 
 }
 
 // ------------------------------------------
+// KONUŞMA SÜRESİ KAYDI (aramayı kapatan taraf çağırır)
+// Sohbete süre mesajı yazar, iki tarafın liste özetini günceller.
+// Sessiz kayıt: okunmamış sayacı artmaz.
+// ------------------------------------------
+function formatCallDuration(totalSec) {
+    const s = Math.max(0, Math.round(Number(totalSec) || 0));
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    if (m === 0) return `${rem} sn`;
+    return rem ? `${m} dk ${rem} sn` : `${m} dk`;
+}
+
+export async function logCallDuration(chatId, myUid, myName, otherUid, callType = 'video', durationSec = 0) {
+    const label = `${callType === 'audio' ? '📞 Sesli arama' : '📹 Görüntülü arama'} • ${formatCallDuration(durationSec)}`;
+    try {
+        await addDoc(collection(db, "chats", chatId, "messages"), {
+            type: 'call_duration',
+            callType: callType,
+            duration: durationSec,
+            text: '',
+            senderUid: myUid,
+            senderName: myName,
+            createdAt: serverTimestamp(),
+            read: true
+        });
+
+        await setDoc(doc(db, "users", myUid, "chats", chatId), {
+            lastMessage: label,
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: myUid,
+            lastMessageRead: true,
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        await setDoc(doc(db, "users", otherUid, "chats", chatId), {
+            lastMessage: label,
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: myUid,
+            lastMessageRead: true,
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+    } catch (err) {
+        console.error("Konuşma süresi kaydedilemedi:", err);
+    }
+}
+
+// ------------------------------------------
 // ÖZET DOKÜMANI (users/{uid}/chats/{chatId}) GÜNCELLEME
 // ------------------------------------------
 async function updateChatSummaries(lastMessageText) {
@@ -1536,6 +1583,18 @@ function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
 }
 
 function buildMessageElement(msg, isMine, msgId) {
+   // Konuşma süresi mesajı: iki tarafta da ortada küçük etiket
+    if (msg.type === 'call_duration') {
+        const cdDiv = document.createElement('div');
+        cdDiv.dataset.msgId = msgId;
+        cdDiv.dataset.mine = 'false';
+        cdDiv.className = 'flex justify-center';
+        const cdAudio = msg.callType === 'audio';
+        cdDiv.innerHTML = `<span class="bg-[#182229] text-gray-300 text-xs px-3 py-1 rounded-lg shadow"><i class="fa-solid ${cdAudio ? 'fa-phone' : 'fa-video'} mr-1.5"></i>${cdAudio ? 'Sesli arama' : 'Görüntülü arama'} • ${formatCallDuration(msg.duration)}</span>`;
+        messageElementsById.set(msgId, cdDiv);
+        return cdDiv;
+    }
+
     // Sistem mesajı (örn. "X gruptan ayrıldı"): ortada küçük etiket
     if (msg.type === 'system') {
         const sysDiv = document.createElement('div');
