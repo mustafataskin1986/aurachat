@@ -163,6 +163,8 @@ jobs:
             add_perm "android.permission.READ_EXTERNAL_STORAGE"
             add_perm "android.permission.WRITE_EXTERNAL_STORAGE"
             add_perm "android.permission.VIBRATE"
+            add_perm "android.permission.ACCESS_FINE_LOCATION"
+            add_perm "android.permission.ACCESS_COARSE_LOCATION"
           fi
 
           # Google Services Gradle eklentileri
