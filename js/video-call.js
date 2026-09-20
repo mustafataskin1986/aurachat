@@ -410,13 +410,29 @@ async function switchCamera() {
 
     const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
 
+    // Android'de eski kamera açıkken yenisi açılamıyor -> önce eskisini kapat
+    const prevTrack = localStream.getVideoTracks()[0];
+    if (prevTrack) {
+        localStream.removeTrack(prevTrack);
+        prevTrack.stop();
+    }
+
     try {
-        const newStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: newFacingMode },
-            audio: false
-        });
+        let newStream;
+        try {
+            newStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { exact: newFacingMode } },
+                audio: false
+            });
+        } catch (e) {
+            newStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: newFacingMode },
+                audio: false
+            });
+        }
         const newVideoTrack = newStream.getVideoTracks()[0];
         if (!newVideoTrack) return;
+        newVideoTrack.enabled = camEnabled;
 
         const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
         if (sender) await sender.replaceTrack(newVideoTrack);
@@ -431,6 +447,20 @@ async function switchCamera() {
 
         currentFacingMode = newFacingMode;
     } catch (err) {
+        // Yeni kamera açılamadıysa eski kamerayı geri aç (görüntü donmasın)
+        try {
+            if (localStream && localStream.getVideoTracks().length === 0) {
+                const backStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode }, audio: false });
+                const backTrack = backStream.getVideoTracks()[0];
+                if (backTrack) {
+                    backTrack.enabled = camEnabled;
+                    const backSender = pc && pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (backSender) await backSender.replaceTrack(backTrack);
+                    localStream.addTrack(backTrack);
+                    if (localVideoEl) localVideoEl.srcObject = localStream;
+                }
+            }
+        } catch (e) {}
         alert("Kamera değiştirilemedi kanka: " + err.message);
     }
 }
@@ -439,17 +469,19 @@ if (btnSwitchCamera) {
     btnSwitchCamera.addEventListener('click', () => switchCamera());
 }
 
-// Küçük (kendi) ekrana dokununca büyük ekranla yer değiştirir (WhatsApp tarzı)
+// Küçük ekrana her dokunuşta büyük ekranla yer değiştirir (WhatsApp tarzı)
 let localIsMain = false;
+function swapVideos() {
+    localIsMain = !localIsMain;
+    if (localIsMain) {
+        localVideoEl.className = 'absolute inset-0 w-full h-full object-cover bg-black';
+        remoteVideoEl.className = 'absolute bottom-24 right-4 w-28 h-40 rounded-xl object-cover shadow-lg border border-white/20 z-10 bg-gray-900';
+    } else {
+        remoteVideoEl.className = 'absolute inset-0 w-full h-full object-cover bg-black';
+        localVideoEl.className = 'absolute bottom-24 right-4 w-28 h-40 rounded-xl object-cover shadow-lg border border-white/20 z-10 bg-gray-900';
+    }
+}
 if (localVideoEl && remoteVideoEl) {
-    localVideoEl.addEventListener('click', () => {
-        localIsMain = !localIsMain;
-        if (localIsMain) {
-            localVideoEl.className = 'absolute inset-0 w-full h-full object-cover bg-black';
-            remoteVideoEl.className = 'absolute bottom-24 right-4 w-28 h-40 rounded-xl object-cover shadow-lg border border-white/20 z-10 bg-gray-900';
-        } else {
-            remoteVideoEl.className = 'absolute inset-0 w-full h-full object-cover bg-black';
-            localVideoEl.className = 'absolute bottom-24 right-4 w-28 h-40 rounded-xl object-cover shadow-lg border border-white/20 z-10 bg-gray-900';
-        }
-    });
+    localVideoEl.addEventListener('click', () => { if (!localIsMain) swapVideos(); });
+    remoteVideoEl.addEventListener('click', () => { if (localIsMain) swapVideos(); });
 }
