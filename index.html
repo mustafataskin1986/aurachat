@@ -192,7 +192,7 @@
                 
                     <i class="fa-solid fa-circle-notch cursor-pointer hover:text-white transition"></i>
                     <i class="fa-solid fa-comment-alt cursor-pointer hover:text-white transition"></i>
-                    <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition" id="profile-btn" title="Profil"></i>
+                    <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition" id="main-menu-btn"></i>
                 </div>
             </div>
 
@@ -238,6 +238,7 @@
                         <button data-filter="all" class="chat-filter-chip flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium bg-emerald-600 text-white transition">Tümü</button>
                         <button data-filter="unread" class="chat-filter-chip flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#202c33] text-gray-300 transition">Okunmamış</button>
                         <button data-filter="favorites" class="chat-filter-chip flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#202c33] text-gray-300 transition">Favoriler</button>
+                        <button data-filter="groups" class="chat-filter-chip flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#202c33] text-gray-300 transition">Gruplar</button>
                     </div>
                 </div>
 
@@ -274,7 +275,7 @@
                         <i class="fa-solid fa-globe text-sm"></i>
                     </div>
                <div class="min-w-0">
-                        <h4 id="active-chat-name" class="text-white font-medium text-sm md:text-base truncate">Genel Kanka Odası 🌍</h4>
+                     <h4 id="active-chat-name" class="text-white font-medium text-sm md:text-base truncate">AuraChat</h4>
                         <span id="active-chat-status" class="block truncate text-[11px] text-emerald-400 font-medium"></span>
                     </div>
                 </div>
@@ -419,6 +420,7 @@
     <!-- UYGULAMA MANTIĞI (chat-core.js ve contacts.js'i başlatır) -->
     <script type="module" src="js/app-init.js"></script>
     <script type="module" src="js/profile.js"></script>
+    <script type="module" src="js/groups.js"></script>
 <script type="module" src="js/video-call.js"></script>
     <script type="module" src="js/voice-call.js"></script>
 
