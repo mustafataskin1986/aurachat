@@ -3,9 +3,9 @@
 // index.html tarafından tek modül olarak import edilir.
 // giris.js başarılı girişten sonra window.initApp()'i çağırır.
 //
-// GÜNCELLEME: Bildirimden gelen "şu sohbeti aç" bilgisi artık listeyi
-// göstermeye karar vermeden ÖNCE kontrol ediliyor - soğuk açılışta
-// önce listenin görünüp sonra sohbete sıçraması bu şekilde önleniyor.
+// Bildirimden gelen "şu sohbeti aç" bilgisi listeyi göstermeye karar
+// vermeden ÖNCE kontrol ediliyor - soğuk açılışta önce listenin
+// görünüp sonra sohbete sıçraması bu şekilde önleniyor.
 // window.__aurachatReady bayrağı, uygulamanın açılış sürecini bitirip
 // bitirmediğini index.html'deki bildirim dinleyicisine bildiriyor.
 //
@@ -13,6 +13,9 @@
 // window.openChatFromNotification() burada tanımlanıyor. PWA
 // tarafında sw.js'ten gelen mesajı ve cold-start URL parametresini
 // de burada karşılıyoruz.
+//
+// Grup bildirimlerinde otherUid alanı grup kimliğini taşıyor, o yüzden
+// önce bu kimlikle bir grup var mı diye bakılıyor.
 // ==========================================
 
 import { db } from "./firebase-init.js";
@@ -122,9 +125,8 @@ window.initApp = async function () {
 
     // Bekleyen bir bildirim hedefi varsa (soğuk açılış, bildirimden
     // geldiyse) ÖNCE onu kontrol et - varsayılan liste görünümüne hiç
-    // geçmeden direkt sohbete gidelim, "önce liste sonra sohbet"
-    // sıçramasını böyle önlüyoruz.
-  if (window.pendingOpenChat) {
+    // geçmeden direkt sohbete gidelim.
+    if (window.pendingOpenChat) {
         window.openChatFromNotification(window.pendingOpenChat);
         window.pendingOpenChat = null;
     } else {
