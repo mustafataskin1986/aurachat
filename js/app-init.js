@@ -16,7 +16,7 @@
 // ==========================================
 
 import { db } from "./firebase-init.js";
-import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { setCurrentUser, selectChat, startPresence } from "./chat-core.js";
 import { loadContacts, initAdminPanel } from "./contacts.js";
 
@@ -45,8 +45,17 @@ async function ensureUid(user) {
 }
 
 // Bildirime tıklanınca (Capacitor native veya PWA) çağrılır
-window.openChatFromNotification = function (otherUser) {
+window.openChatFromNotification = async function (otherUser) {
     if (!otherUser || !otherUser.uid) return;
+
+    // Grup bildirimlerinde otherUid alanı grup kimliğini taşıyor
+    try {
+        const groupSnap = await getDoc(doc(db, "groups", otherUser.uid));
+        if (groupSnap.exists()) {
+            selectChat({ isGroup: true, groupId: groupSnap.id, name: groupSnap.data().name || 'Grup' });
+            return;
+        }
+    } catch (e) {}
 
     // Bildirim verisinde avatar yok, yüklü kişi listesinden bul
     let target = otherUser;
@@ -115,11 +124,9 @@ window.initApp = async function () {
     // geldiyse) ÖNCE onu kontrol et - varsayılan liste görünümüne hiç
     // geçmeden direkt sohbete gidelim, "önce liste sonra sohbet"
     // sıçramasını böyle önlüyoruz.
-    if (window.pendingOpenChat) {
-        selectChat(window.pendingOpenChat);
+  if (window.pendingOpenChat) {
+        window.openChatFromNotification(window.pendingOpenChat);
         window.pendingOpenChat = null;
-    } else if (window.innerWidth >= 1024) {
-        selectChat('global');
     } else {
         sidebar.classList.remove('-translate-x-full');
         chatArea.classList.add('translate-x-full');
