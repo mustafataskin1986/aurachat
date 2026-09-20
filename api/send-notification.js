@@ -48,7 +48,7 @@ export default async function handler(req, res) {
           android: {
             priority: 'high',
             notification: {
-              channelId: 'aurachat-high',
+              channelId: 'aurachat-messages',
               ...(tag ? { tag: String(tag) } : {})
             }
           },
