@@ -1394,8 +1394,10 @@ function galleryKey(msgId, idx) {
     return (idx === null || idx === undefined) ? msgId : `${msgId}_${idx}`;
 }
 
+let galleryMapScannedAt = 0;
 function loadGalleryFileMap() {
     if (galleryFileMapPromise) return galleryFileMapPromise;
+    galleryMapScannedAt = Date.now();
     galleryFileMapPromise = (async () => {
         galleryFileMap = new Map();
         const Filesystem = getFilesystemPlugin();
@@ -1452,7 +1454,10 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
         const Filesystem = getFilesystemPlugin();
 
         if (Filesystem) {
-            const map = await loadGalleryFileMap();
+            let map = await loadGalleryFileMap();
+            // İzin verilmeden önce taranıp boş kaldıysa (ilk açılış) yeniden tara (en fazla 5 sn'de bir)
+            if (map.size === 0 && Date.now() - galleryMapScannedAt > 5000) galleryFileMapPromise = null;
+            map = await loadGalleryFileMap();
             const key = galleryKey(msgId, idx);
             const knownName = map.get(key);
 
@@ -1579,8 +1584,7 @@ function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
             </div>`;
     }
 
-    return `<div class="grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden" style="width:280px;">${tiles}</div>`;
-}
+    return `<div class="grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden" style="width:280px;max-width:100%;">${tiles}</div>`;
 
 function buildMessageElement(msg, isMine, msgId) {
    // Konuşma süresi mesajı: iki tarafta da ortada küçük etiket
