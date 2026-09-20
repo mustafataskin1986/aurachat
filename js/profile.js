@@ -152,7 +152,7 @@ function closeProfilePanel() {
     profilePanel.classList.remove('flex');
 }
 
-if (profileBtn) profileBtn.addEventListener('click', openProfilePanel);
+window.openProfilePanel = openProfilePanel;
 if (profileBackBtn) {
     profileBackBtn.addEventListener('click', () => {
         closeProfilePanel();
