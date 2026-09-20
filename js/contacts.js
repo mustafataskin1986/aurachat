@@ -53,6 +53,10 @@ let activeFilter = 'all';
 // Yeniden çizim tetikleyicisi - filtre çipine basınca dışarıdan çağrılır
 let renderAllRef = null;
 
+// Kişiler paneli (alt bardaki "Kişiler" sekmesi) durumu
+let contactsPanelEl = null;
+let contactsPanelOpen = false;
+
 // ------------------------------------------
 // AVATAR YEREL DOSYA ÖNBELLEĞİ (WhatsApp mantığı)
 // ------------------------------------------
@@ -244,29 +248,56 @@ export async function loadContacts() {
     const currentUser = getCurrentUser();
     if (!currentUser) return;
 
-let localPhoneNumbers = new Set();
+    let localPhoneNumbers = new Set();
+    let localContactCount = 0;   // rehberde okunan kişi sayısı
+    let localNumberCount = 0;    // okunan benzersiz numara sayısı
     let contactsPermissionGranted = false;
 
     const ContactsPlugin = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Contacts)
         ? window.Capacitor.Plugins.Contacts
         : null;
 
+    // Rehberi baştan okur (her çağrıda listeyi tazeler)
     async function readLocalContacts() {
         const result = await ContactsPlugin.getContacts({ projection: { phones: true } });
+        const fresh = new Set();
+        let contactCount = 0;
         if (result && result.contacts) {
+            contactCount = result.contacts.length;
             result.contacts.forEach(c => {
                 if (c.phones && Array.isArray(c.phones)) {
                     c.phones.forEach(p => {
                         if (p.number) {
                             const last10 = getPhoneLast10(p.number);
-                            if (last10) {
-                                localPhoneNumbers.add(last10);
-                                localPhoneNumbers.add('+90' + last10);
-                            }
+                            if (last10) fresh.add(last10);
                         }
                     });
                 }
             });
+        }
+        localPhoneNumbers.clear();
+        fresh.forEach((n) => {
+            localPhoneNumbers.add(n);
+            localPhoneNumbers.add('+90' + n);
+        });
+        localContactCount = contactCount;
+        localNumberCount = fresh.size;
+    }
+
+    // İzin verilmişse rehberi yeniden okur, listeyi tazeler
+    async function refreshContactsFromPhone() {
+        if (!ContactsPlugin) return;
+        try {
+            const perm = await ContactsPlugin.checkPermissions();
+            if (perm.contacts === 'granted') {
+                await readLocalContacts();
+                contactsPermissionGranted = true;
+                renderAll();
+            } else {
+                contactsPermissionGranted = false;
+            }
+        } catch (err) {
+            console.warn("Rehber okunamadı:", err);
         }
     }
 
@@ -283,6 +314,24 @@ let localPhoneNumbers = new Set();
         }
     }
 
+    // Android izin penceresini açar (şerit ve Kişiler paneli aynı fonksiyonu kullanır)
+    async function requestContactsPermission() {
+        try {
+            const perm = await ContactsPlugin.requestPermissions();
+            if (perm.contacts === 'granted') {
+                await readLocalContacts();
+                contactsPermissionGranted = true;
+                renderAll();
+                if (contactsPanelOpen) renderContactsPanel();
+                return true;
+            }
+            showToast('Rehber izni verilmedi. Ayarlar > Uygulamalar > AuraChat > İzinler > Kişiler yolundan izin verebilirsin.', 5000);
+        } catch (err) {
+            showToast('İzin istenemedi: ' + ((err && err.message) ? err.message : err), 4000);
+        }
+        return false;
+    }
+
     // Rehber izni yoksa listenin üstünde "Onayla" şeridi
     const permBanner = document.createElement('div');
     permBanner.className = 'px-4 py-3 bg-[#182229] border-b border-gray-800/40 items-center justify-between gap-3';
@@ -294,33 +343,152 @@ let localPhoneNumbers = new Set();
     permBanner.querySelector('button').addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         btn.disabled = true;
-        try {
-            const perm = await ContactsPlugin.requestPermissions();
-            if (perm.contacts === 'granted') {
-                await readLocalContacts();
-                contactsPermissionGranted = true;
-                renderAll();
-            } else {
-                showToast('Rehber izni verilmedi. Ayarlar > Uygulamalar > AuraChat > İzinler > Kişiler yolundan izin verebilirsin.', 5000);
-            }
-        } catch (err) {
-            showToast('İzin istenemedi: ' + ((err && err.message) ? err.message : err), 4000);
-        }
+        await requestContactsPermission();
         btn.disabled = false;
     });
 
     // Kullanıcı ayarlardan izin verip uygulamaya dönünce şerit kendiliğinden kalksın
     document.addEventListener('visibilitychange', async () => {
         if (document.visibilityState !== 'visible' || !ContactsPlugin || contactsPermissionGranted) return;
-        try {
-            const perm = await ContactsPlugin.checkPermissions();
-            if (perm.contacts === 'granted') {
-                await readLocalContacts();
-                contactsPermissionGranted = true;
-                renderAll();
-            }
-        } catch (e) {}
+        await refreshContactsFromPhone();
+        if (contactsPermissionGranted && contactsPanelOpen) renderContactsPanel();
     });
+
+    // ------------------------------------------
+    // KİŞİLER PANELİ (alt bardaki "Kişiler" sekmesi)
+    // Rehberden okunan numaralarla eşleşen AuraChat kullanıcılarını gösterir.
+    // Panel her açıldığında rehber telefondan yeniden okunur.
+    // ------------------------------------------
+    function closeContactsPanelFromBack() {
+        if (contactsPanelEl) {
+            contactsPanelEl.classList.add('hidden');
+            contactsPanelEl.classList.remove('flex');
+        }
+        contactsPanelOpen = false;
+    }
+
+    function closeContactsPanel() {
+        if (!contactsPanelOpen) return;
+        closeContactsPanelFromBack();
+        popBackState();
+    }
+
+    function ensureContactsPanel() {
+        if (contactsPanelEl) return contactsPanelEl;
+        const el = document.createElement('div');
+        el.className = 'fixed inset-0 z-50 bg-[#0b141a] hidden flex-col';
+        el.innerHTML = `
+            <div class="bg-[#202c33] px-4 py-3.5 flex items-center justify-between border-b border-gray-800 flex-shrink-0">
+                <div class="flex items-center space-x-4">
+                    <button type="button" id="contacts-panel-back" class="text-gray-400 hover:text-white transition text-lg px-1">
+                        <i class="fa-solid fa-arrow-left"></i>
+                    </button>
+                    <h2 class="text-white font-medium text-base">Kişiler</h2>
+                </div>
+                <button type="button" id="contacts-panel-refresh" class="text-gray-400 hover:text-white transition text-lg px-1">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
+            </div>
+            <div id="contacts-panel-info" class="px-4 py-3 text-xs text-gray-400 border-b border-gray-800/40 flex-shrink-0"></div>
+            <div id="contacts-panel-list" class="flex-1 overflow-y-auto min-h-0"></div>
+        `;
+        document.body.appendChild(el);
+        el.querySelector('#contacts-panel-back').addEventListener('click', closeContactsPanel);
+        el.querySelector('#contacts-panel-refresh').addEventListener('click', () => reloadContactsPanel());
+        contactsPanelEl = el;
+        return el;
+    }
+
+    function renderContactsPanel() {
+        const el = ensureContactsPanel();
+        const infoEl = el.querySelector('#contacts-panel-info');
+        const listEl = el.querySelector('#contacts-panel-list');
+        listEl.innerHTML = '';
+
+        if (!ContactsPlugin) {
+            infoEl.textContent = 'Rehber sadece Android uygulamasında okunabilir.';
+            return;
+        }
+
+        if (!contactsPermissionGranted) {
+            infoEl.textContent = 'Rehber izni verilmedi.';
+            const wrap = document.createElement('div');
+            wrap.className = 'p-6 flex flex-col items-center text-center space-y-4';
+            wrap.innerHTML = `
+                <p class="text-sm text-gray-300">Rehberindeki AuraChat kullanıcılarını görmek için onaylayın</p>
+                <button type="button" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-6 py-2.5 rounded-full transition">Onayla</button>
+            `;
+            wrap.querySelector('button').addEventListener('click', async (e) => {
+                const btn = e.currentTarget;
+                btn.disabled = true;
+                await requestContactsPermission();
+                btn.disabled = false;
+            });
+            listEl.appendChild(wrap);
+            return;
+        }
+
+        const matched = [];
+        allUsersById.forEach((user, uid) => {
+            if (uid === currentUser.uid) return;
+            const last10 = getPhoneLast10(user.phone);
+            if (last10 && localPhoneNumbers.has(last10)) matched.push(user);
+        });
+        matched.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+
+        infoEl.textContent = `Rehberde ${localContactCount} kişi, ${localNumberCount} numara okundu · AuraChat kullanan: ${matched.length}`;
+
+        if (!matched.length) {
+            const empty = document.createElement('p');
+            empty.className = 'px-6 py-10 text-center text-gray-500 text-xs';
+            empty.textContent = 'Rehberinde AuraChat kullanan kimse bulunamadı. Numaraların son 10 hanesi eşleşmeli.';
+            listEl.appendChild(empty);
+            return;
+        }
+
+        matched.forEach((user) => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer border-b border-gray-800/30';
+            row.innerHTML = `
+                <div data-avatar-slot="panel-${user.uid}" class="flex-shrink-0"></div>
+                <div class="ml-3 overflow-hidden flex-1">
+                    <h4 class="text-white text-sm font-medium truncate">${escapeHtml(user.name || '')}</h4>
+                    <p class="text-[11px] text-gray-400 truncate">${escapeHtml(user.phone || '')}</p>
+                </div>
+            `;
+            const slot = row.querySelector(`[data-avatar-slot="panel-${user.uid}"]`);
+            renderAvatarInto(slot, user.uid, user.avatar, user.name, 'w-11 h-11');
+            row.addEventListener('click', () => {
+                closeContactsPanel();
+                selectChat({ uid: user.uid, name: user.name, avatar: user.avatar || '' });
+            });
+            listEl.appendChild(row);
+        });
+    }
+
+    async function reloadContactsPanel() {
+        const el = ensureContactsPanel();
+        el.querySelector('#contacts-panel-info').textContent = 'Rehber okunuyor...';
+        await refreshContactsFromPhone();
+        renderContactsPanel();
+    }
+
+    async function openContactsPanel() {
+        const el = ensureContactsPanel();
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+        if (!contactsPanelOpen) {
+            contactsPanelOpen = true;
+            pushBackState(closeContactsPanelFromBack);
+        }
+        await reloadContactsPanel();
+    }
+
+    const navContacts = document.getElementById('nav-contacts');
+    if (navContacts && !navContacts.dataset.bound) {
+        navContacts.dataset.bound = '1';
+        navContacts.addEventListener('click', openContactsPanel);
+    }
 
     dynamicListContainer = document.createElement('div');
 
