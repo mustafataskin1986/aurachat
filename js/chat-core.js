@@ -998,6 +998,16 @@ if (selectionDeleteBtn) {
             alert("Mesajlar silinemedi: " + err.message);
         }
 
+        // Silinen mesaj sohbetin SON mesajıysa sohbet listesindeki önizlemeyi de güncelle
+        try {
+            const sessForSummary = chatSessions.get(chatIdAtDeleteTime);
+            const lastEntry = sessForSummary && sessForSummary.messages[sessForSummary.messages.length - 1];
+            if (lastEntry && everyoneDeletedIds.has(lastEntry.id) && chatIdAtDeleteTime !== 'global' && currentOtherUid) {
+                await setDoc(doc(db, "users", currentUser.uid, "chats", chatIdAtDeleteTime), { lastMessage: '🚫 Bu mesaj silindi' }, { merge: true });
+                await setDoc(doc(db, "users", currentOtherUid, "chats", chatIdAtDeleteTime), { lastMessage: '🚫 Bu mesaj silindi' }, { merge: true });
+            }
+        } catch (err) {}
+
         const session = chatSessions.get(chatIdAtDeleteTime);
         if (session) {
             const removeLocally = ids.filter((x) => !everyoneDeletedIds.has(x));
