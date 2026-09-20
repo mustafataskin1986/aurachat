@@ -373,3 +373,66 @@ const headerAvatar = document.getElementById('active-chat-avatar');
         if (isGroupId(id)) openGroupInfo(id);
     });
 });
+
+// ------------------------------------------
+// SOHBET ÜST BARINDAKİ ÜÇ NOKTA MENÜSÜ (sadece grup sohbetinde açılır)
+// ------------------------------------------
+const chatAreaEl = document.getElementById('chat-area');
+const chatMenuBtn = document.getElementById('chat-menu-btn');
+let chatMenuEl = null;
+
+function closeChatMenu() {
+    if (chatMenuEl) chatMenuEl.classList.add('hidden');
+}
+
+function ensureChatMenu() {
+    if (chatMenuEl) return chatMenuEl;
+    const el = document.createElement('div');
+    el.className = 'hidden absolute right-3 top-14 z-40 w-48 bg-[#233138] rounded-xl shadow-2xl border border-gray-700/60 py-1';
+    el.innerHTML = `
+        <button type="button" data-chat-menu="info" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid fa-circle-info text-sky-400 w-4"></i><span>Grup bilgisi</span>
+        </button>
+        <button type="button" data-chat-menu="leave" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-rose-400 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid fa-right-from-bracket w-4"></i><span>Gruptan ayrıl</span>
+        </button>
+    `;
+    chatAreaEl.appendChild(el);
+
+    el.addEventListener('click', async (e) => {
+        const item = e.target.closest('[data-chat-menu]');
+        if (!item) return;
+        closeChatMenu();
+
+        const id = getCurrentChatId();
+        if (!isGroupId(id)) return;
+
+        if (item.dataset.chatMenu === 'info') {
+            openGroupInfo(id);
+            return;
+        }
+
+        if (!confirm('Gruptan ayrılmak istiyor musun?')) return;
+        try {
+            await leaveGroup(id);
+            showToast('Gruptan ayrıldın');
+        } catch (err) {
+            showToast('Ayrılınamadı: ' + err.message, 3500);
+        }
+    });
+
+    chatMenuEl = el;
+    return el;
+}
+
+if (chatMenuBtn) {
+    chatMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!isGroupId(getCurrentChatId())) return;
+        ensureChatMenu().classList.toggle('hidden');
+    });
+}
+
+document.addEventListener('click', (e) => {
+    if (chatMenuEl && !chatMenuEl.contains(e.target)) closeChatMenu();
+});
