@@ -1585,6 +1585,7 @@ function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
     }
 
     return `<div class="grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden" style="width:280px;max-width:100%;">${tiles}</div>`;
+}
 
 function buildMessageElement(msg, isMine, msgId) {
    // Konuşma süresi mesajı: iki tarafta da ortada küçük etiket
