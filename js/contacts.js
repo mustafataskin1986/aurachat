@@ -20,7 +20,7 @@ import {
     collection, onSnapshot, query, orderBy, doc, getDocs, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
-import { selectChat, getCurrentUser, clearChatForMe, prewarmChatSession } from "./chat-core.js";
+import { selectChat, getCurrentUser, clearChatForMe, prewarmChatSession, showToast } from "./chat-core.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
 const contactList = document.getElementById('contact-list');
@@ -244,40 +244,83 @@ export async function loadContacts() {
     const currentUser = getCurrentUser();
     if (!currentUser) return;
 
-    let localPhoneNumbers = new Set();
+let localPhoneNumbers = new Set();
+    let contactsPermissionGranted = false;
 
-    try {
-        const ContactsPlugin = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Contacts)
-            ? window.Capacitor.Plugins.Contacts
-            : null;
+    const ContactsPlugin = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Contacts)
+        ? window.Capacitor.Plugins.Contacts
+        : null;
 
-        if (ContactsPlugin) {
-            let perm = await ContactsPlugin.checkPermissions();
-            if (perm.contacts !== 'granted') {
-                perm = await ContactsPlugin.requestPermissions();
-            }
-            if (perm.contacts === 'granted') {
-                const result = await ContactsPlugin.getContacts({ projection: { phones: true } });
-                if (result && result.contacts) {
-                    result.contacts.forEach(c => {
-                        if (c.phones && Array.isArray(c.phones)) {
-                            c.phones.forEach(p => {
-                                if (p.number) {
-                                    const last10 = getPhoneLast10(p.number);
-                                    if (last10) {
-                                        localPhoneNumbers.add(last10);
-                                        localPhoneNumbers.add('+90' + last10);
-                                    }
-                                }
-                            });
+    async function readLocalContacts() {
+        const result = await ContactsPlugin.getContacts({ projection: { phones: true } });
+        if (result && result.contacts) {
+            result.contacts.forEach(c => {
+                if (c.phones && Array.isArray(c.phones)) {
+                    c.phones.forEach(p => {
+                        if (p.number) {
+                            const last10 = getPhoneLast10(p.number);
+                            if (last10) {
+                                localPhoneNumbers.add(last10);
+                                localPhoneNumbers.add('+90' + last10);
+                            }
                         }
                     });
                 }
-            }
+            });
         }
-    } catch (err) {
-        console.warn("Rehber okunurken bir durum oluştu:", err);
     }
+
+    // Açılışta izin İSTEMİYORUZ, sadece mevcut durumu kontrol ediyoruz
+    if (ContactsPlugin) {
+        try {
+            const perm = await ContactsPlugin.checkPermissions();
+            if (perm.contacts === 'granted') {
+                await readLocalContacts();
+                contactsPermissionGranted = true;
+            }
+        } catch (err) {
+            console.warn("Rehber durumu okunamadı:", err);
+        }
+    }
+
+    // Rehber izni yoksa listenin üstünde "Onayla" şeridi
+    const permBanner = document.createElement('div');
+    permBanner.className = 'px-4 py-3 bg-[#182229] border-b border-gray-800/40 items-center justify-between gap-3';
+    permBanner.style.display = 'none';
+    permBanner.innerHTML = `
+        <p class="text-xs text-gray-300 flex-1">Rehberindeki AuraChat kullanıcılarını görmek için onaylayın</p>
+        <button type="button" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-full flex-shrink-0 transition">Onayla</button>
+    `;
+    permBanner.querySelector('button').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+            const perm = await ContactsPlugin.requestPermissions();
+            if (perm.contacts === 'granted') {
+                await readLocalContacts();
+                contactsPermissionGranted = true;
+                renderAll();
+            } else {
+                showToast('Rehber izni verilmedi. Ayarlar > Uygulamalar > AuraChat > İzinler > Kişiler yolundan izin verebilirsin.', 5000);
+            }
+        } catch (err) {
+            showToast('İzin istenemedi: ' + ((err && err.message) ? err.message : err), 4000);
+        }
+        btn.disabled = false;
+    });
+
+    // Kullanıcı ayarlardan izin verip uygulamaya dönünce şerit kendiliğinden kalksın
+    document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState !== 'visible' || !ContactsPlugin || contactsPermissionGranted) return;
+        try {
+            const perm = await ContactsPlugin.checkPermissions();
+            if (perm.contacts === 'granted') {
+                await readLocalContacts();
+                contactsPermissionGranted = true;
+                renderAll();
+            }
+        } catch (e) {}
+    });
 
     dynamicListContainer = document.createElement('div');
 
@@ -310,9 +353,12 @@ export async function loadContacts() {
 
         if (!listMounted) {
             contactList.innerHTML = '';
+            contactList.appendChild(permBanner);
             contactList.appendChild(dynamicListContainer);
             listMounted = true;
         }
+
+        permBanner.style.display = (ContactsPlugin && !contactsPermissionGranted) ? 'flex' : 'none';
 
         let unreadChatsCount = 0;
         let favoritesCount = 0;
