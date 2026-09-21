@@ -557,6 +557,7 @@ async function ensureChatSession(chatId, otherUid) {
             session.groupData = gSnap.data();
             if (currentChatId === chatId) {
                 activeChatName.textContent = session.groupData.name || currentChatName;
+                setGroupHeaderAvatar(session.groupData.photo);
                 renderChatStatus();
             }
         }, () => {});
@@ -936,6 +937,17 @@ export async function clearChatForMe(chatId) {
 // ------------------------------------------
 // SOHBET SEÇİMİ
 // ------------------------------------------
+// Grup sohbet başlığındaki avatar: fotoğraf varsa onu, yoksa grup simgesini göster
+function setGroupHeaderAvatar(photo) {
+    if (photo) {
+        activeChatAvatar.style.backgroundColor = '';
+        activeChatAvatar.className = "w-10 h-10 rounded-full overflow-hidden shadow flex-shrink-0";
+        activeChatAvatar.innerHTML = `<img src="${photo}" class="w-full h-full object-cover">`;
+    } else {
+        activeChatAvatar.innerHTML = `<i class="fa-solid fa-user-group text-sm"></i>`;
+    }
+}
+
 export async function selectChat(otherUser) {
     exitSelectionMode();
     currentIsGroup = false;
@@ -1015,6 +1027,8 @@ export async function selectChat(otherUser) {
     if (currentChatId !== chatId) return;
 
     session.lastUsed = ++sessionTick;
+    if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.photo);
+    updateMicToggle();
     unreadDivider = findUnreadDivider(session);
     renderSession(session);
     markVisibleMessagesRead(session);
@@ -1170,7 +1184,9 @@ if (selectionDeleteBtn) {
                         images: null,
                         imagesCount: 0,
                         lat: null,
-                        lng: null
+                        lng: null,
+                        audio: null,
+                        audioDuration: null
                     });
                     everyoneDeletedIds.add(id);
 // Grup: mesajı henüz okumamış üyelerin bildirimini "silindi" ile değiştir
@@ -1687,6 +1703,8 @@ let bodyHtml;
     } else if (msg.type === 'declined_call') {
         const declinedLabel = msg.callType === 'audio' ? 'Reddedilen sesli arama' : 'Reddedilen görüntülü arama';
         bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${msg.callType === 'audio' ? 'audio' : 'video'}')"><i class="fa-solid fa-phone-slash"></i> ${declinedLabel}</p>`;
+} else if (msg.type === 'audio') {
+        bodyHtml = buildAudioBubbleHtml(msgId, msg);
     } else {
         bodyHtml = `<p class="break-words">${escapeHtml(msg.text)}</p>`;
     }
@@ -1808,6 +1826,8 @@ let bodyHtml;
             maybeStripDeliveredImage(currentChatId, msgId, msg);
         });
     }
+
+if (msg.type === 'audio') bindAudioPlayer(msgDiv, msgId, msg);
 
     if (selectedMessageIds.has(msgId)) {
         msgDiv.classList.add('bg-emerald-900/40');
@@ -2570,6 +2590,7 @@ async function sendMessage() {
         }
 
         messageInput.value = '';
+        updateMicToggle();
 
         await addDoc(collection(db, "chats", currentChatId, "messages"), {
             text: text,
@@ -2792,6 +2813,334 @@ if (attachBtn && imageInput) {
             if (activeChatStatus && validFiles.length > 1) {
                 activeChatStatus.textContent = '';
             }
+        }
+    });
+}
+
+// ------------------------------------------
+// SESLİ MESAJ
+// Mikrofon düğmesine basılı tut, konuş, bırakınca gider. Sola kaydırıp bırakırsan iptal.
+// Ses base64 olarak mesajın içinde gider (en fazla 2 dk: Firestore belge sınırı 1 MB).
+// Yazı yazılmıyorken gönder düğmesinin yerinde mikrofon görünür.
+// ------------------------------------------
+const VOICE_MAX_SECONDS = 120;
+const VOICE_MIN_SECONDS = 1;
+let micBtn = null;
+let recInfoEl = null;
+let recState = null; // { recorder, stream, chunks, startMs, timerId, cancelled, released, startX, durationSec }
+
+function fmtAudioTime(sec) {
+    const s = Math.max(0, Math.floor(Number(sec) || 0));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// Yazı varsa gönder, yoksa mikrofon düğmesi görünsün
+function updateMicToggle() {
+    if (!micBtn || !sendBtn || !messageInput) return;
+    const hasText = messageInput.value.trim().length > 0;
+    sendBtn.style.display = hasText ? '' : 'none';
+    micBtn.style.display = hasText ? 'none' : '';
+}
+
+function pickVoiceMime() {
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+    for (const m of candidates) {
+        try { if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; } catch (e) {}
+    }
+    return '';
+}
+
+function ensureRecInfo() {
+    if (recInfoEl) return recInfoEl;
+    const el = document.createElement('div');
+    el.className = 'hidden flex-1 items-center px-4 py-2.5 rounded-full bg-[#202c33] text-white text-sm';
+    el.innerHTML = `
+        <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse mr-2 flex-shrink-0"></span>
+        <span id="rec-time" class="font-mono">0:00</span>
+        <span id="rec-hint" class="ml-auto pl-3 text-gray-400 text-xs truncate">‹ Sola kaydır: iptal</span>
+    `;
+    messageInput.insertAdjacentElement('beforebegin', el);
+    recInfoEl = el;
+    return el;
+}
+
+function setRecHint(cancelling) {
+    const h = document.getElementById('rec-hint');
+    if (!h) return;
+    h.textContent = cancelling ? 'Bırakınca iptal edilir' : '‹ Sola kaydır: iptal';
+    h.className = 'ml-auto pl-3 text-xs truncate ' + (cancelling ? 'text-rose-400' : 'text-gray-400');
+}
+
+function showRecordingUI() {
+    const el = ensureRecInfo();
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    messageInput.style.display = 'none';
+    if (attachBtn) attachBtn.style.display = 'none';
+    if (micBtn) micBtn.style.transform = 'scale(1.25)';
+    const t = document.getElementById('rec-time');
+    if (t) t.textContent = '0:00';
+    setRecHint(false);
+}
+
+function hideRecordingUI() {
+    if (recInfoEl) {
+        recInfoEl.classList.add('hidden');
+        recInfoEl.classList.remove('flex');
+    }
+    messageInput.style.display = '';
+    if (attachBtn) attachBtn.style.display = '';
+    if (micBtn) micBtn.style.transform = '';
+}
+
+async function startVoiceRecording(e) {
+    if (recState || !currentUser || !currentChatId) return;
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+        showToast('Bu cihaz ses kaydını desteklemiyor');
+        return;
+    }
+    if (window.__aurachatCallActive) {
+        showToast('Arama sırasında ses kaydedilemez');
+        return;
+    }
+    try { micBtn.setPointerCapture(e.pointerId); } catch (err) {}
+
+    const st = {
+        recorder: null, stream: null, chunks: [], startMs: 0, timerId: null,
+        cancelled: false, released: false, startX: e.clientX, durationSec: 0, mime: ''
+    };
+    recState = st;
+
+    let stream;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+        recState = null;
+        showToast('Mikrofon izni verilmedi');
+        return;
+    }
+
+    // İzin penceresi açıkken parmak kalkmışsa kaydı başlatma
+    if (st.released) {
+        stream.getTracks().forEach((t) => t.stop());
+        recState = null;
+        return;
+    }
+
+    const mime = pickVoiceMime();
+    let recorder;
+    try {
+        recorder = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : { audioBitsPerSecond: 24000 });
+    } catch (err) {
+        stream.getTracks().forEach((t) => t.stop());
+        recState = null;
+        showToast('Ses kaydı başlatılamadı');
+        return;
+    }
+
+    st.recorder = recorder;
+    st.stream = stream;
+    st.mime = mime || recorder.mimeType || 'audio/webm';
+    recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) st.chunks.push(ev.data); };
+    recorder.onstop = () => onVoiceStopped(st);
+    recorder.start(1000);
+    st.startMs = Date.now();
+
+    showRecordingUI();
+    st.timerId = setInterval(() => {
+        const sec = (Date.now() - st.startMs) / 1000;
+        const t = document.getElementById('rec-time');
+        if (t) t.textContent = fmtAudioTime(sec);
+        if (sec >= VOICE_MAX_SECONDS) finishVoiceRecording(false);
+    }, 250);
+    if (navigator.vibrate) navigator.vibrate(20);
+}
+
+function onVoiceMove(e) {
+    if (!recState || !recState.recorder) return;
+    const cancelling = (e.clientX - recState.startX) < -90;
+    if (cancelling !== recState.cancelled) {
+        recState.cancelled = cancelling;
+        setRecHint(cancelling);
+    }
+}
+
+function finishVoiceRecording(cancel) {
+    const st = recState;
+    if (!st) return;
+    st.released = true;
+    if (!st.recorder) return; // kayıt henüz başlamadı, başlatan taraf temizler
+    if (cancel) st.cancelled = true;
+    if (st.timerId) { clearInterval(st.timerId); st.timerId = null; }
+    st.durationSec = Math.round((Date.now() - st.startMs) / 1000);
+    hideRecordingUI();
+    try {
+        if (st.recorder.state !== 'inactive') st.recorder.stop();
+        else onVoiceStopped(st);
+    } catch (err) {
+        onVoiceStopped(st);
+    }
+}
+
+function onVoiceStopped(st) {
+    if (st.stream) st.stream.getTracks().forEach((t) => t.stop());
+    st.stream = null;
+    if (recState === st) recState = null;
+    if (st.cancelled || st.done) return;
+    st.done = true;
+    if (st.durationSec < VOICE_MIN_SECONDS) {
+        showToast('Konuşmak için basılı tut');
+        return;
+    }
+    if (!st.chunks.length) return;
+
+    const blob = new Blob(st.chunks, { type: st.mime });
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        if (typeof reader.result === 'string') sendVoiceMessage(reader.result, Math.min(st.durationSec, VOICE_MAX_SECONDS));
+    };
+    reader.readAsDataURL(blob);
+}
+
+async function sendVoiceMessage(dataUrl, durationSec) {
+    if (!currentUser || !currentChatId) return;
+    // Firestore belgesi 1 MB'ı geçemez
+    if (dataUrl.length > 950000) {
+        showToast('Ses çok uzun, daha kısa kaydet');
+        return;
+    }
+    try {
+        await addDoc(collection(db, "chats", currentChatId, "messages"), {
+            type: 'audio',
+            audio: dataUrl,
+            audioDuration: durationSec,
+            text: '',
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false
+        });
+
+        await updateChatSummaries(`🎤 Sesli mesaj (${fmtAudioTime(durationSec)})`);
+        pushToGroupMembers("🎤 Sesli mesaj gönderdi");
+
+        if (currentChatId !== 'global' && currentOtherUid) {
+            sendPushToUser(currentOtherUid, `${currentUser.name}`, "🎤 Sesli mesaj", {
+                chatId: currentChatId,
+                otherUid: currentUser.uid,
+                otherName: currentUser.name
+            });
+        }
+        scrollToBottom();
+    } catch (err) {
+        console.error("Sesli mesaj gönderilemedi:", err);
+        showToast('Sesli mesaj gönderilemedi');
+    }
+}
+
+(function setupMicButton() {
+    if (!sendBtn || !sendBtn.parentElement || !messageInput) return;
+
+    micBtn = sendBtn.cloneNode(false);
+    micBtn.id = 'mic-btn';
+    micBtn.type = 'button';
+    const sendIcon = sendBtn.querySelector('i');
+    const iconClass = sendIcon ? sendIcon.className.replace('fa-paper-plane', 'fa-microphone') : 'fa-solid fa-microphone';
+    micBtn.innerHTML = `<i class="${iconClass}"></i>`;
+    micBtn.style.touchAction = 'none';
+    micBtn.style.userSelect = 'none';
+    micBtn.style.webkitUserSelect = 'none';
+    sendBtn.insertAdjacentElement('afterend', micBtn);
+
+    micBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); startVoiceRecording(e); });
+    micBtn.addEventListener('pointermove', onVoiceMove);
+    micBtn.addEventListener('pointerup', () => finishVoiceRecording(false));
+    micBtn.addEventListener('pointercancel', () => finishVoiceRecording(true));
+    micBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    messageInput.addEventListener('input', updateMicToggle);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && recState) finishVoiceRecording(true);
+    });
+    updateMicToggle();
+})();
+
+// ------------------------------------------
+// SESLİ MESAJ BALONU (oynat / durdur + ilerleme çubuğu)
+// ------------------------------------------
+const audioPlayers = new Map(); // msgId -> { audio, ui }
+let currentPlayingPlayer = null;
+
+function buildAudioBubbleHtml(msgId, msg) {
+    const dur = Math.max(0, Math.round(Number(msg.audioDuration) || 0));
+    return `
+        <div class="flex items-center space-x-2.5" style="min-width:190px;" data-audio-msg="${msgId}">
+            <button type="button" class="audio-play-btn w-9 h-9 rounded-full bg-black/25 hover:bg-black/40 text-white flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-play text-sm"></i></button>
+            <div class="flex-1 min-w-0">
+                <div class="h-1 rounded-full bg-white/25 overflow-hidden"><div class="audio-progress h-full bg-white/80" style="width:0%"></div></div>
+                <p class="audio-time text-[11px] text-gray-300 mt-1">${fmtAudioTime(dur)}</p>
+            </div>
+            <i class="fa-solid fa-microphone text-gray-300 text-sm flex-shrink-0"></i>
+        </div>`;
+}
+
+function paintAudio(player) {
+    const ui = player.ui;
+    if (!ui) return;
+    const a = player.audio;
+    const playing = !!(a && !a.paused);
+    const t = a ? a.currentTime : 0;
+    ui.icon.className = playing ? 'fa-solid fa-pause text-sm' : 'fa-solid fa-play text-sm';
+    ui.bar.style.width = (ui.total > 0 && t > 0) ? Math.min(100, (t / ui.total) * 100) + '%' : '0%';
+    ui.timeEl.textContent = fmtAudioTime(t > 0 ? t : ui.total);
+}
+
+function bindAudioPlayer(msgDiv, msgId, msg) {
+    const wrap = msgDiv.querySelector(`[data-audio-msg="${msgId}"]`);
+    if (!wrap) return;
+    const btn = wrap.querySelector('.audio-play-btn');
+
+    let player = audioPlayers.get(msgId);
+    if (!player) {
+        player = { audio: null, ui: null };
+        audioPlayers.set(msgId, player);
+    }
+    // Liste yeniden çizilince arayüz elemanları değişir, çalan ses varsa yeni balona bağla
+    player.ui = {
+        icon: btn.querySelector('i'),
+        bar: wrap.querySelector('.audio-progress'),
+        timeEl: wrap.querySelector('.audio-time'),
+        total: Math.max(0, Math.round(Number(msg.audioDuration) || 0))
+    };
+    paintAudio(player);
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (selectionMode) return;
+        if (!msg.audio) { showToast('Sesli mesaj bulunamadı'); return; }
+
+        if (currentPlayingPlayer && currentPlayingPlayer !== player && currentPlayingPlayer.audio) {
+            currentPlayingPlayer.audio.pause();
+        }
+
+        if (!player.audio) {
+            const a = new Audio(msg.audio);
+            a.addEventListener('timeupdate', () => paintAudio(player));
+            a.addEventListener('play', () => paintAudio(player));
+            a.addEventListener('pause', () => paintAudio(player));
+            a.addEventListener('ended', () => {
+                a.currentTime = 0;
+                paintAudio(player);
+                if (currentPlayingPlayer === player) currentPlayingPlayer = null;
+            });
+            player.audio = a;
+        }
+
+        if (player.audio.paused) {
+            player.audio.play().catch(() => showToast('Ses oynatılamadı'));
+            currentPlayingPlayer = player;
+        } else {
+            player.audio.pause();
         }
     });
 }
