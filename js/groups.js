@@ -480,6 +480,19 @@ function openAddPanel() {
     pushBackState(closeAddPanelFromBack);
 }
 
+// Sohbetin üç nokta menüsünden: grup bilgisini okuyup doğrudan üye ekleme panelini açar
+async function openAddPanelForGroup(groupId) {
+    try {
+        const snap = await getDoc(doc(db, "groups", groupId));
+        if (!snap.exists()) { showToast('Grup bulunamadı'); return; }
+        infoGroupId = groupId;
+        infoGroupData = snap.data();
+        openAddPanel();
+    } catch (err) {
+        showToast('Grup bilgisi okunamadı: ' + err.message, 3500);
+    }
+}
+
 async function addMembersToGroup() {
     const me = getCurrentUser();
     const gid = infoGroupId;
@@ -539,7 +552,7 @@ async function addMembersToGroup() {
 
         closeAddPanel();
         showToast(text);
-        openGroupInfo(gid);
+        if (infoPanelOpen) openGroupInfo(gid); // menüden açıldıysa grup bilgisi paneli kendiliğinden açılmasın
     } catch (err) {
         showToast('Eklenemedi: ' + err.message, 3500);
     } finally {
@@ -575,6 +588,9 @@ function ensureChatMenu() {
         <button type="button" data-chat-menu="info" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-solid fa-circle-info text-sky-400 w-4"></i><span>Grup bilgisi</span>
         </button>
+      <button type="button" data-chat-menu="add" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid fa-user-plus text-emerald-400 w-4"></i><span>Üye ekle</span>
+        </button>
         <button type="button" data-chat-menu="leave" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-rose-400 hover:bg-[#2a3942] text-left">
             <i class="fa-solid fa-right-from-bracket w-4"></i><span>Gruptan ayrıl</span>
         </button>
@@ -589,8 +605,13 @@ function ensureChatMenu() {
         const id = getCurrentChatId();
         if (!isGroupId(id)) return;
 
-        if (item.dataset.chatMenu === 'info') {
+     if (item.dataset.chatMenu === 'info') {
             openGroupInfo(id);
+            return;
+        }
+
+        if (item.dataset.chatMenu === 'add') {
+            openAddPanelForGroup(id);
             return;
         }
 
