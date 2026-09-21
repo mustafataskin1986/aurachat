@@ -630,6 +630,9 @@ async function startOrJoin(gid, requestedType) {
                 chatId: gid,
                 otherUid: gid,
                 otherName: gname,
+                kind: 'call',
+                callType: type,
+                callerName: me.name || '',
                 tag: `gcall_${gid}`
             });
         });
