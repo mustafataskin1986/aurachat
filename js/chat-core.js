@@ -2977,7 +2977,21 @@ export async function leaveGroup(groupId) {
         chatSessions.delete(groupId);
     }
 
-    await updateDoc(doc(db, "groups", groupId), { members: arrayRemove(currentUser.uid) });
+    // Yönetici çıkıyorsa ve başka yönetici kalmıyorsa, kalan ilk üyeyi yönetici yap
+    const groupUpdate = { members: arrayRemove(currentUser.uid) };
+    try {
+        const gd2 = await getGroupData(groupId);
+        if (gd2) {
+            const curAdmins = (Array.isArray(gd2.admins) && gd2.admins.length) ? gd2.admins : (gd2.createdBy ? [gd2.createdBy] : []);
+            if (curAdmins.includes(currentUser.uid)) {
+                const remainingMembers = (gd2.members || []).filter((u) => u !== currentUser.uid);
+                let nextAdmins = curAdmins.filter((u) => u !== currentUser.uid && remainingMembers.includes(u));
+                if (!nextAdmins.length && remainingMembers.length) nextAdmins = [remainingMembers[0]];
+                groupUpdate.admins = nextAdmins;
+            }
+        }
+    } catch (e) {}
+    await updateDoc(doc(db, "groups", groupId), groupUpdate);
     await deleteDoc(doc(db, "users", currentUser.uid, "chats", groupId));
     await deleteChatDiskCache(groupId);
     if (window.__aurachatGroupIds) window.__aurachatGroupIds.delete(groupId);
