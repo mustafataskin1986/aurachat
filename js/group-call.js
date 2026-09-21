@@ -31,6 +31,7 @@ import {
 import { getCurrentUser, getCurrentChatId, sendPushToUser, showToast } from "./chat-core.js";
 import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
+import { startRingtone, stopRingtone, startRingback, stopRingback } from "./ringtone.js";
 
 const RTC_CONFIG = {
     iceServers: [
@@ -226,9 +227,11 @@ function updateHeader() {
     if (!st) return;
     const n = lastParticipants.length;
     if (n <= 1) {
-        st.textContent = 'Aranıyor...';
+   st.textContent = 'Aranıyor...';
+        startRingback();
         return;
     }
+    stopRingback();
     const sec = Math.max(0, Math.floor((Date.now() - callStartMs) / 1000));
     const mm = String(Math.floor(sec / 60)).padStart(2, '0');
     const ss = String(sec % 60).padStart(2, '0');
@@ -476,6 +479,7 @@ function startCallDocListener(gid) {
 }
 
 function cleanupLocal() {
+    stopRingback();
     if (unsubCallDoc) { unsubCallDoc(); unsubCallDoc = null; }
     if (unsubSignals) { unsubSignals(); unsubSignals = null; }
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
@@ -780,11 +784,13 @@ function showJoinPrompt(gid, d) {
     el.classList.add('flex');
     if (joinShownFor !== d.callId) {
         joinShownFor = d.callId;
-        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        startRingtone();
     }
 }
 
 function hideJoinPrompt() {
+    stopRingtone();
     if (joinEl) {
         joinEl.classList.add('hidden');
         joinEl.classList.remove('flex');
