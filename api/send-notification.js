@@ -88,6 +88,7 @@ export default async function handler(req, res) {
     const safeTitle = String(title).slice(0, MAX_TITLE);
     const safeBody = String(body).slice(0, MAX_BODY);
     const isWebPlatform = String(u.platform || '').toLowerCase().includes('pwa') || String(u.platform || '').toLowerCase().includes('web');
+    const isCall = !!(data && String(data.kind || '') === 'call');
 
     // FCM data payload'ındaki tüm alanlar string olmak zorunda
     const safeData = { title: safeTitle, body: safeBody };
@@ -100,10 +101,10 @@ export default async function handler(req, res) {
     }
     if (tag) safeData.tag = String(tag).slice(0, MAX_DATA_VALUE);
 
-    const message = isWebPlatform
+    const message = (isWebPlatform || isCall)
       ? {
           data: safeData,
-          android: { priority: 'high' },
+          android: isCall ? { priority: 'high', ttl: 45000 } : { priority: 'high' },
           token: token,
         }
       : {
