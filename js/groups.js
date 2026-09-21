@@ -274,8 +274,11 @@ function ensureInfoPanel() {
         </div>
         <div class="flex-1 overflow-y-auto min-h-0">
             <div class="flex flex-col items-center py-6 border-b border-gray-800/40">
-                <div id="group-info-avatar" class="w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl shadow-lg">
-                    <i class="fa-solid fa-user-group"></i>
+             <div class="relative">
+                    <div id="group-info-avatar" class="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center text-white text-3xl shadow-lg">
+                        <i class="fa-solid fa-user-group"></i>
+                    </div>
+                    <button type="button" id="group-photo-btn" class="hidden absolute bottom-0 right-0 w-8 h-8 rounded-full bg-emerald-600 text-white text-xs items-center justify-center border-2 border-[#0b141a]"><i class="fa-solid fa-camera"></i></button>
                 </div>
             <div class="flex items-center justify-center mt-3 px-4 max-w-full">
                     <h3 id="group-info-name" class="text-white text-lg font-semibold text-center break-words"></h3>
@@ -300,7 +303,7 @@ function ensureInfoPanel() {
   el.querySelector('#group-info-back').addEventListener('click', closeInfoPanel);
   el.querySelector('#group-add-member-btn').addEventListener('click', () => openAddPanel());
     el.querySelector('#group-rename-btn').addEventListener('click', () => renameGroup());
-
+    el.querySelector('#group-photo-btn').addEventListener('click', () => changeGroupPhoto());
     el.querySelector('#group-leave-btn').addEventListener('click', async () => {
         if (!infoGroupId) return;
         if (!confirm('Gruptan ayrılmak istiyor musun?')) return;
@@ -353,6 +356,9 @@ async function openGroupInfo(groupId) {
         const members = Array.isArray(g.members) ? g.members : [];
         nameEl.textContent = g.name || 'Grup';
         avatarEl.style.backgroundColor = getUserColor(g.name || 'Grup');
+        avatarEl.innerHTML = g.photo
+            ? `<img src="${g.photo}" class="w-full h-full object-cover">`
+            : `<i class="fa-solid fa-user-group"></i>`;
         countEl.textContent = `${members.length} üye`;
 
         // Yönetici değilse ad değiştirme ve üye ekleme kapalı
@@ -360,7 +366,12 @@ async function openGroupInfo(groupId) {
         const renameBtn = el.querySelector('#group-rename-btn');
         if (renameBtn) renameBtn.classList.toggle('hidden', !iAmAdmin);
         const addBtn = el.querySelector('#group-add-member-btn');
-        if (addBtn) addBtn.style.display = iAmAdmin ? '' : 'none';
+    if (addBtn) addBtn.style.display = iAmAdmin ? '' : 'none';
+        const photoBtn = el.querySelector('#group-photo-btn');
+        if (photoBtn) {
+            photoBtn.classList.toggle('hidden', !iAmAdmin);
+            photoBtn.classList.toggle('flex', iAmAdmin);
+        }
 
         const usersMap = window.__aurachatUsers;
         membersEl.innerHTML = '';
@@ -527,6 +538,7 @@ async function postGroupEvent(gid, g, text, extra) {
     await Promise.allSettled(members.map((uid) => setDoc(doc(db, "users", uid, "chats", gid), {
         isGroup: true,
         groupName: gname,
+        ...((extra && extra.groupPhoto) ? { groupPhoto: extra.groupPhoto } : {}),
         lastMessage: text,
         lastMessageTime: serverTimestamp(),
         lastSenderUid: me.uid,
@@ -560,6 +572,72 @@ async function renameGroup() {
         openGroupInfo(gid);
     } catch (err) {
         showToast('Değiştirilemedi: ' + err.message, 3500);
+    }
+}
+
+// ------------------------------------------
+// GRUP FOTOĞRAFI (yönetici değiştirir; küçük kare önizleme olarak grup belgesinde tutulur)
+// ------------------------------------------
+function pickGroupPhotoFile() {
+    return new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.style.display = 'none';
+        input.addEventListener('change', () => {
+            resolve(input.files && input.files[0] ? input.files[0] : null);
+            input.remove();
+        });
+        input.addEventListener('cancel', () => {
+            resolve(null);
+            input.remove();
+        });
+        document.body.appendChild(input);
+        input.click();
+    });
+}
+
+// Seçilen resmi ortadan kare kırpıp küçültür (kayıt boyutu ~10 KB)
+function makeSquareThumb(file, size) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const side = Math.min(img.width, img.height);
+                const sx = Math.round((img.width - side) / 2);
+                const sy = Math.round((img.height - side) / 2);
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                canvas.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, size, size);
+                resolve(canvas.toDataURL('image/jpeg', 0.7));
+            };
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+async function changeGroupPhoto() {
+    const me = getCurrentUser();
+    const gid = infoGroupId;
+    const g = infoGroupData;
+    if (!me || !gid || !g || !isAdmin(g, me.uid)) return;
+
+    const file = await pickGroupPhotoFile();
+    if (!file) return;
+
+    try {
+        const photo = await makeSquareThumb(file, 192);
+        await updateDoc(doc(db, "groups", gid), { photo: photo });
+        await postGroupEvent(gid, g, `${me.name} grup fotoğrafını değiştirdi`, { groupPhoto: photo });
+        showToast('Grup fotoğrafı değişti');
+        openGroupInfo(gid);
+    } catch (err) {
+        showToast('Fotoğraf değiştirilemedi: ' + err.message, 3500);
     }
 }
 
@@ -697,7 +775,8 @@ async function addMembersToGroup() {
         await Promise.allSettled(oldMembers.concat(newUids).map((uid) => setDoc(doc(db, "users", uid, "chats", gid), {
             isGroup: true,
             groupName: groupName,
-            ...(newUids.includes(uid) ? { clearedAt: serverTimestamp() } : {}), // yeni üye eski mesajları görmesin
+         ...(newUids.includes(uid) ? { clearedAt: serverTimestamp() } : {}), // yeni üye eski mesajları görmesin
+            ...(g.photo ? { groupPhoto: g.photo } : {}),
             lastMessage: text,
             lastMessageTime: serverTimestamp(),
             lastSenderUid: me.uid,
