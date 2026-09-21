@@ -167,6 +167,15 @@ export async function startVoiceCall(chatId, otherUid) {
         createdAt: serverTimestamp()
     });
 
+    setDoc(doc(db, "incomingCalls", otherUid), {
+        chatId: chatId,
+        callType: 'audio',
+        isGroup: false,
+        callerUid: user.uid,
+        callerName: user.name || '',
+        at: Date.now()
+    }).catch(() => {});
+
     sendPushToUser(otherUid, `${user.name}`, "📞 Sesli arama yapıyor...", {
         chatId: chatId,
         otherUid: user.uid,
