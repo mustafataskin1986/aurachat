@@ -15,6 +15,7 @@ import {
 import { getCurrentUser, getCurrentChatId, sendPushToUser, logMissedCall, logDeclinedCall, logCallDuration, showToast } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
+import { startRingtone, stopRingtone, startRingback, stopRingback } from "./ringtone.js";
 
 const RTC_CONFIG = {
     iceServers: [
@@ -98,6 +99,7 @@ export function watchVoiceCallForChat(chatId) {
             pc.onconnectionstatechange = () => {
                 if (pc && pc.connectionState === 'connected' && !callStartTime) callStartTime = Date.now();
             };
+     stopRingback();
             if (callStatusText) callStatusText.textContent = 'Bağlanıyor...';
         }
     });
@@ -185,6 +187,7 @@ export async function startVoiceCall(chatId, otherUid) {
 
     listenRemoteCandidates(chatId, 'calleeCandidates');
     showActiveVoiceCallUI('Aranıyor...', user.name, user.avatar || '');
+    startRingback();
     pushBackState(() => { hangupVoiceCall(); });
 }
 
@@ -219,10 +222,12 @@ function showIncomingVoiceCall(chatId, callerName, callerAvatar, offer, callerUi
         incomingCallOverlay.classList.remove('hidden');
         incomingCallOverlay.classList.add('flex');
     }
-    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+ if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    startRingtone();
 }
 
 function hideIncomingCallUI() {
+    stopRingtone();
     if (incomingCallOverlay) {
         incomingCallOverlay.classList.add('hidden');
         incomingCallOverlay.classList.remove('flex');
@@ -393,6 +398,8 @@ function endCallUI(message) {
 }
 
 function resetCallState() {
+    stopRingback();
+    stopRingtone();
     window.__aurachatCallActive = false;
     if (pc) { pc.close(); pc = null; }
     if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
