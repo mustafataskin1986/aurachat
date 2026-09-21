@@ -182,6 +182,9 @@ export async function startVoiceCall(chatId, otherUid) {
         chatId: chatId,
         otherUid: user.uid,
         otherName: user.name,
+        kind: 'call',
+        callType: 'audio',
+        callerName: user.name || '',
         tag: `call_${chatId}`
     });
 
