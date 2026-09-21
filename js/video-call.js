@@ -174,6 +174,15 @@ export async function startCall(chatId, otherUid) {
         createdAt: serverTimestamp()
     });
 
+    setDoc(doc(db, "incomingCalls", otherUid), {
+        chatId: chatId,
+        callType: 'video',
+        isGroup: false,
+        callerUid: user.uid,
+        callerName: user.name || '',
+        at: Date.now()
+    }).catch(() => {});
+
     sendPushToUser(otherUid, `${user.name}`, "📹 Görüntülü arama yapıyor...", {
         chatId: chatId,
         otherUid: user.uid,
