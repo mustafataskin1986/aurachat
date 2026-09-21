@@ -325,7 +325,7 @@ jobs:
             echo "UYARI: MainActivity.java bulunamadı!"
           fi
 
-   - name: AuraMessagingService.java - Kapalı uygulamada telefon çalar gibi gelen arama
+         - name: AuraMessagingService.java - Kapalı uygulamada telefon çalar gibi gelen arama
         run: |
           MAIN_ACTIVITY=$(find android -name "MainActivity.java" | head -n 1)
           if [ -n "$MAIN_ACTIVITY" ]; then
@@ -337,8 +337,7 @@ jobs:
           import android.app.NotificationChannel;
           import android.app.NotificationManager;
           import android.app.PendingIntent;
-          import android.content.Context;
-          import android.content.Intent;
+          import android.content.Context;                       import android.content.Intent;
           import android.media.AudioAttributes;
           import android.media.AudioManager;
           import android.media.RingtoneManager;
@@ -493,6 +492,9 @@ jobs:
           if [ -f "$APP_BUILD_GRADLE" ]; then
             if ! grep -q "com.google.gms.google-services" "$APP_BUILD_GRADLE"; then
               echo 'apply plugin: "com.google.gms.google-services"' >> "$APP_BUILD_GRADLE"
+            fi
+            if ! grep -q "firebase-messaging:" "$APP_BUILD_GRADLE"; then
+              printf '\ndependencies {\n    implementation "com.google.firebase:firebase-messaging:23.3.1"\n}\n' >> "$APP_BUILD_GRADLE"
             fi
           fi
 
