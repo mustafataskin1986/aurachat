@@ -325,7 +325,7 @@ jobs:
             echo "UYARI: MainActivity.java bulunamadı!"
           fi
 
-         - name: AuraMessagingService.java - Kapalı uygulamada telefon çalar gibi gelen arama
+      - name: AuraMessagingService.java - Kapalı uygulamada telefon çalar gibi gelen arama
         run: |
           MAIN_ACTIVITY=$(find android -name "MainActivity.java" | head -n 1)
           if [ -n "$MAIN_ACTIVITY" ]; then
