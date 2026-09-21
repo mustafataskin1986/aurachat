@@ -58,6 +58,7 @@ import {
     serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, getDoc, increment, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
+import { getAuth } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { watchCallForChat, startCall } from "./video-call.js";
 import { watchVoiceCallForChat, startVoiceCall } from "./voice-call.js";
@@ -709,21 +710,19 @@ export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
             if (receiverReallyHere) return;
         }
 
-        const receiverToken = userData?.fcmToken || userData?.fcm_token || userData?.pushToken;
-
-        if (!receiverToken) {
-            console.warn("⚠️ sendPushToUser: Alıcının veritabanında fcmToken bilgisi yok.");
-            return;
-        }
+        // Sunucu kimliğimi (giriş jetonu) doğrular, alıcının bildirim jetonunu kendisi okur
+        const idToken = await getAuth().currentUser.getIdToken();
 
         const response = await fetch('https://aurachat-amber.vercel.app/api/send-notification', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${idToken}`
+            },
             body: JSON.stringify({
-                token: receiverToken,
+                receiverUid: receiverUid,
                 title: title,
                 body: body,
-                platform: userData?.platform || '',
                 data: extraData,
                 tag: pushTag
             })
