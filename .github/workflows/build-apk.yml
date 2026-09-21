@@ -17,7 +17,7 @@ jobs:
       - name: Node.js Kur
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Java JDK Kur
         uses: actions/setup-java@v4
@@ -135,10 +135,8 @@ jobs:
           import android.view.WindowManager;
 
           public class MainActivity extends BridgeActivity {
-              // Uygulama ekranda mı? (AuraMessagingService, uygulama açıkken arama bildirimi göstermesin diye bakar)
               static volatile boolean inForeground = false;
 
-              // JS, uygulamanın kendi "Gelen arama" ekranı açılınca telefonun arama bildirimini kapatır
               public class CallBridge {
                   @JavascriptInterface
                   public void cancelCallNotifications() {
@@ -156,14 +154,12 @@ jobs:
               public void onStop() {
                   super.onStop();
                   inForeground = false;
-                  // Kilit ekranının üstünde görünme izni sadece gelen arama içindi
                   if (Build.VERSION.SDK_INT >= 27) {
                       setShowWhenLocked(false);
                       setTurnScreenOn(false);
                   }
               }
 
-              // Gelen arama bildirimiyle (tam ekran ya da dokunarak) açıldıysa kilit ekranının üstünde göster
               private void handleCallIntent(Intent intent) {
                   if (intent == null || !intent.getBooleanExtra("aura_call", false)) return;
                   intent.removeExtra("aura_call");
@@ -192,7 +188,6 @@ jobs:
               private volatile String pendingSharedJson = null;
               private volatile boolean shareBusy = false;
 
-              // JS buradan bekleyen paylaşımı alır: "" = yok, "busy" = hazırlanıyor, aksi halde resim listesi (JSON)
               public class ShareBridge {
                   @JavascriptInterface
                   public String consume() {
@@ -224,7 +219,6 @@ jobs:
                       ArrayList<Uri> many = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
                       if (many != null) uris.addAll(many);
                   }
-                  // Aynı paylaşım ikinci kez işlenmesin
                   intent.setAction(null);
                   if (uris.isEmpty()) return;
 
@@ -253,7 +247,6 @@ jobs:
                   }).start();
               }
 
-              // Paylaşılan resmi 1600px'e küçültüp JPEG data URI'ye çevirir (yön bilgisi uygulanır)
               private String shareUriToDataUrl(Uri uri) {
                   try {
                       BitmapFactory.Options bounds = new BitmapFactory.Options();
@@ -302,18 +295,18 @@ jobs:
                       return null;
                   }
               }
+
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   WebSettings settings = this.bridge.getWebView().getSettings();
-                settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+                  settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
-                  // Başka uygulamadan (galeri vb.) "Paylaş" ile gelen resimleri JS'e köprüle
                   this.bridge.getWebView().addJavascriptInterface(new ShareBridge(), "AuraShare");
                   handleShareIntent(getIntent());
                   handleCallIntent(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new CallBridge(), "AuraCall");
-                  // Galeriye kaydedilen resimleri yeniden kurulumdan sonra da okuyabilmek için medya izni iste
+
                   String mediaPerm = Build.VERSION.SDK_INT >= 33
                       ? Manifest.permission.READ_MEDIA_IMAGES
                       : Manifest.permission.READ_EXTERNAL_STORAGE;
@@ -324,8 +317,6 @@ jobs:
           }
           EOF
             echo "MainActivity.java güncellendi."
-          else
-            echo "UYARI: MainActivity.java bulunamadı!"
           fi
 
       - name: AuraMessagingService.java - Kapalı uygulamada telefon çalar gibi gelen arama
@@ -352,9 +343,6 @@ jobs:
           import com.google.firebase.messaging.RemoteMessage;
           import java.util.Map;
 
-          // Kapalı ya da arka plandaki uygulamada gelen aramayı telefon çalar gibi gösterir:
-          // zil sesi + titreşim + kilit ekranında tam ekran arama bildirimi.
-          // Arama dışındaki bildirimler eskisi gibi Capacitor'ın servisine gider.
           public class AuraMessagingService extends MessagingService {
               public static final String CALL_CHANNEL_ID = "aurachat-calls";
 
@@ -373,7 +361,6 @@ jobs:
               }
 
               private void showIncomingCall(Map<String, String> data) {
-                  // Uygulama ekrandaysa uygulamanın kendi "Gelen arama" ekranı çalışır
                   if (MainActivity.inForeground) return;
 
                   String chatId = data.get("chatId");
@@ -422,16 +409,12 @@ jobs:
                           .setVibrate(vibration);
 
                   Notification notification = builder.build();
-                  // Bildirim kapanana kadar zil ve titreşim tekrar etsin
                   notification.flags |= Notification.FLAG_INSISTENT;
-                  // Aynı tag: arayan vazgeçince gelen "Cevapsız arama" bildirimi bunun yerine geçer
                   nm.notify(tag, 0, notification);
               }
           }
           EOF
             echo "AuraMessagingService.java yazıldı."
-          else
-            echo "UYARI: MainActivity.java bulunamadı, servis yazılamadı!"
           fi
 
       - name: Firebase google-services.json Dosyasını Ekle
@@ -445,65 +428,105 @@ jobs:
 
       - name: Android İzinlerini ve Gradle Bağımlılıklarını Düzenle
         run: |
-          MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
-          STRINGS_PATH="android/app/src/main/res/values/strings.xml"
-          BUILD_GRADLE="android/build.gradle"
-          APP_BUILD_GRADLE="android/app/build.gradle"
+          python3 -c '
+          import os
 
-          # Manifest İzinleri
-          if [ -f "$MANIFEST_PATH" ]; then
-            if grep -q 'android:allowBackup="true"' "$MANIFEST_PATH"; then
-              sed -i 's/android:allowBackup="true"/android:allowBackup="false"/' "$MANIFEST_PATH"
-            elif ! grep -q 'android:allowBackup' "$MANIFEST_PATH"; then
-              sed -i 's/<application/<application android:allowBackup="false"/' "$MANIFEST_PATH"
-            fi
-            add_perm() {
-              if ! grep -q "$1" "$MANIFEST_PATH"; then
-                sed -i "/<\/manifest>/i \    <uses-permission android:name=\"$1\" \/>" "$MANIFEST_PATH"
-              fi
-            }
-            add_perm "android.permission.READ_CONTACTS"
-            add_perm "android.permission.WRITE_CONTACTS"
-            add_perm "android.permission.POST_NOTIFICATIONS"
-            add_perm "android.permission.CAMERA"
-            add_perm "android.permission.RECORD_AUDIO"
-            add_perm "android.permission.MODIFY_AUDIO_SETTINGS"
-            add_perm "android.permission.READ_MEDIA_IMAGES"
-            add_perm "android.permission.READ_MEDIA_VIDEO"
-            add_perm "android.permission.READ_EXTERNAL_STORAGE"
-            add_perm "android.permission.WRITE_EXTERNAL_STORAGE"
-            add_perm "android.permission.VIBRATE"
-            add_perm "android.permission.USE_FULL_SCREEN_INTENT"
-            # Kapalı uygulamada gelen aramayı yakalayan bildirim servisi (Capacitor'ın servisinden önceliklidir)
-            if ! grep -q "AuraMessagingService" "$MANIFEST_PATH"; then
-              sed -i 's#</application>#    <service android:name=".AuraMessagingService" android:exported="false">\n        <intent-filter android:priority="100">\n            <action android:name="com.google.firebase.MESSAGING_EVENT" />\n        </intent-filter>\n    </service>\n</application>#' "$MANIFEST_PATH"
-            fi
-            # Galeri vb. uygulamalarda "Paylaş" menüsünde AuraChat görünsün (resim paylaşma filtresi)
-            if ! grep -q "android.intent.action.SEND" "$MANIFEST_PATH"; then
-              sed -i 's#</activity>#    <intent-filter>\n        <action android:name="android.intent.action.SEND" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <data android:mimeType="image/*" />\n    </intent-filter>\n    <intent-filter>\n        <action android:name="android.intent.action.SEND_MULTIPLE" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <data android:mimeType="image/*" />\n    </intent-filter>\n</activity>#' "$MANIFEST_PATH"
-            fi
-            add_perm "android.permission.ACCESS_FINE_LOCATION"
-            add_perm "android.permission.ACCESS_COARSE_LOCATION"
-          fi
+          # 1. AndroidManifest.xml Düzenleme
+          manifest_path = "android/app/src/main/AndroidManifest.xml"
+          if os.path.exists(manifest_path):
+              with open(manifest_path, "r", encoding="utf-8") as f:
+                  content = f.read()
 
-          # Google Services Gradle eklentileri
-          if [ -f "$BUILD_GRADLE" ]; then
-            if ! grep -q "com.google.gms:google-services" "$BUILD_GRADLE"; then
-              sed -i 's/dependencies {/dependencies {\n        classpath "com.google.gms:google-services:4.4.0"/' "$BUILD_GRADLE"
-            fi
-          fi
+              # allowBackup ayarı
+              if "android:allowBackup=\"true\"" in content:
+                  content = content.replace("android:allowBackup=\"true\"", "android:allowBackup=\"false\"")
+              elif "android:allowBackup" not in content:
+                  content = content.replace("<application", "<application android:allowBackup=\"false\"")
 
-          if [ -f "$APP_BUILD_GRADLE" ]; then
-            if ! grep -q "com.google.gms.google-services" "$APP_BUILD_GRADLE"; then
-              echo 'apply plugin: "com.google.gms.google-services"' >> "$APP_BUILD_GRADLE"
-            fi
-          fi
+              # İzinler
+              permissions = [
+                  "android.permission.READ_CONTACTS",
+                  "android.permission.WRITE_CONTACTS",
+                  "android.permission.POST_NOTIFICATIONS",
+                  "android.permission.CAMERA",
+                  "android.permission.RECORD_AUDIO",
+                  "android.permission.MODIFY_AUDIO_SETTINGS",
+                  "android.permission.READ_MEDIA_IMAGES",
+                  "android.permission.READ_MEDIA_VIDEO",
+                  "android.permission.READ_EXTERNAL_STORAGE",
+                  "android.permission.WRITE_EXTERNAL_STORAGE",
+                  "android.permission.VIBRATE",
+                  "android.permission.USE_FULL_SCREEN_INTENT",
+                  "android.permission.ACCESS_FINE_LOCATION",
+                  "android.permission.ACCESS_COARSE_LOCATION"
+              ]
 
-          if [ -f "$STRINGS_PATH" ]; then
-            if ! grep -q "server_client_id" "$STRINGS_PATH"; then
-              sed -i 's/<\/resources>/    <string name="server_client_id">447747395966-3shresouu36769er1b9656oec8vd13aa.apps.googleusercontent.com<\/string>\n<\/resources>/' "$STRINGS_PATH"
-            fi
-          fi
+              perm_str = ""
+              for p in permissions:
+                  if p not in content:
+                      perm_str += f"    <uses-permission android:name=\"{p}\" />\n"
+              
+              if perm_str:
+                  content = content.replace("</manifest>", f"{perm_str}</manifest>")
+
+              # Service ekleme
+              if "AuraMessagingService" not in content:
+                  service_xml = """    <service android:name=".AuraMessagingService" android:exported="false">
+                      <intent-filter android:priority="100">
+                          <action android:name="com.google.firebase.MESSAGING_EVENT" />
+                      </intent-filter>
+                  </service>
+              </application>"""
+                  content = content.replace("</application>", service_xml)
+
+              # Intent Filter ekleme
+              if "android.intent.action.SEND" not in content:
+                  intent_xml = """    <intent-filter>
+                      <action android:name="android.intent.action.SEND" />
+                      <category android:name="android.intent.category.DEFAULT" />
+                      <data android:mimeType="image/*" />
+                  </intent-filter>
+                  <intent-filter>
+                      <action android:name="android.intent.action.SEND_MULTIPLE" />
+                      <category android:name="android.intent.category.DEFAULT" />
+                      <data android:mimeType="image/*" />
+                  </intent-filter>
+              </activity>"""
+                  content = content.replace("</activity>", intent_xml)
+
+              with open(manifest_path, "w", encoding="utf-8") as f:
+                  f.write(content)
+
+          # 2. build.gradle Düzenleme
+          build_gradle = "android/build.gradle"
+          if os.path.exists(build_gradle):
+              with open(build_gradle, "r", encoding="utf-8") as f:
+                  bg = f.read()
+              if "com.google.gms:google-services" not in bg:
+                  bg = bg.replace("dependencies {", "dependencies {\n        classpath \"com.google.gms:google-services:4.4.0\"")
+                  with open(build_gradle, "w", encoding="utf-8") as f:
+                      f.write(bg)
+
+          # 3. app/build.gradle Düzenleme
+          app_gradle = "android/app/build.gradle"
+          if os.path.exists(app_gradle):
+              with open(app_gradle, "r", encoding="utf-8") as f:
+                  ag = f.read()
+              if "com.google.gms.google-services" not in ag:
+                  ag += "\napply plugin: \"com.google.gms.google-services\"\n"
+                  with open(app_gradle, "w", encoding="utf-8") as f:
+                      f.write(ag)
+
+          # 4. strings.xml Düzenleme
+          strings_path = "android/app/src/main/res/values/strings.xml"
+          if os.path.exists(strings_path):
+              with open(strings_path, "r", encoding="utf-8") as f:
+                  st = f.read()
+              if "server_client_id" not in st:
+                  st = st.replace("</resources>", "    <string name=\"server_client_id\">447747395966-3shresouu36769er1b9656oec8vd13aa.apps.googleusercontent.com</string>\n</resources>")
+                  with open(strings_path, "w", encoding="utf-8") as f:
+                      f.write(st)
+          '
 
       - name: APK Derle (Gradle)
         run: |
