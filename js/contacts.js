@@ -674,7 +674,9 @@ export async function loadContacts() {
 
         const avatarSlot = userDiv.querySelector(`[data-avatar-slot="${chatId}"]`);
         if (isGroup) {
-            avatarSlot.innerHTML = `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white shadow" style="background-color:${getUserColor(displayName)};"><i class="fa-solid fa-user-group"></i></div>`;
+            avatarSlot.innerHTML = chatData.groupPhoto
+                ? `<img src="${chatData.groupPhoto}" class="w-12 h-12 rounded-full object-cover shadow">`
+                : `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white shadow" style="background-color:${getUserColor(displayName)};"><i class="fa-solid fa-user-group"></i></div>`;
         } else {
             renderAvatarInto(avatarSlot, chatData.otherUid, chatData.otherAvatar, chatData.otherName, 'w-12 h-12');
         }
