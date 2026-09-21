@@ -7,7 +7,7 @@
 // ==========================================
 
 import { db } from "./firebase-init.js";
-import { collection, doc, setDoc, getDoc, addDoc, updateDoc, arrayUnion, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getCurrentUser, getCurrentChatId, selectChat, sendPushToUser, leaveGroup, showToast } from "./chat-core.js";
 import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
@@ -277,7 +277,10 @@ function ensureInfoPanel() {
                 <div id="group-info-avatar" class="w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl shadow-lg">
                     <i class="fa-solid fa-user-group"></i>
                 </div>
-                <h3 id="group-info-name" class="text-white text-lg font-semibold mt-3 px-4 text-center break-words"></h3>
+            <div class="flex items-center justify-center mt-3 px-4 max-w-full">
+                    <h3 id="group-info-name" class="text-white text-lg font-semibold text-center break-words"></h3>
+                    <button type="button" id="group-rename-btn" class="hidden ml-2 text-emerald-400 hover:text-emerald-300 text-sm flex-shrink-0"><i class="fa-solid fa-pen"></i></button>
+                </div>
                 <p id="group-info-count" class="text-gray-400 text-xs mt-1"></p>
             </div>
          <button type="button" id="group-add-member-btn" class="w-full flex items-center px-4 py-3 border-b border-gray-800/30 hover:bg-[#202c33]/60 text-left">
@@ -295,7 +298,8 @@ function ensureInfoPanel() {
     `;
     document.body.appendChild(el);
   el.querySelector('#group-info-back').addEventListener('click', closeInfoPanel);
-    el.querySelector('#group-add-member-btn').addEventListener('click', () => openAddPanel());
+  el.querySelector('#group-add-member-btn').addEventListener('click', () => openAddPanel());
+    el.querySelector('#group-rename-btn').addEventListener('click', () => renameGroup());
 
     el.querySelector('#group-leave-btn').addEventListener('click', async () => {
         if (!infoGroupId) return;
@@ -351,6 +355,13 @@ async function openGroupInfo(groupId) {
         avatarEl.style.backgroundColor = getUserColor(g.name || 'Grup');
         countEl.textContent = `${members.length} üye`;
 
+        // Yönetici değilse ad değiştirme ve üye ekleme kapalı
+        const iAmAdmin = !!(me && isAdmin(g, me.uid));
+        const renameBtn = el.querySelector('#group-rename-btn');
+        if (renameBtn) renameBtn.classList.toggle('hidden', !iAmAdmin);
+        const addBtn = el.querySelector('#group-add-member-btn');
+        if (addBtn) addBtn.style.display = iAmAdmin ? '' : 'none';
+
         const usersMap = window.__aurachatUsers;
         membersEl.innerHTML = '';
         members.forEach((uid) => {
@@ -358,7 +369,8 @@ async function openGroupInfo(groupId) {
             const u = (usersMap && usersMap.get(uid)) || (isMe ? me : { uid: uid, name: 'Bilinmeyen' });
             const tags = [];
             if (isMe) tags.push('Sen');
-            if (g.createdBy === uid) tags.push('Kurucu');
+          if (g.createdBy === uid) tags.push('Kurucu');
+            else if (isAdmin(g, uid)) tags.push('Yönetici');
 
             const row = document.createElement('div');
             row.className = 'flex items-center px-4 py-3 border-b border-gray-800/30';
@@ -367,6 +379,11 @@ async function openGroupInfo(groupId) {
                 <span class="text-white text-sm font-medium ml-3 truncate flex-1">${escapeHtml(u.name || '')}</span>
                 ${tags.length ? `<span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-bold ml-2 flex-shrink-0">${tags.join(' · ')}</span>` : ''}
             `;
+            // Yönetici, kurucu dışındaki üyelere dokunup işlem yapabilir
+            if (iAmAdmin && !isMe && g.createdBy !== uid) {
+                row.classList.add('cursor-pointer', 'hover:bg-[#202c33]/60');
+                row.addEventListener('click', () => openMemberActions(uid, u.name || 'Üye', g));
+            }
             membersEl.appendChild(row);
         });
     } catch (err) {
@@ -480,6 +497,149 @@ function openAddPanel() {
     pushBackState(closeAddPanelFromBack);
 }
 
+// ------------------------------------------
+// GRUP YÖNETİMİ: yönetici kontrolü, ad değiştirme, üye çıkarma, yönetici yapma
+// ------------------------------------------
+function adminsOf(g) {
+    if (g && Array.isArray(g.admins) && g.admins.length) return g.admins;
+    return (g && g.createdBy) ? [g.createdBy] : [];
+}
+
+function isAdmin(g, uid) {
+    return adminsOf(g).includes(uid);
+}
+
+// Sohbete sistem mesajı yazar, üyelerin liste özetini günceller, diğerlerine bildirim atar
+async function postGroupEvent(gid, g, text, extra) {
+    const me = getCurrentUser();
+    const members = Array.isArray(g.members) ? g.members : [];
+    const gname = (extra && extra.groupName) || g.name || 'Grup';
+
+    await addDoc(collection(db, "chats", gid, "messages"), {
+        type: 'system',
+        text: text,
+        senderUid: me.uid,
+        senderName: me.name || '',
+        createdAt: serverTimestamp(),
+        read: false
+    });
+
+    await Promise.allSettled(members.map((uid) => setDoc(doc(db, "users", uid, "chats", gid), {
+        isGroup: true,
+        groupName: gname,
+        lastMessage: text,
+        lastMessageTime: serverTimestamp(),
+        lastSenderUid: me.uid,
+        lastSenderName: '',
+        lastMessageRead: false,
+        unreadCount: uid === me.uid ? 0 : increment(1),
+        updatedAt: serverTimestamp()
+    }, { merge: true })));
+
+    members.forEach((uid) => {
+        if (uid === me.uid) return;
+        sendPushToUser(uid, gname, text, { chatId: gid, otherUid: gid, otherName: gname });
+    });
+}
+
+async function renameGroup() {
+    const me = getCurrentUser();
+    const gid = infoGroupId;
+    const g = infoGroupData;
+    if (!me || !gid || !g || !isAdmin(g, me.uid)) return;
+
+    const input = prompt('Yeni grup adı:', g.name || '');
+    if (input === null) return;
+    const newName = input.trim().slice(0, 40);
+    if (!newName || newName === g.name) return;
+
+    try {
+        await updateDoc(doc(db, "groups", gid), { name: newName });
+        await postGroupEvent(gid, g, `${me.name} grubun adını "${newName}" olarak değiştirdi`, { groupName: newName });
+        showToast('Grup adı değişti');
+        openGroupInfo(gid);
+    } catch (err) {
+        showToast('Değiştirilemedi: ' + err.message, 3500);
+    }
+}
+
+let memberSheetEl = null;
+
+function closeMemberSheetFromBack() {
+    if (memberSheetEl) {
+        memberSheetEl.remove();
+        memberSheetEl = null;
+    }
+}
+
+function closeMemberSheet() {
+    if (!memberSheetEl) return;
+    closeMemberSheetFromBack();
+    popBackState();
+}
+
+function openMemberActions(uid, name, g) {
+    closeMemberSheetFromBack();
+    const admin = isAdmin(g, uid);
+    const el = document.createElement('div');
+    el.className = 'fixed inset-0 z-[70] bg-black/60 flex items-end';
+    el.innerHTML = `
+        <div class="w-full bg-[#202c33] rounded-t-2xl pb-6">
+            <p class="text-gray-400 text-xs px-5 pt-4 pb-2 truncate">${escapeHtml(name)}</p>
+            <button type="button" data-act="admin" class="w-full text-left px-5 py-3.5 text-sm text-gray-100 hover:bg-[#2a3942]"><i class="fa-solid fa-user-shield text-emerald-400 w-6"></i>${admin ? 'Yöneticiliği kaldır' : 'Yönetici yap'}</button>
+            <button type="button" data-act="remove" class="w-full text-left px-5 py-3.5 text-sm text-rose-400 hover:bg-[#2a3942]"><i class="fa-solid fa-user-minus w-6"></i>Gruptan çıkar</button>
+            <button type="button" data-act="cancel" class="w-full text-left px-5 py-3.5 text-sm text-gray-400 hover:bg-[#2a3942]"><i class="fa-solid fa-xmark w-6"></i>Vazgeç</button>
+        </div>
+    `;
+    document.body.appendChild(el);
+    el.addEventListener('click', (e) => {
+        if (e.target === el) { closeMemberSheet(); return; }
+        const btn = e.target.closest('[data-act]');
+        if (!btn) return;
+        const act = btn.dataset.act;
+        closeMemberSheet();
+        if (act === 'admin') toggleAdmin(uid, name, admin);
+        else if (act === 'remove') removeMember(uid, name);
+    });
+    memberSheetEl = el;
+    pushBackState(closeMemberSheetFromBack);
+}
+
+async function toggleAdmin(uid, name, wasAdmin) {
+    const me = getCurrentUser();
+    const gid = infoGroupId;
+    const g = infoGroupData;
+    if (!me || !gid || !g || !isAdmin(g, me.uid) || uid === g.createdBy) return;
+
+    try {
+        const base = adminsOf(g);
+        const next = wasAdmin ? base.filter((x) => x !== uid) : base.concat([uid]);
+        await updateDoc(doc(db, "groups", gid), { admins: next });
+        await postGroupEvent(gid, g, wasAdmin ? `${name} artık yönetici değil` : `${name} yönetici yapıldı`);
+        openGroupInfo(gid);
+    } catch (err) {
+        showToast('İşlem yapılamadı: ' + err.message, 3500);
+    }
+}
+
+async function removeMember(uid, name) {
+    const me = getCurrentUser();
+    const gid = infoGroupId;
+    const g = infoGroupData;
+    if (!me || !gid || !g || !isAdmin(g, me.uid) || uid === g.createdBy) return;
+    if (!confirm(`${name} gruptan çıkarılsın mı?`)) return;
+
+    try {
+        const remaining = (Array.isArray(g.members) ? g.members : []).filter((x) => x !== uid);
+        await updateDoc(doc(db, "groups", gid), { members: arrayRemove(uid), admins: arrayRemove(uid) });
+        await postGroupEvent(gid, { name: g.name, members: remaining }, `${name} gruptan çıkarıldı`);
+        await deleteDoc(doc(db, "users", uid, "chats", gid)).catch(() => {});
+        openGroupInfo(gid);
+    } catch (err) {
+        showToast('Çıkarılamadı: ' + err.message, 3500);
+    }
+}
+
 // Sohbetin üç nokta menüsünden: grup bilgisini okuyup doğrudan üye ekleme panelini açar
 async function openAddPanelForGroup(groupId) {
     try {
@@ -487,6 +647,11 @@ async function openAddPanelForGroup(groupId) {
         if (!snap.exists()) { showToast('Grup bulunamadı'); return; }
         infoGroupId = groupId;
         infoGroupData = snap.data();
+        const meAdd = getCurrentUser();
+        if (!meAdd || !isAdmin(infoGroupData, meAdd.uid)) {
+            showToast('Sadece yöneticiler üye ekleyebilir');
+            return;
+        }
         openAddPanel();
     } catch (err) {
         showToast('Grup bilgisi okunamadı: ' + err.message, 3500);
@@ -532,6 +697,7 @@ async function addMembersToGroup() {
         await Promise.allSettled(oldMembers.concat(newUids).map((uid) => setDoc(doc(db, "users", uid, "chats", gid), {
             isGroup: true,
             groupName: groupName,
+            ...(newUids.includes(uid) ? { clearedAt: serverTimestamp() } : {}), // yeni üye eski mesajları görmesin
             lastMessage: text,
             lastMessageTime: serverTimestamp(),
             lastSenderUid: me.uid,
