@@ -7,7 +7,7 @@
 // ==========================================
 
 import { db } from "./firebase-init.js";
-import { collection, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { collection, doc, setDoc, getDoc, addDoc, updateDoc, arrayUnion, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getCurrentUser, getCurrentChatId, selectChat, sendPushToUser, leaveGroup, showToast } from "./chat-core.js";
 import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
@@ -245,6 +245,7 @@ async function createGroup() {
 let infoPanelEl = null;
 let infoPanelOpen = false;
 let infoGroupId = null;
+let infoGroupData = null;
 
 function closeInfoPanelFromBack() {
     if (infoPanelEl) {
@@ -279,6 +280,10 @@ function ensureInfoPanel() {
                 <h3 id="group-info-name" class="text-white text-lg font-semibold mt-3 px-4 text-center break-words"></h3>
                 <p id="group-info-count" class="text-gray-400 text-xs mt-1"></p>
             </div>
+         <button type="button" id="group-add-member-btn" class="w-full flex items-center px-4 py-3 border-b border-gray-800/30 hover:bg-[#202c33]/60 text-left">
+                <span class="w-11 h-11 rounded-full bg-emerald-600 flex items-center justify-center text-white flex-shrink-0"><i class="fa-solid fa-user-plus"></i></span>
+                <span class="text-white text-sm font-medium ml-3">Üye ekle</span>
+            </button>
             <div id="group-info-members"></div>
             <div class="p-4">
                 <button type="button" id="group-leave-btn" class="w-full bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2 border border-rose-600/20">
@@ -289,7 +294,8 @@ function ensureInfoPanel() {
         </div>
     `;
     document.body.appendChild(el);
-    el.querySelector('#group-info-back').addEventListener('click', closeInfoPanel);
+  el.querySelector('#group-info-back').addEventListener('click', closeInfoPanel);
+    el.querySelector('#group-add-member-btn').addEventListener('click', () => openAddPanel());
 
     el.querySelector('#group-leave-btn').addEventListener('click', async () => {
         if (!infoGroupId) return;
@@ -311,7 +317,9 @@ function ensureInfoPanel() {
 async function openGroupInfo(groupId) {
     const me = getCurrentUser();
     const el = ensureInfoPanel();
+    const wasOpen = infoPanelOpen; // zaten açıksa (yenileme) geri tuşu kaydı tekrar eklenmesin
     infoGroupId = groupId;
+    infoGroupData = null;
 
     const nameEl = el.querySelector('#group-info-name');
     const countEl = el.querySelector('#group-info-count');
@@ -325,7 +333,7 @@ async function openGroupInfo(groupId) {
     el.classList.remove('hidden');
     el.classList.add('flex');
     infoPanelOpen = true;
-    pushBackState(closeInfoPanelFromBack);
+    if (!wasOpen) pushBackState(closeInfoPanelFromBack);
 
     try {
         const snap = await getDoc(doc(db, "groups", groupId));
@@ -337,6 +345,7 @@ async function openGroupInfo(groupId) {
         }
 
         const g = snap.data();
+        infoGroupData = g;
         const members = Array.isArray(g.members) ? g.members : [];
         nameEl.textContent = g.name || 'Grup';
         avatarEl.style.backgroundColor = getUserColor(g.name || 'Grup');
@@ -362,6 +371,179 @@ async function openGroupInfo(groupId) {
         });
     } catch (err) {
         membersEl.innerHTML = `<p class="text-center text-rose-400 text-xs py-6">Yüklenemedi: ${escapeHtml(err.message)}</p>`;
+    }
+}
+
+// ------------------------------------------
+// ÜYE EKLE PANELİ (grup bilgisinden açılır)
+// ------------------------------------------
+let addPanelEl = null;
+let addPanelOpen = false;
+const addSelectedUids = new Set();
+
+function closeAddPanelFromBack() {
+    if (addPanelEl) {
+        addPanelEl.classList.add('hidden');
+        addPanelEl.classList.remove('flex');
+    }
+    addPanelOpen = false;
+}
+
+function closeAddPanel() {
+    if (!addPanelOpen) return;
+    closeAddPanelFromBack();
+    popBackState();
+}
+
+function updateAddSelectedCount() {
+    const countEl = addPanelEl && addPanelEl.querySelector('#group-add-count');
+    if (countEl) countEl.textContent = `${addSelectedUids.size} kişi seçildi`;
+}
+
+function ensureAddPanel() {
+    if (addPanelEl) return addPanelEl;
+    const el = document.createElement('div');
+    el.className = 'fixed inset-0 z-[60] bg-[#0b141a] hidden flex-col';
+    el.innerHTML = `
+        <div class="bg-[#202c33] px-4 py-3.5 flex items-center space-x-4 border-b border-gray-800 flex-shrink-0">
+            <button type="button" id="group-add-back" class="text-gray-400 hover:text-white transition text-lg px-1">
+                <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <h2 class="text-white font-medium text-base">Üye ekle</h2>
+        </div>
+        <p id="group-add-count" class="text-xs text-gray-500 px-4 py-2 flex-shrink-0">0 kişi seçildi</p>
+        <div id="group-add-list" class="flex-1 overflow-y-auto min-h-0"></div>
+        <div class="p-3 border-t border-gray-800 flex-shrink-0">
+            <button type="button" id="group-add-confirm" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2">
+                <i class="fa-solid fa-check"></i>
+                <span>Gruba ekle</span>
+            </button>
+        </div>
+    `;
+    document.body.appendChild(el);
+    el.querySelector('#group-add-back').addEventListener('click', closeAddPanel);
+    el.querySelector('#group-add-confirm').addEventListener('click', addMembersToGroup);
+    addPanelEl = el;
+    return el;
+}
+
+function renderAddList() {
+    const listEl = addPanelEl.querySelector('#group-add-list');
+    listEl.innerHTML = '';
+
+    const current = (infoGroupData && Array.isArray(infoGroupData.members)) ? infoGroupData.members : [];
+    const usersMap = window.__aurachatUsers;
+    const users = usersMap ? Array.from(usersMap.values()).filter((u) => !current.includes(u.uid)) : [];
+    users.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+
+    if (!users.length) {
+        listEl.innerHTML = `<p class="text-center text-gray-500 text-xs py-8">Eklenecek başka kişi yok.</p>`;
+        return;
+    }
+
+    users.forEach((u) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer border-b border-gray-800/30';
+        row.innerHTML = `
+            ${avatarHtml(u, 'w-11 h-11')}
+            <span class="text-white text-sm font-medium ml-3 truncate flex-1">${escapeHtml(u.name || '')}</span>
+            <div class="pick-mark w-6 h-6 rounded-full border-2 border-gray-600 flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-check text-white text-[10px] hidden"></i>
+            </div>
+        `;
+        row.addEventListener('click', () => {
+            if (addSelectedUids.has(u.uid)) addSelectedUids.delete(u.uid);
+            else addSelectedUids.add(u.uid);
+
+            const on = addSelectedUids.has(u.uid);
+            const mark = row.querySelector('.pick-mark');
+            mark.classList.toggle('bg-emerald-500', on);
+            mark.classList.toggle('border-emerald-500', on);
+            mark.classList.toggle('border-gray-600', !on);
+            mark.firstElementChild.classList.toggle('hidden', !on);
+            updateAddSelectedCount();
+        });
+        listEl.appendChild(row);
+    });
+}
+
+function openAddPanel() {
+    if (!infoGroupData || !infoGroupId) return;
+    const el = ensureAddPanel();
+    addSelectedUids.clear();
+    updateAddSelectedCount();
+    renderAddList();
+
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    addPanelOpen = true;
+    pushBackState(closeAddPanelFromBack);
+}
+
+async function addMembersToGroup() {
+    const me = getCurrentUser();
+    const gid = infoGroupId;
+    const g = infoGroupData;
+    if (!me || !gid || !g) return;
+
+    const newUids = Array.from(addSelectedUids);
+    if (!newUids.length) { showToast('En az bir kişi seç'); return; }
+
+    const btn = addPanelEl.querySelector('#group-add-confirm');
+    btn.disabled = true;
+
+    try {
+        const usersMap = window.__aurachatUsers;
+        const addedNames = newUids.map((uid) => {
+            const u = usersMap && usersMap.get(uid);
+            return (u && u.name) ? u.name : 'Biri';
+        });
+        const text = `${addedNames.join(', ')} gruba eklendi`;
+        const oldMembers = Array.isArray(g.members) ? g.members : [];
+        const groupName = g.name || 'Grup';
+
+        // 1) Üyeleri gruba ekle
+        await updateDoc(doc(db, "groups", gid), { members: arrayUnion(...newUids) });
+
+        // 2) Sohbete "X gruba eklendi" mesajı
+        await addDoc(collection(db, "chats", gid, "messages"), {
+            type: 'system',
+            text: text,
+            senderUid: me.uid,
+            senderName: me.name,
+            createdAt: serverTimestamp(),
+            read: false
+        });
+
+        // 3) Herkesin sohbet listesini güncelle (yeni üyelerde grup belirir)
+        await Promise.allSettled(oldMembers.concat(newUids).map((uid) => setDoc(doc(db, "users", uid, "chats", gid), {
+            isGroup: true,
+            groupName: groupName,
+            lastMessage: text,
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: me.uid,
+            lastSenderName: '',
+            lastMessageRead: false,
+            unreadCount: uid === me.uid ? 0 : increment(1),
+            updatedAt: serverTimestamp()
+        }, { merge: true })));
+
+        // 4) Bildirimler: eski üyelere "X gruba eklendi", yeni üyelere "seni gruba ekledi"
+        oldMembers.forEach((uid) => {
+            if (uid === me.uid) return;
+            sendPushToUser(uid, groupName, text, { chatId: gid, otherUid: gid, otherName: groupName });
+        });
+        newUids.forEach((uid) => {
+            sendPushToUser(uid, groupName, `${me.name} seni gruba ekledi`, { chatId: gid, otherUid: gid, otherName: groupName });
+        });
+
+        closeAddPanel();
+        showToast(text);
+        openGroupInfo(gid);
+    } catch (err) {
+        showToast('Eklenemedi: ' + err.message, 3500);
+    } finally {
+        btn.disabled = false;
     }
 }
 
