@@ -530,7 +530,7 @@ jobs:
 
       - name: APK Derle (Gradle)
         run: |
-          cd android
+          if [ -d "android" ]; then cd android; fi
           chmod +x gradlew
           ./gradlew assembleDebug
 
