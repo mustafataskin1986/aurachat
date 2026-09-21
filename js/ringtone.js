@@ -76,6 +76,11 @@ function startTone(kind) {
     const c = getCtx();
     if (!c) return;
     activeKind = kind;
+    if (kind === 'ring') {
+        try {
+            if (window.AuraCall && window.AuraCall.cancelCallNotifications) window.AuraCall.cancelCallNotifications();
+        } catch (e) {}
+    }
     master.gain.setValueAtTime(RING_VOLUME, c.currentTime);
 
     schedulePattern(kind);
