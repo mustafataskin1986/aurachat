@@ -106,7 +106,43 @@ async function addDoc(colRef, data) {
     return ref;
 }
 
+// ------------------------------------------
+// GELEN ARAMA (uygulama açıkken her ekranda)
+// Arayan, aranan kişinin incomingCalls/{uid} belgesine yazar. Burası o tek
+// belgeyi dinler, ilgili sohbetin arama dinleyicisini açıp "Gelen arama" ekranını çıkarır.
+// ------------------------------------------
+let unsubIncomingCall = null;
+let incomingWatchUid = null;
+
+function startIncomingCallWatcher() {
+    if (!currentUser || !currentUser.uid) {
+        if (unsubIncomingCall) { unsubIncomingCall(); unsubIncomingCall = null; }
+        incomingWatchUid = null;
+        return;
+    }
+    if (unsubIncomingCall && incomingWatchUid === currentUser.uid) return;
+    if (unsubIncomingCall) { unsubIncomingCall(); unsubIncomingCall = null; }
+    incomingWatchUid = currentUser.uid;
+
+    unsubIncomingCall = onSnapshot(doc(db, "incomingCalls", currentUser.uid), (snap) => {
+        if (!snap.exists()) return;
+        const d = snap.data();
+        if (!d || !d.chatId || !d.at) return;
+        if (Math.abs(Date.now() - d.at) > 90000) return; // eski arama
+        if (window.__aurachatCallActive) return;          // zaten aramadayım
+        if (d.isGroup) {
+            window.__aurachatGroupIds = window.__aurachatGroupIds || new Set();
+            window.__aurachatGroupIds.add(d.chatId);
+            watchGroupCallForChat(d.chatId);
+        } else {
+            watchCallForChat(d.chatId);
+            watchVoiceCallForChat(d.chatId);
+        }
+    }, () => {});
+}
+
 export function setCurrentUser(user) {
+    setTimeout(() => { try { startIncomingCallWatcher(); } catch (e) {} }, 0);
     currentUser = user;
     // Başka uygulamadan (galeri vb.) "Paylaş" ile gelen resim varsa yakala
     try { checkPendingShare(); } catch (e) {}
