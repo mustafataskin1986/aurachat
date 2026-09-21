@@ -61,6 +61,7 @@ import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.j
 import { pushBackState, popBackState } from "./back-handler.js";
 import { watchCallForChat, startCall } from "./video-call.js";
 import { watchVoiceCallForChat, startVoiceCall } from "./voice-call.js";
+import { watchGroupCallForChat } from "./group-call.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
@@ -986,9 +987,12 @@ export async function selectChat(otherUser) {
     recentOpenScrollLock = true;
     setTimeout(() => { recentOpenScrollLock = false; }, 1500);
 
-    if (!currentIsGroup) {
+  if (!currentIsGroup) {
+        watchGroupCallForChat(null);
         watchCallForChat(chatId);
         watchVoiceCallForChat(chatId);
+    } else {
+        watchGroupCallForChat(chatId);
     }
 }
  
@@ -2813,7 +2817,7 @@ async function sendCurrentLocation() {
 function toggleCallButtonsForGroup(isGroup) {
     ['voice-call-btn', 'video-call-btn'].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.style.display = isGroup ? 'none' : '';
+      if (el) el.style.display = ''; // grupta da sesli/görüntülü arama açık
     });
 }
 
