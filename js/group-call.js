@@ -613,6 +613,15 @@ async function startOrJoin(gid, requestedType) {
         const typeText = type === 'video' ? '📹 görüntülü' : '📞 sesli';
         members.forEach((uid) => {
             if (uid === me.uid) return;
+            setDoc(doc(db, "incomingCalls", uid), {
+                chatId: gid,
+                callType: type,
+                isGroup: true,
+                groupName: gname,
+                callerUid: me.uid,
+                callerName: me.name || '',
+                at: Date.now()
+            }).catch(() => {});
             sendPushToUser(uid, gname, `${me.name} ${typeText} grup araması başlattı`, {
                 chatId: gid,
                 otherUid: gid,
