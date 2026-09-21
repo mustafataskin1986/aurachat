@@ -125,8 +125,67 @@ jobs:
           import java.io.InputStream;
           import java.util.ArrayList;
           import org.json.JSONArray;
+          import android.app.Notification;
+          import android.app.NotificationManager;
+          import android.content.Context;
+          import android.service.notification.StatusBarNotification;
+          import android.view.WindowManager;
 
           public class MainActivity extends BridgeActivity {
+              // Uygulama ekranda mı? (AuraMessagingService, uygulama açıkken arama bildirimi göstermesin diye bakar)
+              static volatile boolean inForeground = false;
+
+              // JS, uygulamanın kendi "Gelen arama" ekranı açılınca telefonun arama bildirimini kapatır
+              public class CallBridge {
+                  @JavascriptInterface
+                  public void cancelCallNotifications() {
+                      clearCallNotifications();
+                  }
+              }
+
+              @Override
+              public void onStart() {
+                  super.onStart();
+                  inForeground = true;
+              }
+
+              @Override
+              public void onStop() {
+                  super.onStop();
+                  inForeground = false;
+                  // Kilit ekranının üstünde görünme izni sadece gelen arama içindi
+                  if (Build.VERSION.SDK_INT >= 27) {
+                      setShowWhenLocked(false);
+                      setTurnScreenOn(false);
+                  }
+              }
+
+              // Gelen arama bildirimiyle (tam ekran ya da dokunarak) açıldıysa kilit ekranının üstünde göster
+              private void handleCallIntent(Intent intent) {
+                  if (intent == null || !intent.getBooleanExtra("aura_call", false)) return;
+                  intent.removeExtra("aura_call");
+                  if (Build.VERSION.SDK_INT >= 27) {
+                      setShowWhenLocked(true);
+                      setTurnScreenOn(true);
+                  } else {
+                      getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+                  }
+              }
+
+              private void clearCallNotifications() {
+                  try {
+                      if (Build.VERSION.SDK_INT < 26) return;
+                      NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                      if (nm == null) return;
+                      for (StatusBarNotification sbn : nm.getActiveNotifications()) {
+                          Notification n = sbn.getNotification();
+                          if (n != null && AuraMessagingService.CALL_CHANNEL_ID.equals(n.getChannelId())) {
+                              nm.cancel(sbn.getTag(), sbn.getId());
+                          }
+                      }
+                  } catch (Exception e) {}
+              }
+
               private volatile String pendingSharedJson = null;
               private volatile boolean shareBusy = false;
 
@@ -146,6 +205,7 @@ jobs:
                   super.onNewIntent(intent);
                   setIntent(intent);
                   handleShareIntent(intent);
+                  handleCallIntent(intent);
               }
 
               private void handleShareIntent(Intent intent) {
@@ -248,6 +308,8 @@ jobs:
                   // Başka uygulamadan (galeri vb.) "Paylaş" ile gelen resimleri JS'e köprüle
                   this.bridge.getWebView().addJavascriptInterface(new ShareBridge(), "AuraShare");
                   handleShareIntent(getIntent());
+                  handleCallIntent(getIntent());
+                  this.bridge.getWebView().addJavascriptInterface(new CallBridge(), "AuraCall");
                   // Galeriye kaydedilen resimleri yeniden kurulumdan sonra da okuyabilmek için medya izni iste
                   String mediaPerm = Build.VERSION.SDK_INT >= 33
                       ? Manifest.permission.READ_MEDIA_IMAGES
@@ -261,6 +323,112 @@ jobs:
             echo "MainActivity.java güncellendi."
           else
             echo "UYARI: MainActivity.java bulunamadı!"
+          fi
+
+    - name: AuraMessagingService.java - Kapalı uygulamada telefon çalar gibi gelen arama
+        run: |
+          MAIN_ACTIVITY=$(find android -name "MainActivity.java" | head -n 1)
+          if [ -n "$MAIN_ACTIVITY" ]; then
+            SERVICE_FILE="$(dirname "$MAIN_ACTIVITY")/AuraMessagingService.java"
+            cat > "$SERVICE_FILE" << 'EOF'
+          package com.aurachat.app;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.media.AudioAttributes;
+          import android.media.AudioManager;
+          import android.media.RingtoneManager;
+          import android.net.Uri;
+          import android.os.Build;
+          import androidx.core.app.NotificationCompat;
+          import com.capacitorjs.plugins.pushnotifications.MessagingService;
+          import com.google.firebase.messaging.RemoteMessage;
+          import java.util.Map;
+
+          // Kapalı ya da arka plandaki uygulamada gelen aramayı telefon çalar gibi gösterir:
+          // zil sesi + titreşim + kilit ekranında tam ekran arama bildirimi.
+          // Arama dışındaki bildirimler eskisi gibi Capacitor'ın servisine gider.
+          public class AuraMessagingService extends MessagingService {
+              public static final String CALL_CHANNEL_ID = "aurachat-calls";
+
+              @Override
+              public void onMessageReceived(RemoteMessage remoteMessage) {
+                  Map<String, String> data = remoteMessage.getData();
+                  if (data != null && "call".equals(data.get("kind"))) {
+                      try {
+                          showIncomingCall(data);
+                      } catch (Exception e) {
+                          super.onMessageReceived(remoteMessage);
+                      }
+                      return;
+                  }
+                  super.onMessageReceived(remoteMessage);
+              }
+
+              private void showIncomingCall(Map<String, String> data) {
+                  // Uygulama ekrandaysa uygulamanın kendi "Gelen arama" ekranı çalışır
+                  if (MainActivity.inForeground) return;
+
+                  String chatId = data.get("chatId");
+                  String tag = data.get("tag");
+                  if (tag == null || tag.isEmpty()) tag = "call_" + chatId;
+                  String title = data.get("title");
+                  String body = data.get("body");
+                  if (title == null || title.isEmpty()) title = "AuraChat";
+                  if (body == null || body.isEmpty()) body = "Gelen arama";
+
+                  NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                  Uri ringtone = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                  long[] vibration = new long[]{0, 600, 400, 600, 400, 600};
+
+                  if (Build.VERSION.SDK_INT >= 26) {
+                      NotificationChannel channel = new NotificationChannel(CALL_CHANNEL_ID, "Aramalar", NotificationManager.IMPORTANCE_HIGH);
+                      channel.setDescription("Gelen sesli ve görüntülü aramalar");
+                      channel.setSound(ringtone, new AudioAttributes.Builder()
+                              .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                              .setContentType(AudioAttributes.CONTENT_TYPE_SONIC)
+                              .build());
+                      channel.enableVibration(true);
+                      channel.setVibrationPattern(vibration);
+                      channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+                      nm.createNotificationChannel(channel);
+                  }
+
+                  Intent intent = new Intent(this, MainActivity.class);
+                  intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                  intent.putExtra("aura_call", true);
+                  int piFlags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0);
+                  PendingIntent pi = PendingIntent.getActivity(this, 7100, intent, piFlags);
+
+                  NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CALL_CHANNEL_ID)
+                          .setSmallIcon(getApplicationInfo().icon)
+                          .setContentTitle(title)
+                          .setContentText(body)
+                          .setCategory(NotificationCompat.CATEGORY_CALL)
+                          .setPriority(NotificationCompat.PRIORITY_MAX)
+                          .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                          .setAutoCancel(true)
+                          .setTimeoutAfter(45000)
+                          .setContentIntent(pi)
+                          .setFullScreenIntent(pi, true)
+                          .setSound(ringtone, AudioManager.STREAM_RING)
+                          .setVibrate(vibration);
+
+                  Notification notification = builder.build();
+                  // Bildirim kapanana kadar zil ve titreşim tekrar etsin
+                  notification.flags |= Notification.FLAG_INSISTENT;
+                  // Aynı tag: arayan vazgeçince gelen "Cevapsız arama" bildirimi bunun yerine geçer
+                  nm.notify(tag, 0, notification);
+              }
+          }
+          EOF
+            echo "AuraMessagingService.java yazıldı."
+          else
+            echo "UYARI: MainActivity.java bulunamadı, servis yazılamadı!"
           fi
 
       - name: Firebase google-services.json Dosyasını Ekle
@@ -302,6 +470,11 @@ jobs:
             add_perm "android.permission.READ_EXTERNAL_STORAGE"
             add_perm "android.permission.WRITE_EXTERNAL_STORAGE"
             add_perm "android.permission.VIBRATE"
+            add_perm "android.permission.USE_FULL_SCREEN_INTENT"
+            # Kapalı uygulamada gelen aramayı yakalayan bildirim servisi (Capacitor'ın servisinden önceliklidir)
+            if ! grep -q "AuraMessagingService" "$MANIFEST_PATH"; then
+              sed -i 's#</application>#    <service android:name=".AuraMessagingService" android:exported="false">\n        <intent-filter android:priority="100">\n            <action android:name="com.google.firebase.MESSAGING_EVENT" />\n        </intent-filter>\n    </service>\n</application>#' "$MANIFEST_PATH"
+            fi
             # Galeri vb. uygulamalarda "Paylaş" menüsünde AuraChat görünsün (resim paylaşma filtresi)
             if ! grep -q "android.intent.action.SEND" "$MANIFEST_PATH"; then
               sed -i 's#</activity>#    <intent-filter>\n        <action android:name="android.intent.action.SEND" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <data android:mimeType="image/*" />\n    </intent-filter>\n    <intent-filter>\n        <action android:name="android.intent.action.SEND_MULTIPLE" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <data android:mimeType="image/*" />\n    </intent-filter>\n</activity>#' "$MANIFEST_PATH"
