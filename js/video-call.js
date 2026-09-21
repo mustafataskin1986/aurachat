@@ -115,6 +115,7 @@ export function watchCallForChat(chatId) {
 if (videoCallBtn) {
     videoCallBtn.addEventListener('click', async () => {
         const chatId = getCurrentChatId();
+        if (window.__aurachatGroupIds && window.__aurachatGroupIds.has(chatId)) return; // grup araması group-call.js'te
         const user = getCurrentUser();
         if (!chatId || chatId === 'global' || !user) {
             alert("Görüntülü arama sadece kişisel sohbetlerde yapılabilir kanka.");
