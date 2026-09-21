@@ -189,6 +189,9 @@ export async function startCall(chatId, otherUid) {
         chatId: chatId,
         otherUid: user.uid,
         otherName: user.name,
+        kind: 'call',
+        callType: 'video',
+        callerName: user.name || '',
         tag: `call_${chatId}`
     });
 
