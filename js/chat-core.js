@@ -1876,7 +1876,7 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
         let swipeStartY = null;
         let swiping = false;
         let swipeDecided = false;
-        const SWIPE_TRIGGER = 60;
+        const SWIPE_TRIGGER = 10;
         const SWIPE_MAX = 80;
 
         el.addEventListener('pointerdown', (e) => {
