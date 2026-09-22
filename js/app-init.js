@@ -21,6 +21,9 @@
 import { db } from "./firebase-init.js";
 import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { setCurrentUser, selectChat, startPresence } from "./chat-core.js";
+import { watchCallForChat } from "./video-call.js";
+import { watchVoiceCallForChat } from "./voice-call.js";
+import { watchGroupCallForChat } from "./group-call.js";
 import { loadContacts, initAdminPanel } from "./contacts.js";
 
 const sidebar = document.getElementById('sidebar');
@@ -108,6 +111,29 @@ if (pendingOpenChatUid) {
     };
 }
 
+// Kişi/sohbet listesi yüklenmeden ÖNCE tek seferlik hızlı kontrol: gelen
+// arama varsa (soğuk açılış tam ekran bildiriminden geldiyse) çağrı
+// ekranı, büyük kişi/sohbet listeleriyle ağ bant genişliği paylaşmadan
+// hemen kurulsun.
+async function checkIncomingCallFast(uid) {
+    try {
+        const snap = await getDoc(doc(db, "incomingCalls", uid));
+        if (!snap.exists()) return;
+        const d = snap.data();
+        if (!d || !d.chatId || !d.at) return;
+        if (Math.abs(Date.now() - d.at) > 90000) return; // eski arama
+
+        if (d.isGroup) {
+            window.__aurachatGroupIds = window.__aurachatGroupIds || new Set();
+            window.__aurachatGroupIds.add(d.chatId);
+            watchGroupCallForChat(d.chatId);
+        } else {
+            watchCallForChat(d.chatId);
+            watchVoiceCallForChat(d.chatId);
+        }
+    } catch (e) {}
+}
+
 window.initApp = async function () {
     let currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
     if (!currentUser) return;
@@ -117,6 +143,7 @@ window.initApp = async function () {
     setCurrentUser(currentUser);
     initAdminPanel();
     startPresence();
+    await checkIncomingCallFast(currentUser.uid);
     await loadContacts();
 
     if (window.initPushForUser) {
