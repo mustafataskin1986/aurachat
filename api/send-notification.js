@@ -17,9 +17,6 @@ const MAX_BODY = 400;
 const MAX_DATA_KEYS = 12;
 const MAX_DATA_VALUE = 200;
 
-// Gönderen ile alıcı aynı sohbette mi?
-// Bire bir sohbet: chatId "uidA_uidB" biçimindedir, ikisi de içinde olmalı.
-// Grup: chatId grup belgesinin kimliğidir, ikisi de üye olmalı.
 async function sharesChat(senderUid, receiverUid, chatId) {
   if (senderUid === receiverUid) return false;
 
@@ -39,7 +36,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Yalnızca POST kabul edilir.' });
   }
 
-  // 1) Gönderen giriş yapmış bir AuraChat kullanıcısı olmalı (Firebase giriş jetonu)
   const authHeader = req.headers.authorization || '';
   const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
   if (!idToken) {
@@ -69,17 +65,34 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 2) Aynı sohbette olmadığın birine bildirim gönderemezsin
     if (!(await sharesChat(senderUid, receiverUid, chatId))) {
       return res.status(403).json({ error: 'İzin yok.' });
     }
 
-    // 3) Alıcının bildirim jetonunu sunucu okur (istemciden token kabul edilmez)
-    const userSnap = await admin.firestore().doc(`users/${receiverUid}`).get();
+    // Alıcının bildirim jetonunu, engelleme ve sessize alma bilgisini sunucu okur
+    const [userSnap, senderSnap, chatSummarySnap] = await Promise.all([
+      admin.firestore().doc(`users/${receiverUid}`).get(),
+      admin.firestore().doc(`users/${senderUid}`).get(),
+      admin.firestore().doc(`users/${receiverUid}/chats/${chatId}`).get()
+    ]);
+
     if (!userSnap.exists) {
       return res.status(404).json({ error: 'Alıcı bulunamadı.' });
     }
     const u = userSnap.data();
+    const senderData = senderSnap.exists ? senderSnap.data() : {};
+
+    const receiverBlockedUids = Array.isArray(u.blockedUids) ? u.blockedUids : [];
+    const senderBlockedUids = Array.isArray(senderData.blockedUids) ? senderData.blockedUids : [];
+    if (receiverBlockedUids.includes(senderUid) || senderBlockedUids.includes(receiverUid)) {
+      return res.status(200).json({ success: false, reason: 'blocked' });
+    }
+
+    const isCall = !!(data && String(data.kind || '') === 'call');
+    if (!isCall && chatSummarySnap.exists && chatSummarySnap.data().muted === true) {
+      return res.status(200).json({ success: false, reason: 'muted' });
+    }
+
     const token = u.fcmToken || u.fcm_token || u.pushToken;
     if (!token) {
       return res.status(200).json({ success: false, reason: 'no-token' });
@@ -88,9 +101,7 @@ export default async function handler(req, res) {
     const safeTitle = String(title).slice(0, MAX_TITLE);
     const safeBody = String(body).slice(0, MAX_BODY);
     const isWebPlatform = String(u.platform || '').toLowerCase().includes('pwa') || String(u.platform || '').toLowerCase().includes('web');
-    const isCall = !!(data && String(data.kind || '') === 'call');
 
-    // FCM data payload'ındaki tüm alanlar string olmak zorunda
     const safeData = { title: safeTitle, body: safeBody };
     if (data && typeof data === 'object') {
       Object.keys(data).slice(0, MAX_DATA_KEYS).forEach((key) => {
@@ -114,7 +125,7 @@ export default async function handler(req, res) {
             priority: 'high',
             notification: {
               channelId: 'aurachat-messages',
-              ...(tag ? { tag: String(tag).slice(0, MAX_DATA_VALUE) } : {})
+              ...(tag ? { tag: String(tag) } : {})
             }
           },
           token: token,
