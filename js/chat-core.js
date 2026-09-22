@@ -947,6 +947,93 @@ function setGroupHeaderAvatar(photo) {
     }
 }
 
+// ------------------------------------------
+// KİŞİ ENGELLEME
+// Engel listesi users/{uid}.blockedUids dizisinde tutulur (herkes
+// okuyabilir, sadece sahibi yazabilir - mevcut kural zaten izin veriyor).
+// Engel varsa (iki yönden de) mesaj kutusu ve arama düğmeleri gizlenir.
+// ------------------------------------------
+let blockedBannerEl = null;
+
+function isBlockedRelationship(otherUid) {
+    if (!currentUser || !otherUid) return { blockedByMe: false, blockedByThem: false };
+    const usersMap = window.__aurachatUsers;
+    const me = usersMap && usersMap.get(currentUser.uid);
+    const them = usersMap && usersMap.get(otherUid);
+    return {
+        blockedByMe: !!(me && Array.isArray(me.blockedUids) && me.blockedUids.includes(otherUid)),
+        blockedByThem: !!(them && Array.isArray(them.blockedUids) && them.blockedUids.includes(currentUser.uid))
+    };
+}
+
+function ensureBlockedBanner() {
+    if (blockedBannerEl) return blockedBannerEl;
+    const el = document.createElement('div');
+    el.className = 'hidden items-center justify-center px-4 py-3 bg-[#202c33] text-gray-400 text-xs text-center';
+    messageInput.parentElement.insertAdjacentElement('beforebegin', el);
+    blockedBannerEl = el;
+    return el;
+}
+
+function updateBlockedUI() {
+    const row = messageInput.parentElement;
+    const banner = ensureBlockedBanner();
+
+    if (!currentOtherUid || currentChatId === 'global' || currentIsGroup) {
+        banner.classList.add('hidden');
+        banner.classList.remove('flex');
+        row.style.display = '';
+        ['voice-call-btn', 'video-call-btn'].forEach((id) => {
+            const b = document.getElementById(id);
+            if (b) b.style.display = '';
+        });
+        return;
+    }
+
+    const { blockedByMe, blockedByThem } = isBlockedRelationship(currentOtherUid);
+
+    if (blockedByMe || blockedByThem) {
+        banner.innerHTML = blockedByMe
+            ? `Bu kişiyi engellediniz. <button type="button" id="unblock-from-chat" class="text-emerald-400 font-semibold">Engeli kaldır</button>`
+            : `Bu kişiyle mesajlaşamazsınız.`;
+        banner.classList.remove('hidden');
+        banner.classList.add('flex');
+        row.style.display = 'none';
+        ['voice-call-btn', 'video-call-btn'].forEach((id) => {
+            const b = document.getElementById(id);
+            if (b) b.style.display = 'none';
+        });
+        if (blockedByMe) {
+            const btn = document.getElementById('unblock-from-chat');
+            if (btn) btn.addEventListener('click', () => toggleBlockUser(currentOtherUid));
+        }
+    } else {
+        banner.classList.add('hidden');
+        banner.classList.remove('flex');
+        row.style.display = '';
+        ['voice-call-btn', 'video-call-btn'].forEach((id) => {
+            const b = document.getElementById(id);
+            if (b) b.style.display = '';
+        });
+    }
+}
+
+export async function toggleBlockUser(otherUid) {
+    if (!currentUser || !otherUid) return;
+    try {
+        const usersMap = window.__aurachatUsers;
+        const me = usersMap && usersMap.get(currentUser.uid);
+        const alreadyBlocked = !!(me && Array.isArray(me.blockedUids) && me.blockedUids.includes(otherUid));
+        await updateDoc(doc(db, "users", currentUser.uid), {
+            blockedUids: alreadyBlocked ? arrayRemove(otherUid) : arrayUnion(otherUid)
+        });
+        showToast(alreadyBlocked ? 'Engel kaldırıldı' : 'Kişi engellendi');
+        updateBlockedUI();
+    } catch (err) {
+        showToast('İşlem yapılamadı: ' + err.message, 3500);
+    }
+}
+
 export async function selectChat(otherUser) {
     exitSelectionMode();
     cancelReply();
@@ -1027,8 +1114,9 @@ export async function selectChat(otherUser) {
     if (currentChatId !== chatId) return;
 
     session.lastUsed = ++sessionTick;
-    if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.photo);
+if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.photo);
     updateMicToggle();
+    updateBlockedUI();
     unreadDivider = findUnreadDivider(session);
     renderSession(session);
     markVisibleMessagesRead(session);
