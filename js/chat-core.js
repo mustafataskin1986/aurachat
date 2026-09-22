@@ -1717,11 +1717,8 @@ let bodyHtml;
     const isReplyable = !['deleted', 'system', 'call_duration', 'missed_call', 'declined_call'].includes(msg.type);
     const replyQuoteHtml = buildReplyQuoteHtml(msg.replyTo);
 
-    const actionButtonsHtml = (isReplyable || isImage)
-        ? `<div class="flex flex-col items-center justify-center gap-1 flex-shrink-0 ${isMine ? 'mr-2' : 'ml-2'}">
-            ${isReplyable ? `<button type="button" class="w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-gray-300 flex items-center justify-center" onclick="replyToMessage('${msgId}')"><i class="fa-solid fa-reply text-xs"></i></button>` : ''}
-            ${isImage ? `<button type="button" class="w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-gray-300 flex items-center justify-center" onclick="forwardImageMessage('${msgId}')"><i class="fa-solid fa-share text-xs"></i></button>` : ''}
-           </div>`
+    const actionButtonsHtml = isImage
+        ? `<button type="button" class="flex-shrink-0 self-center w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-gray-300 flex items-center justify-center ${isMine ? 'mr-2' : 'ml-2'}" onclick="forwardImageMessage('${msgId}')"><i class="fa-solid fa-share text-xs"></i></button>`
         : '';
 
     if (isMine) {
@@ -1842,12 +1839,12 @@ if (msg.type === 'audio') bindAudioPlayer(msgDiv, msgId, msg);
         msgDiv.classList.add('bg-emerald-900/40');
     }
 
-    attachSelectionHandlers(msgDiv, msgId);
+    attachSelectionHandlers(msgDiv, msgId, isReplyable, msg, isMine);
     messageElementsById.set(msgId, msgDiv);
     return msgDiv;
 }
 
-function attachSelectionHandlers(el, msgId) {
+function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
     let pressTimer = null;
     let longPressTriggered = false;
 
@@ -1872,6 +1869,61 @@ function attachSelectionHandlers(el, msgId) {
     el.addEventListener('pointerup', cancelPress);
     el.addEventListener('pointerleave', cancelPress);
     el.addEventListener('pointercancel', cancelPress);
+
+    // Sağa kaydırıp bırakınca yanıtla (WhatsApp tarzı)
+    if (replyable) {
+        let swipeStartX = null;
+        let swipeStartY = null;
+        let swiping = false;
+        let swipeDecided = false;
+        const SWIPE_TRIGGER = 60;
+        const SWIPE_MAX = 80;
+
+        el.addEventListener('pointerdown', (e) => {
+            if (selectionMode) return;
+            swipeStartX = e.clientX;
+            swipeStartY = e.clientY;
+            swiping = false;
+            swipeDecided = false;
+            try { el.setPointerCapture(e.pointerId); } catch (err) {}
+        });
+
+        el.addEventListener('pointermove', (e) => {
+            if (swipeStartX === null || selectionMode) return;
+            const dx = e.clientX - swipeStartX;
+            const dy = e.clientY - swipeStartY;
+
+            if (!swipeDecided) {
+                if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+                swipeDecided = true;
+                if (dx > 0 && dx > Math.abs(dy)) {
+                    swiping = true;
+                    cancelPress();
+                    el.style.transition = 'none';
+                }
+            }
+            if (!swiping) return;
+            el.style.transform = `translateX(${Math.max(0, Math.min(dx, SWIPE_MAX))}px)`;
+        });
+
+        const endSwipe = () => {
+            if (swiping) {
+                const applied = parseFloat((el.style.transform || '').replace(/[^0-9.]/g, '')) || 0;
+                el.style.transition = 'transform 0.15s ease-out';
+                el.style.transform = '';
+                if (applied >= SWIPE_TRIGGER) {
+                    startReply(msgId, msg, isMine);
+                    if (navigator.vibrate) navigator.vibrate(15);
+                }
+            }
+            swipeStartX = null;
+            swiping = false;
+            swipeDecided = false;
+        };
+
+        el.addEventListener('pointerup', endSwipe);
+        el.addEventListener('pointercancel', endSwipe);
+    }
 
     el.addEventListener('click', (e) => {
         if (longPressTriggered) {
