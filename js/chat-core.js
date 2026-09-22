@@ -949,6 +949,7 @@ function setGroupHeaderAvatar(photo) {
 
 export async function selectChat(otherUser) {
     exitSelectionMode();
+    cancelReply();
     currentIsGroup = false;
     toggleCallButtonsForGroup(false);
 
@@ -1047,6 +1048,7 @@ export async function selectChat(otherUser) {
  
 function doCloseChatView() {
 closeAttachMenu();
+cancelReply();
 unreadDivider = null;
     updateMyActiveChatId(null);
     currentChatId = null;
@@ -1712,8 +1714,14 @@ let bodyHtml;
         ? `<div class="text-[11px] text-gray-300 italic px-2 pt-1 pb-0.5"><i class="fa-solid fa-share mr-1"></i>İletildi</div>`
         : '';
 
-    const forwardBtnHtml = isImage
-        ? `<button type="button" class="flex-shrink-0 self-center w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-gray-300 flex items-center justify-center ${isMine ? 'mr-2' : 'ml-2'}" onclick="forwardImageMessage('${msgId}')"><i class="fa-solid fa-share text-xs"></i></button>`
+    const isReplyable = !['deleted', 'system', 'call_duration', 'missed_call', 'declined_call'].includes(msg.type);
+    const replyQuoteHtml = buildReplyQuoteHtml(msg.replyTo);
+
+    const actionButtonsHtml = (isReplyable || isImage)
+        ? `<div class="flex flex-col items-center justify-center gap-1 flex-shrink-0 ${isMine ? 'mr-2' : 'ml-2'}">
+            ${isReplyable ? `<button type="button" class="w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-gray-300 flex items-center justify-center" onclick="replyToMessage('${msgId}')"><i class="fa-solid fa-reply text-xs"></i></button>` : ''}
+            ${isImage ? `<button type="button" class="w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-gray-300 flex items-center justify-center" onclick="forwardImageMessage('${msgId}')"><i class="fa-solid fa-share text-xs"></i></button>` : ''}
+           </div>`
         : '';
 
     if (isMine) {
@@ -1731,9 +1739,10 @@ let bodyHtml;
 
         msgDiv.className = "flex justify-end rounded-lg transition-colors";
         msgDiv.innerHTML = `
-            ${forwardBtnHtml}
+            ${actionButtonsHtml}
             <div class="bg-[#005c4b] text-white ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
                 ${forwardedLabel}
+                ${replyQuoteHtml}
                 ${bodyHtml}
                 ${timeHtml}
             </div>
@@ -1748,10 +1757,11 @@ let bodyHtml;
             <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
               ${(currentChatId === 'global' || currentIsGroup) ? `<span class="text-[11px] font-bold text-amber-400 block mb-0.5 ${isImage ? 'px-2 pt-1' : ''}">${escapeHtml(msg.senderName)}</span>` : ''}
                 ${forwardedLabel}
+                ${replyQuoteHtml}
                 ${bodyHtml}
                 ${timeHtml}
             </div>
-            ${forwardBtnHtml}
+            ${actionButtonsHtml}
         `;
     }
 
@@ -2284,6 +2294,106 @@ window.forwardImageMessage = function (msgId) {
 };
 
 // ------------------------------------------
+// MESAJA YANIT VERME (alıntı)
+// Bir mesajın yanıt ikonuna basılınca composer'ın üstünde önizleme
+// çubuğu açılır; gönderilen mesaja replyTo alanı eklenir (msgId,
+// senderName, previewText). Balonda alıntı gösterilir, dokununca
+// orijinal mesaja kaydırılır (hâlâ yüklüyse).
+// ------------------------------------------
+let replyingTo = null; // { msgId, senderName, previewText }
+let replyBarEl = null;
+
+function replyPreviewTextFor(msg) {
+    if (msg.type === 'image') {
+        const n = msg.imagesCount || 0;
+        return n > 1 ? `📷 ${n} Fotoğraf` : '📷 Fotoğraf';
+    }
+    if (msg.type === 'audio') return `🎤 Sesli mesaj (${fmtAudioTime(msg.audioDuration)})`;
+    if (msg.type === 'location') return '📍 Konum';
+    return (msg.text || '').slice(0, 120);
+}
+
+function ensureReplyBar() {
+    if (replyBarEl) return replyBarEl;
+    const el = document.createElement('div');
+    el.className = 'hidden items-start px-3 py-2 bg-[#202c33] border-l-4 border-emerald-500';
+    el.innerHTML = `
+        <div class="flex-1 min-w-0">
+            <p id="reply-bar-name" class="text-emerald-400 text-xs font-semibold truncate"></p>
+            <p id="reply-bar-text" class="text-gray-300 text-xs truncate"></p>
+        </div>
+        <button type="button" id="reply-bar-cancel" class="text-gray-400 hover:text-white px-2 flex-shrink-0"><i class="fa-solid fa-xmark"></i></button>
+    `;
+    messageInput.parentElement.insertAdjacentElement('beforebegin', el);
+    el.querySelector('#reply-bar-cancel').addEventListener('click', cancelReply);
+    replyBarEl = el;
+    return el;
+}
+
+function startReply(msgId, msg, isMine) {
+    replyingTo = {
+        msgId: msgId,
+        senderName: isMine ? 'Sen' : (msg.senderName || ''),
+        previewText: replyPreviewTextFor(msg)
+    };
+    const el = ensureReplyBar();
+    el.querySelector('#reply-bar-name').textContent = replyingTo.senderName;
+    el.querySelector('#reply-bar-text').textContent = replyingTo.previewText;
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    messageInput.focus();
+}
+
+function cancelReply() {
+    replyingTo = null;
+    if (replyBarEl) {
+        replyBarEl.classList.add('hidden');
+        replyBarEl.classList.remove('flex');
+    }
+}
+
+function consumeReplyPayload() {
+    if (!replyingTo) return null;
+    const r = replyingTo;
+    cancelReply();
+    return { msgId: r.msgId, senderName: r.senderName, previewText: r.previewText };
+}
+
+function scrollToOriginalMessage(msgId) {
+    const el = messageElementsById.get(msgId);
+    if (!el) { showToast('Orijinal mesaj bulunamadı'); return; }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('bg-emerald-900/30');
+    setTimeout(() => el.classList.remove('bg-emerald-900/30'), 1000);
+}
+
+function buildReplyQuoteHtml(replyTo) {
+    if (!replyTo) return '';
+    return `<div class="reply-quote bg-black/20 rounded-md px-2 py-1.5 mb-1.5 border-l-2 border-emerald-400 cursor-pointer" onclick="jumpToReply('${replyTo.msgId}', event)">
+        <p class="text-emerald-400 text-[11px] font-semibold truncate">${escapeHtml(replyTo.senderName || '')}</p>
+        <p class="text-gray-300 text-[11px] truncate">${escapeHtml(replyTo.previewText || '')}</p>
+    </div>`;
+}
+
+window.replyToMessage = function (msgId) {
+    if (!currentChatId || !currentUser || selectionMode) return;
+    const session = chatSessions.get(currentChatId);
+    const entry = session && (
+        session.messages.find((m) => m.id === msgId) ||
+        session.olderMessagesPrepended.find((m) => m.id === msgId)
+    );
+    if (!entry) { showToast('Mesaj bulunamadı'); return; }
+    const isMine = !!(currentUser && entry.data.senderUid === currentUser.uid);
+    startReply(msgId, entry.data, isMine);
+};
+
+window.jumpToReply = function (msgId, event) {
+    if (event) event.stopPropagation();
+    if (selectionMode) return;
+    scrollToOriginalMessage(msgId);
+};
+
+// ------------------------------------------
 // GÜN ETİKETLERİ, "OKUNMAMIŞ MESAJ" ÇİZGİSİ VE KAYAN TARİH
 // ------------------------------------------
 function dayKeyOf(date) {
@@ -2581,6 +2691,8 @@ async function sendMessage() {
     const text = messageInput.value.trim();
     if (!text || !currentUser || !currentChatId) return;
 
+    const replyPayload = consumeReplyPayload();
+
     try {
    if (currentChatId !== 'global') {
             await setDoc(doc(db, "chats", currentChatId), {
@@ -2596,7 +2708,8 @@ async function sendMessage() {
             senderUid: currentUser.uid,
             senderName: currentUser.name,
             createdAt: serverTimestamp(),
-            read: false
+            read: false,
+            ...(replyPayload ? { replyTo: replyPayload } : {})
         });
 
 
@@ -2711,6 +2824,7 @@ if (attachBtn && imageInput) {
         const files = Array.from(e.target.files || []);
         if (!files.length || !currentUser || !currentChatId) return;
         imageInput.value = '';
+        const replyPayload = consumeReplyPayload();
 
         const validFiles = files.filter((f) => f.type.startsWith('image/'));
         if (!validFiles.length) {
@@ -2763,7 +2877,7 @@ if (attachBtn && imageInput) {
                 return;
             }
 
-            if (compressed.length === 1) {
+         if (compressed.length === 1) {
                 await addDoc(collection(db, "chats", currentChatId, "messages"), {
                     type: 'image',
                     imageUrl: compressed[0],
@@ -2771,7 +2885,8 @@ if (attachBtn && imageInput) {
                     senderUid: currentUser.uid,
                     senderName: currentUser.name,
                     createdAt: serverTimestamp(),
-                    read: false
+                    read: false,
+                    ...(replyPayload ? { replyTo: replyPayload } : {})
                 });
             } else {
                 await addDoc(collection(db, "chats", currentChatId, "messages"), {
@@ -2783,7 +2898,8 @@ if (attachBtn && imageInput) {
                     senderUid: currentUser.uid,
                     senderName: currentUser.name,
                     createdAt: serverTimestamp(),
-                    read: false
+                    read: false,
+                    ...(replyPayload ? { replyTo: replyPayload } : {})
                 });
             }
 
@@ -3008,6 +3124,7 @@ async function sendVoiceMessage(dataUrl, durationSec) {
         showToast('Ses çok uzun, daha kısa kaydet');
         return;
     }
+    const replyPayload = consumeReplyPayload();
     try {
         await addDoc(collection(db, "chats", currentChatId, "messages"), {
             type: 'audio',
@@ -3017,7 +3134,8 @@ async function sendVoiceMessage(dataUrl, durationSec) {
             senderUid: currentUser.uid,
             senderName: currentUser.name,
             createdAt: serverTimestamp(),
-            read: false
+            read: false,
+            ...(replyPayload ? { replyTo: replyPayload } : {})
         });
 
         await updateChatSummaries(`🎤 Sesli mesaj (${fmtAudioTime(durationSec)})`);
@@ -3151,6 +3269,7 @@ window.openLocation = function (lat, lng) {
 async function sendCurrentLocation() {
     if (!currentUser || !currentChatId) return;
     const chatIdAtStart = currentChatId;
+    const replyPayload = consumeReplyPayload();
     showToast('Konum alınıyor...', 4000);
 
     try {
@@ -3175,7 +3294,8 @@ async function sendCurrentLocation() {
             senderUid: currentUser.uid,
             senderName: currentUser.name,
             createdAt: serverTimestamp(),
-            read: false
+            read: false,
+            ...(replyPayload ? { replyTo: replyPayload } : {})
         });
 
         await updateChatSummaries('📍 Konum');
