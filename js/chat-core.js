@@ -1965,7 +1965,8 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
         el.style.position = 'relative';
 
         const replyIcon = document.createElement('div');
-        replyIcon.className = 'absolute top-1/2 -translate-y-1/2 left-1 text-emerald-400 opacity-0 pointer-events-none';
+        replyIcon.className = 'absolute top-1/2 left-1 text-emerald-400 opacity-0 pointer-events-none';
+        replyIcon.style.transform = 'translateY(-50%)';
         replyIcon.innerHTML = '<i class="fa-solid fa-reply"></i>';
         el.insertBefore(replyIcon, el.firstChild);
 
@@ -2002,11 +2003,14 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
                     replyIcon.style.transition = 'none';
                 }
             }
-            if (!swiping) return;
+         if (!swiping) return;
             e.preventDefault();
             const move = Math.max(0, Math.min(dx, SWIPE_MAX));
             el.style.transform = `translateX(${move}px)`;
-            replyIcon.style.transform = `translateX(${Math.min(move, ICON_MAX)}px)`;
+            // İkon, el'in içinde olduğu için el kayınca o da kayar; ICON_MAX'tan
+            // sonra net konumu sabit kalsın diye el'in kendi kaymasını geri çıkarıyoruz.
+            const iconNet = Math.min(move, ICON_MAX);
+            replyIcon.style.transform = `translateY(-50%) translateX(${iconNet - move}px)`;
             replyIcon.style.opacity = String(Math.min(1, move / SWIPE_TRIGGER));
         });
 
@@ -2017,6 +2021,7 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
                 el.style.transform = '';
                 replyIcon.style.transition = 'opacity 0.15s ease-out';
                 replyIcon.style.opacity = '0';
+                replyIcon.style.transform = 'translateY(-50%)';
                 if (applied >= SWIPE_TRIGGER) {
                     startReply(msgId, msg, isMine);
                     if (navigator.vibrate) navigator.vibrate(15);
