@@ -8,7 +8,7 @@
 
 import { db } from "./firebase-init.js";
 import { collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getCurrentUser, getCurrentChatId, selectChat, sendPushToUser, leaveGroup, showToast } from "./chat-core.js";
+import { getCurrentUser, getCurrentChatId, selectChat, sendPushToUser, leaveGroup, showToast, toggleBlockUser } from "./chat-core.js";
 import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -817,7 +817,9 @@ const headerAvatar = document.getElementById('active-chat-avatar');
 });
 
 // ------------------------------------------
-// SOHBET ÜST BARINDAKİ ÜÇ NOKTA MENÜSÜ (sadece grup sohbetinde açılır)
+// SOHBET ÜST BARINDAKİ ÜÇ NOKTA MENÜSÜ
+// Grupta: Grup bilgisi / Üye ekle / Sessize al / Gruptan ayrıl
+// Bire bir sohbette: Sessize al / Engelle
 // ------------------------------------------
 let chatMenuEl = null;
 
@@ -825,59 +827,106 @@ function closeChatMenu() {
     if (chatMenuEl) chatMenuEl.classList.add('hidden');
 }
 
-function ensureChatMenu() {
+function ensureChatMenuContainer() {
     if (chatMenuEl) return chatMenuEl;
     const el = document.createElement('div');
-    el.className = 'hidden absolute right-3 top-14 z-40 w-48 bg-[#233138] rounded-xl shadow-2xl border border-gray-700/60 py-1';
-    el.innerHTML = `
-        <button type="button" data-chat-menu="info" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
-            <i class="fa-solid fa-circle-info text-sky-400 w-4"></i><span>Grup bilgisi</span>
-        </button>
-      <button type="button" data-chat-menu="add" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
-            <i class="fa-solid fa-user-plus text-emerald-400 w-4"></i><span>Üye ekle</span>
-        </button>
-        <button type="button" data-chat-menu="leave" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-rose-400 hover:bg-[#2a3942] text-left">
-            <i class="fa-solid fa-right-from-bracket w-4"></i><span>Gruptan ayrıl</span>
-        </button>
-    `;
+    el.className = 'hidden absolute right-3 top-14 z-40 w-52 bg-[#233138] rounded-xl shadow-2xl border border-gray-700/60 py-1';
     chatAreaEl.appendChild(el);
+    chatMenuEl = el;
+    return el;
+}
 
-    el.addEventListener('click', async (e) => {
+async function openChatMenu() {
+    const id = getCurrentChatId();
+    const me = getCurrentUser();
+    if (!id || id === 'global' || !me) return;
+
+    const el = ensureChatMenuContainer();
+    const isGrp = isGroupId(id);
+
+    let muted = false;
+    try {
+        const snap = await getDoc(doc(db, "users", me.uid, "chats", id));
+        if (snap.exists()) muted = !!snap.data().muted;
+    } catch (e) {}
+
+    let itemsHtml = '';
+    if (isGrp) {
+        itemsHtml += `
+            <button type="button" data-chat-menu="info" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+                <i class="fa-solid fa-circle-info text-sky-400 w-4"></i><span>Grup bilgisi</span>
+            </button>
+            <button type="button" data-chat-menu="add" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+                <i class="fa-solid fa-user-plus text-emerald-400 w-4"></i><span>Üye ekle</span>
+            </button>`;
+    }
+
+    itemsHtml += `
+        <button type="button" data-chat-menu="mute" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid ${muted ? 'fa-bell' : 'fa-bell-slash'} text-amber-400 w-4"></i><span>${muted ? 'Sesi aç' : 'Sessize al'}</span>
+        </button>`;
+
+    let otherUidForBlock = null;
+    if (!isGrp) {
+        otherUidForBlock = id.split('_').find((u) => u !== me.uid) || null;
+        const usersMap = window.__aurachatUsers;
+        const meRecord = usersMap && usersMap.get(me.uid);
+        const blockedByMe = !!(meRecord && Array.isArray(meRecord.blockedUids) && meRecord.blockedUids.includes(otherUidForBlock));
+        itemsHtml += `
+            <button type="button" data-chat-menu="block" class="w-full flex items-center space-x-3 px-4 py-3 text-sm ${blockedByMe ? 'text-gray-100' : 'text-rose-400'} hover:bg-[#2a3942] text-left">
+                <i class="fa-solid fa-ban w-4"></i><span>${blockedByMe ? 'Engeli kaldır' : 'Engelle'}</span>
+            </button>`;
+    } else {
+        itemsHtml += `
+            <button type="button" data-chat-menu="leave" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-rose-400 hover:bg-[#2a3942] text-left">
+                <i class="fa-solid fa-right-from-bracket w-4"></i><span>Gruptan ayrıl</span>
+            </button>`;
+    }
+
+    el.innerHTML = itemsHtml;
+    el.onclick = async (e) => {
         const item = e.target.closest('[data-chat-menu]');
         if (!item) return;
         closeChatMenu();
+        const action = item.dataset.chatMenu;
+        if (getCurrentChatId() !== id) return;
 
-        const id = getCurrentChatId();
-        if (!isGroupId(id)) return;
+        if (action === 'info') { openGroupInfo(id); return; }
+        if (action === 'add') { openAddPanelForGroup(id); return; }
 
-     if (item.dataset.chatMenu === 'info') {
-            openGroupInfo(id);
+        if (action === 'mute') {
+            try {
+                await setDoc(doc(db, "users", me.uid, "chats", id), { muted: !muted }, { merge: true });
+                showToast(!muted ? 'Sohbet sessize alındı' : 'Sohbetin sesi açıldı');
+            } catch (err) {
+                showToast('İşlem yapılamadı: ' + err.message, 3500);
+            }
             return;
         }
 
-        if (item.dataset.chatMenu === 'add') {
-            openAddPanelForGroup(id);
+        if (action === 'block' && otherUidForBlock) {
+            toggleBlockUser(otherUidForBlock);
             return;
         }
 
-        if (!confirm('Gruptan ayrılmak istiyor musun?')) return;
-        try {
-            await leaveGroup(id);
-            showToast('Gruptan ayrıldın');
-        } catch (err) {
-            showToast('Ayrılınamadı: ' + err.message, 3500);
+        if (action === 'leave') {
+            if (!confirm('Gruptan ayrılmak istiyor musun?')) return;
+            try {
+                await leaveGroup(id);
+                showToast('Gruptan ayrıldın');
+            } catch (err) {
+                showToast('Ayrılınamadı: ' + err.message, 3500);
+            }
         }
-    });
+    };
 
-    chatMenuEl = el;
-    return el;
+    el.classList.toggle('hidden');
 }
 
 if (chatMenuBtn) {
     chatMenuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (!isGroupId(getCurrentChatId())) return;
-        ensureChatMenu().classList.toggle('hidden');
+        openChatMenu();
     });
 }
 
