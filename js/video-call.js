@@ -371,7 +371,7 @@ async function hangupCall() {
             if (wasRinging && isCaller && data.calleeUid) {
                 const user = getCurrentUser();
                 logMissedCall(currentCallChatId, user.uid, user.name, data.calleeUid, 'video');
-                sendPushToUser(data.calleeUid, `${user.name}`, "☎️ Cevapsız görüntülü arama", {
+                sendPushToUser(data.calleeUid, `${user.name}`, "📹 Cevapsız görüntülü arama", {
                     chatId: currentCallChatId,
                     otherUid: user.uid,
                     otherName: user.name,
