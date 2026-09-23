@@ -371,7 +371,7 @@ async function hangupVoiceCall() {
             if (wasRinging && isCaller && data.calleeUid) {
                 const user = getCurrentUser();
                 logMissedCall(currentCallChatId, user.uid, user.name, data.calleeUid, 'audio');
-                sendPushToUser(data.calleeUid, `${user.name}`, "☎️ Cevapsız sesli arama", {
+                sendPushToUser(data.calleeUid, `${user.name}`, "📞 Cevapsız sesli arama", {
                     chatId: currentCallChatId,
                     otherUid: user.uid,
                     otherName: user.name,
