@@ -753,7 +753,7 @@ export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
 // özetini (son mesaj) günceller.
 // ------------------------------------------
 export async function logMissedCall(chatId, callerUid, callerName, calleeUid, callType = 'video') {
-    const label = callType === 'audio' ? "📞 Cevapsız sesli arama" : "📞 Cevapsız görüntülü arama";
+    const label = callType === 'audio' ? "📞 Cevapsız sesli arama" : "📹 Cevapsız görüntülü arama";
     try {
         await addDoc(collection(db, "chats", chatId, "messages"), {
             type: 'missed_call',
@@ -790,7 +790,7 @@ export async function logMissedCall(chatId, callerUid, callerName, calleeUid, ca
 // REDDEDİLEN GÖRÜNTÜLÜ ARAMA KAYDI (video-call.js, decline anında çağırır)
 // ------------------------------------------
 export async function logDeclinedCall(chatId, callerUid, callerName, calleeUid, callType = 'video') {
-    const label = callType === 'audio' ? "📞 Reddedilen sesli arama" : "📞 Reddedilen görüntülü arama";
+    const label = callType === 'audio' ? "📞 Reddedilen sesli arama" : "📹 Reddedilen görüntülü arama";
     try {
         await addDoc(collection(db, "chats", chatId, "messages"), {
             type: 'declined_call',
@@ -1786,12 +1786,14 @@ let bodyHtml;
         </div>`;
   } else if (msg.type === 'deleted') {
         bodyHtml = `<p class="break-words flex items-center gap-2 text-gray-400 italic text-[13px]"><i class="fa-solid fa-ban text-xs"></i> ${isMine ? 'Bu mesajı sildin' : 'Bu mesaj silindi'}</p>`;
-    } else if (msg.type === 'missed_call') {
-        const missedLabel = msg.callType === 'audio' ? 'Cevapsız sesli arama' : 'Cevapsız görüntülü arama';
-        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${msg.callType === 'audio' ? 'audio' : 'video'}')"><i class="fa-solid fa-phone-slash"></i> ${missedLabel}</p>`;
+} else if (msg.type === 'missed_call') {
+        const missedIsVideo = msg.callType !== 'audio';
+        const missedLabel = missedIsVideo ? 'Cevapsız görüntülü arama' : 'Cevapsız sesli arama';
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${missedIsVideo ? 'video' : 'audio'}')"><i class="fa-solid ${missedIsVideo ? 'fa-video-slash' : 'fa-phone-slash'}"></i> ${missedLabel}</p>`;
     } else if (msg.type === 'declined_call') {
-        const declinedLabel = msg.callType === 'audio' ? 'Reddedilen sesli arama' : 'Reddedilen görüntülü arama';
-        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${msg.callType === 'audio' ? 'audio' : 'video'}')"><i class="fa-solid fa-phone-slash"></i> ${declinedLabel}</p>`;
+        const declinedIsVideo = msg.callType !== 'audio';
+        const declinedLabel = declinedIsVideo ? 'Reddedilen görüntülü arama' : 'Reddedilen sesli arama';
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${declinedIsVideo ? 'video' : 'audio'}')"><i class="fa-solid ${declinedIsVideo ? 'fa-video-slash' : 'fa-phone-slash'}"></i> ${declinedLabel}</p>`;
 } else if (msg.type === 'audio') {
         bodyHtml = buildAudioBubbleHtml(msgId, msg);
     } else {
@@ -2677,13 +2679,67 @@ function isNearBottom() {
     return (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight) < 150;
 }
 
+// ------------------------------------------
+// GERİ ARAMA ONAYI (cevapsız/reddedilen arama balonuna basınca çıkar)
+// Doğrudan aramaz, isim + yeşil "Ara" düğmesiyle onay ister.
+// ------------------------------------------
+let callBackSheetEl = null;
+
+function closeCallBackSheetFromBack() {
+    if (callBackSheetEl) {
+        callBackSheetEl.remove();
+        callBackSheetEl = null;
+    }
+}
+
+function closeCallBackSheet() {
+    if (!callBackSheetEl) return;
+    closeCallBackSheetFromBack();
+    popBackState();
+}
+
+function openCallBackConfirm(callType) {
+    closeCallBackSheetFromBack();
+    const isVideo = callType === 'video';
+    const name = currentChatName || '';
+    const avatarHtml = currentOtherAvatar
+        ? `<img src="${currentOtherAvatar}" class="w-16 h-16 rounded-full object-cover mx-auto">`
+        : `<div class="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold mx-auto" style="background-color:${getUserColor(name)};">${getInitials(name)}</div>`;
+
+    const el = document.createElement('div');
+    el.className = 'fixed inset-0 z-[70] bg-black/60 flex items-end';
+    el.innerHTML = `
+        <div class="w-full bg-[#202c33] rounded-t-2xl pb-6 px-5 pt-5 text-center">
+            <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-4"></div>
+            ${avatarHtml}
+            <p class="text-white text-lg font-semibold mt-3">${escapeHtml(name)}</p>
+            <button type="button" id="callback-confirm-btn" class="w-full mt-5 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold py-3.5 rounded-full flex items-center justify-center space-x-2">
+                <i class="fa-solid ${isVideo ? 'fa-video' : 'fa-phone'}"></i>
+                <span>Ara</span>
+            </button>
+        </div>
+    `;
+    document.body.appendChild(el);
+    el.addEventListener('click', (e) => {
+        if (e.target === el) closeCallBackSheet();
+    });
+    el.querySelector('#callback-confirm-btn').addEventListener('click', () => {
+        const uid = currentOtherUid;
+        const cid = currentChatId;
+        closeCallBackSheet();
+        if (isVideo) {
+            startCall(cid, uid);
+        } else {
+            startVoiceCall(cid, uid);
+        }
+    });
+    callBackSheetEl = el;
+    pushBackState(closeCallBackSheetFromBack);
+}
+
 window.callBackFromBubble = function (callType) {
     if (!currentChatId || currentChatId === 'global' || !currentOtherUid) return;
-    if (callType === 'audio') {
-        startVoiceCall(currentChatId, currentOtherUid);
-    } else {
-        startCall(currentChatId, currentOtherUid);
-    }
+    openCallBackConfirm(callType);
 };
 
 window.openImageLightbox = function (src) {
