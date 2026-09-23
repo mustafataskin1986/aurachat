@@ -1958,14 +1958,25 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
     el.addEventListener('pointerleave', cancelPress);
     el.addEventListener('pointercancel', cancelPress);
 
-    // Sağa kaydırıp bırakınca yanıtla (WhatsApp tarzı)
+    // Sağa kaydırıp bırakınca yanıtla (WhatsApp tarzı): parmakla birlikte hareket
+    // eder, solda beliren ok belirli bir noktada durur, balon kaymaya devam eder.
     if (replyable) {
+        el.style.touchAction = 'pan-y'; // dikey kaydırma tarayıcıda kalsın, yatayı biz yönetelim
+        el.style.position = 'relative';
+
+        const replyIcon = document.createElement('div');
+        replyIcon.className = 'absolute top-1/2 -translate-y-1/2 left-1 text-emerald-400 opacity-0 pointer-events-none';
+        replyIcon.innerHTML = '<i class="fa-solid fa-reply"></i>';
+        el.insertBefore(replyIcon, el.firstChild);
+
+        const SWIPE_TRIGGER = 10;
+        const SWIPE_MAX = 80;
+        const ICON_MAX = 28;
+
         let swipeStartX = null;
         let swipeStartY = null;
         let swiping = false;
         let swipeDecided = false;
-        const SWIPE_TRIGGER = 25;
-        const SWIPE_MAX = 80;
 
         el.addEventListener('pointerdown', (e) => {
             if (selectionMode) return;
@@ -1982,16 +1993,21 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
             const dy = e.clientY - swipeStartY;
 
             if (!swipeDecided) {
-                if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+                if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
                 swipeDecided = true;
                 if (dx > 0 && dx > Math.abs(dy)) {
                     swiping = true;
                     cancelPress();
                     el.style.transition = 'none';
+                    replyIcon.style.transition = 'none';
                 }
             }
             if (!swiping) return;
-            el.style.transform = `translateX(${Math.max(0, Math.min(dx, SWIPE_MAX))}px)`;
+            e.preventDefault();
+            const move = Math.max(0, Math.min(dx, SWIPE_MAX));
+            el.style.transform = `translateX(${move}px)`;
+            replyIcon.style.transform = `translateX(${Math.min(move, ICON_MAX)}px)`;
+            replyIcon.style.opacity = String(Math.min(1, move / SWIPE_TRIGGER));
         });
 
         const endSwipe = () => {
@@ -1999,6 +2015,8 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
                 const applied = parseFloat((el.style.transform || '').replace(/[^0-9.]/g, '')) || 0;
                 el.style.transition = 'transform 0.15s ease-out';
                 el.style.transform = '';
+                replyIcon.style.transition = 'opacity 0.15s ease-out';
+                replyIcon.style.opacity = '0';
                 if (applied >= SWIPE_TRIGGER) {
                     startReply(msgId, msg, isMine);
                     if (navigator.vibrate) navigator.vibrate(15);
