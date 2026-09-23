@@ -208,7 +208,7 @@
     list.addEventListener('touchend', function () {
       if (!drag) return;
       drag = false;
-      if (Math.abs(curDy) > window.innerHeight * 0.25) {
+      if (Math.abs(curDy) > window.innerHeight * 0.10) {
         flyOut(list, curDy > 0 ? 1 : -1);
       } else {
         list.style.transition = 'transform .2s ease-out';
@@ -351,7 +351,7 @@
           dragging = false;
           pan = null;
           img.style.transition = 'transform .2s ease-out';
-          if (Math.abs(ty) > window.innerHeight * 0.25) {
+          if (Math.abs(ty) > window.innerHeight * 0.10) {
             ty = (ty > 0 ? 1 : -1) * window.innerHeight;
             apply();
             setBg(0);
