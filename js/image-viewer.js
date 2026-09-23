@@ -136,8 +136,9 @@
     rep.addEventListener('click', function (e) {
       e.stopPropagation();
       var it = item();
+      var replyCb = opts && opts.onReply;
       close();
-      if (opts && opts.onReply) opts.onReply(it);
+      if (replyCb) replyCb(it);
     });
     pill.appendChild(rep);
     ['❤️', '😂'].forEach(function (emo) {
@@ -155,6 +156,66 @@
     }));
     bt.appendChild(pill);
     return bt;
+  }
+
+  // ---------- %25 ÇEKİNCE KAPANMA ----------
+  function setBg(a) {
+    if (root) root.style.backgroundColor = 'rgba(0,0,0,' + a + ')';
+  }
+
+  function flyOut(el, dir) {
+    el.style.transition = 'transform .2s ease-out';
+    el.style.transform = 'translateY(' + (dir * window.innerHeight) + 'px)';
+    setBg(0);
+    setTimeout(close, 200);
+  }
+
+  function attachListDismiss(list) {
+    var drag = false, startY = 0, base = 0, dirSign = 0, curDy = 0;
+    list.style.overscrollBehavior = 'contain';
+
+    list.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) return;
+      startY = e.touches[0].clientY;
+      drag = false;
+      curDy = 0;
+      list.style.transition = 'none';
+    }, { passive: true });
+
+    list.addEventListener('touchmove', function (e) {
+      if (e.touches.length !== 1) return;
+      var y = e.touches[0].clientY;
+      if (!drag) {
+        var atTop = list.scrollTop <= 0;
+        var atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
+        var d = y - startY;
+        if ((atTop && d > 6) || (atBottom && d < -6)) {
+          drag = true;
+          base = y;
+          dirSign = d > 0 ? 1 : -1;
+        } else {
+          return;
+        }
+      }
+      var dy = y - base;
+      if (dy * dirSign < 0) dy = 0;
+      curDy = dy;
+      if (e.cancelable) e.preventDefault();
+      list.style.transform = 'translateY(' + dy + 'px)';
+      setBg(1 - Math.min(1, Math.abs(dy) / (window.innerHeight * 0.6)));
+    }, { passive: false });
+
+    list.addEventListener('touchend', function () {
+      if (!drag) return;
+      drag = false;
+      if (Math.abs(curDy) > window.innerHeight * 0.25) {
+        flyOut(list, curDy > 0 ? 1 : -1);
+      } else {
+        list.style.transition = 'transform .2s ease-out';
+        list.style.transform = '';
+        setBg(1);
+      }
+    }, { passive: true });
   }
 
   // ---------- LİSTE (çoklu resim, alt alta) ----------
@@ -176,6 +237,7 @@
       list.appendChild(img);
     });
     root.appendChild(list);
+    attachListDismiss(list);
     var startImg = list.children[cur];
     if (startImg) setTimeout(function () { startImg.scrollIntoView({ block: 'center' }); }, 0);
   }
@@ -230,6 +292,7 @@
     }
 
     var pinch = null, pan = null, lastTap = { t: 0, x: 0, y: 0 }, moved = false, startT = 0;
+    var dragging = false, barsBeforeDrag = true;
 
     stage.addEventListener('touchstart', function (e) {
       if (e.touches.length === 2) {
@@ -268,12 +331,41 @@
           ty = pan.ty + dy;
           clampPan();
           apply();
+        } else if (dragging || (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx))) {
+          if (!dragging) {
+            dragging = true;
+            barsBeforeDrag = barsVisible;
+            setBars(false);
+          }
+          tx = dx;
+          ty = dy;
+          apply();
+          setBg(1 - Math.min(1, Math.abs(dy) / (window.innerHeight * 0.6)));
         }
       }
     }, { passive: false });
 
     stage.addEventListener('touchend', function (e) {
       if (e.touches.length === 0) {
+        if (dragging) {
+          dragging = false;
+          pan = null;
+          img.style.transition = 'transform .2s ease-out';
+          if (Math.abs(ty) > window.innerHeight * 0.25) {
+            ty = (ty > 0 ? 1 : -1) * window.innerHeight;
+            apply();
+            setBg(0);
+            setTimeout(close, 200);
+          } else {
+            tx = 0;
+            ty = 0;
+            apply();
+            setBg(1);
+            setBars(barsBeforeDrag);
+            setTimeout(function () { img.style.transition = ''; }, 220);
+          }
+          return;
+        }
         if (pinch) {
           pinch = null;
           if (s < 1.05) { s = 1; tx = 0; ty = 0; apply(); }
@@ -317,8 +409,10 @@
 
   function close() {
     if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+    var cb = opts && opts.onClose;
     if (root) { root.remove(); root = null; }
     opts = null;
+    if (cb) cb();
   }
 
   window.openImageViewer = function (o) {
