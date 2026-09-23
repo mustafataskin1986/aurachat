@@ -63,6 +63,7 @@ import { pushBackState, popBackState } from "./back-handler.js";
 import { watchCallForChat, startCall } from "./video-call.js";
 import { watchVoiceCallForChat, startVoiceCall } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
+import "./image-viewer.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
@@ -2901,6 +2902,83 @@ function doCloseLightbox() {
 window.closeImageLightboxUI = function () {
     doCloseLightbox();
     popBackState();
+};
+
+// ------------------------------------------
+// YENİ WHATSAPP TARZI GÖRÜNTÜLEYİCİ (image-viewer.js)
+// Yukarıdaki eski lightbox fonksiyonlarını bu tanımlar geçersiz kılar.
+// ------------------------------------------
+let viewerBackActive = false;
+
+function openViewer(o) {
+    viewerBackActive = true;
+    pushBackState(() => { viewerBackActive = false; window.closeImageViewer(); });
+    o.onClose = () => {
+        if (viewerBackActive) { viewerBackActive = false; popBackState(); }
+    };
+    o.onDownload = (it) => {
+        if (getFilesystemPlugin()) { showToast('Resim galerine kaydedildi (Pictures/AuraChat)'); return; }
+        const a = document.createElement('a');
+        a.href = it.src;
+        a.download = 'AuraChat_' + Date.now() + '.jpg';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    };
+    o.onForward = (it) => {
+        window.closeImageViewer();
+        setTimeout(() => window.forwardImageMessage(it.id), 200);
+    };
+    o.onReply = (it) => {
+        setTimeout(() => window.replyToMessage(it.id), 100);
+    };
+    window.openImageViewer(o);
+}
+
+function findMsgEntry(chatId, msgId) {
+    const s = chatSessions.get(chatId);
+    if (!s) return null;
+    return s.messages.find((m) => m.id === msgId) || s.olderMessagesPrepended.find((m) => m.id === msgId) || null;
+}
+
+function makeViewerItem(entry, msgId, src) {
+    const d = entry ? entry.data : null;
+    const mine = !!(d && currentUser && d.senderUid === currentUser.uid);
+    return {
+        id: msgId,
+        src: src,
+        time: d && d.createdAt ? d.createdAt.toMillis() : Date.now(),
+        senderName: mine ? 'Sen' : ((d && d.senderName) || currentChatName || '')
+    };
+}
+
+window.openImageLightbox = function (src) {
+    let msgId = null;
+    try {
+        const t = window.event && window.event.target;
+        const row = t && t.closest ? t.closest('[data-msg-id]') : null;
+        if (row) msgId = row.dataset.msgId;
+    } catch (e) {}
+    const entry = msgId ? findMsgEntry(currentChatId, msgId) : null;
+    openViewer({ items: [makeViewerItem(entry, msgId, src)], index: 0, album: false });
+};
+
+window.openAlbumLightbox = async function (chatId, msgId, imagesCount, startIndex) {
+    const entry = findMsgEntry(chatId, msgId);
+    const srcs = await Promise.all(Array.from({ length: imagesCount }, async (_, i) => {
+        let src = mediaUriCache.get(`${chatId}/${msgId}_${i}`);
+        if (!src) src = await resolveLocalMedia(chatId, msgId, findAlbumSourceImage(chatId, msgId, i), i);
+        return src || null;
+    }));
+    const items = [];
+    let startPos = 0;
+    srcs.forEach((src, i) => {
+        if (!src) return;
+        if (i <= startIndex) startPos = items.length;
+        items.push(makeViewerItem(entry, msgId, src));
+    });
+    if (!items.length) return;
+    openViewer({ items: items, index: startPos, album: items.length > 1 });
 };
 
 // ------------------------------------------
