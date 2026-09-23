@@ -12,6 +12,11 @@
       "scopes": ["profile", "email"],
       "serverClientId": "447747395966-3shresouu36769er1b9656oec8vd13aa.apps.googleusercontent.com",
       "forceCodeForRefreshToken": true
+    },
+    "SplashScreen": {
+      "launchShowDuration": 0,
+      "launchAutoHide": true,
+      "splashImmersive": true
     }
   }
 }
