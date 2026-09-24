@@ -67,7 +67,7 @@ import "./image-viewer.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
-const messageInput = document.getElementById('message-input');
+const messageInput = setupChatInput();
 const sendBtn = document.getElementById('send-btn');
 const attachBtn = document.getElementById('attach-btn');
 const imageInput = document.getElementById('image-input');
@@ -81,6 +81,82 @@ const selectionToolbar = document.getElementById('selection-toolbar');
 const selectionCancelBtn = document.getElementById('selection-cancel-btn');
 const selectionCountEl = document.getElementById('selection-count');
 const selectionDeleteBtn = document.getElementById('selection-delete-btn');
+
+// Mesaj kutusunu <textarea> yapar. İkinci satıra geçince kutu boydan boya yayılır,
+// + ve gönder/mikrofon butonları kutunun altına iner. Mesaj gidince tek satıra döner.
+function setupChatInput() {
+    const old = document.getElementById('message-input');
+    if (!old) return old;
+
+    const SINGLE_H = 46;    // tek satır yüksekliği (px)
+    const WRAP_LIMIT = 56;  // scrollHeight bunu geçerse ikinci satır var demektir
+    const MAX_H = 160;      // çok uzun yazıda en fazla bu kadar uzar
+
+    const style = document.createElement('style');
+    style.textContent = `
+.aura-input-row{display:grid !important;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:8px;row-gap:6px}
+.aura-input-row[style*="display: none"]{display:none !important}
+.aura-input-row > *{margin:0 !important}
+.aura-input-row > #attach-btn{grid-column:1;grid-row:1}
+.aura-input-row > #message-input{grid-column:2;grid-row:1}
+.aura-input-row > #send-btn,.aura-input-row > #mic-btn{grid-column:3;grid-row:1}
+.aura-input-row > :not(#attach-btn):not(#message-input):not(#send-btn):not(#mic-btn){grid-column:1 / 3;grid-row:1}
+.aura-input-row.aura-multi > #message-input{grid-column:1 / -1;grid-row:1}
+.aura-input-row.aura-multi > #attach-btn{grid-column:1;grid-row:2;justify-self:start}
+.aura-input-row.aura-multi > #send-btn,.aura-input-row.aura-multi > #mic-btn{grid-column:3;grid-row:2;justify-self:end}
+textarea#message-input{box-sizing:border-box !important;display:block;width:100% !important;min-height:${SINGLE_H}px;padding:10px 16px !important;line-height:24px !important;border-radius:23px !important;resize:none !important;overflow-x:hidden;white-space:pre-wrap;word-wrap:break-word;scrollbar-width:none;touch-action:manipulation}
+textarea#message-input::-webkit-scrollbar{display:none}`;
+    document.head.appendChild(style);
+
+    // <input> ise aynı id ve class'larla <textarea>'ya çevir
+    let ta = old;
+    const valueDesc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+    if (old.tagName !== 'TEXTAREA') {
+        ta = document.createElement('textarea');
+        Array.from(old.attributes).forEach((a) => {
+            if (a.name === 'type' || a.name === 'value') return;
+            ta.setAttribute(a.name, a.value);
+        });
+        valueDesc.set.call(ta, old.value || '');
+        old.replaceWith(ta);
+    }
+    ta.rows = 1;
+    ta.setAttribute('enterkeyhint', 'send');
+    ta.setAttribute('autocomplete', 'off');
+
+    // + ve gönder butonu kutuyla aynı satırdaysa grid düzenini aç
+    const row = ta.parentElement;
+    const layoutOk = !!(row && row.querySelector('#attach-btn') && row.querySelector('#send-btn'));
+    if (layoutOk) row.classList.add('aura-input-row');
+
+    function resize() {
+        if (!ta.isConnected) return;
+        if (layoutOk) row.classList.remove('aura-multi');
+        ta.style.height = SINGLE_H + 'px';
+        ta.style.overflowY = 'hidden';
+
+        if (ta.scrollHeight > WRAP_LIMIT) {
+            if (layoutOk) row.classList.add('aura-multi');
+            ta.style.height = 'auto';
+            const border = ta.offsetHeight - ta.clientHeight;
+            const h = ta.scrollHeight + border;
+            ta.style.height = Math.min(h, MAX_H) + 'px';
+            ta.style.overflowY = h > MAX_H ? 'auto' : 'hidden';
+        }
+    }
+
+    // "messageInput.value = ''" yazılınca da yükseklik sıfırlansın
+    Object.defineProperty(ta, 'value', {
+        configurable: true,
+        get() { return valueDesc.get.call(this); },
+        set(v) { valueDesc.set.call(this, v); resize(); }
+    });
+
+    ta.addEventListener('input', resize);
+    window.addEventListener('resize', resize);
+    resize();
+    return ta;
+}
 
 // Modül durumu
 let currentUser = null;
