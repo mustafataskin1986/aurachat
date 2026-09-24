@@ -40,8 +40,7 @@ export const THEMES = [
     s.textContent = String.raw`html[data-aura-theme] #message-container > div > div.bg-\[\#005c4b\]{background-color:var(--aura-out) !important}
 #message-container > div > div.bg-\[\#202c33\]{background-color:#212121 !important}
 html[data-aura-theme] #send-btn,html[data-aura-theme] #mic-btn{background-color:var(--aura-out) !important;background-image:none !important}
-#chat-area:not(.translate-x-full){transition:none !important}
-#sidebar.-translate-x-full{transition:none !important}
+#chat-area,#sidebar{transition:none !important}
 #message-input,#message-input:focus{border-color:transparent !important;outline:none !important;box-shadow:none !important;--tw-ring-shadow:0 0 #0000 !important}
 html[data-aura-theme] #message-input{caret-color:var(--aura-out)}
 div:has(> #message-input){border-color:transparent !important}
