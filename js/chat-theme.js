@@ -41,8 +41,9 @@ export const THEMES = [
 #message-container > div > div.bg-\[\#202c33\]{background-color:#212121 !important}
 html[data-aura-theme] #send-btn,html[data-aura-theme] #mic-btn{background-color:var(--aura-out) !important;background-image:none !important}
 #chat-area,#sidebar{transition:none !important}
-#message-input,#message-input:focus{border-color:transparent !important;outline:none !important;box-shadow:none !important;--tw-ring-shadow:0 0 #0000 !important}
-html[data-aura-theme] #message-input{caret-color:var(--aura-out)}
+#message-input,#message-input:focus{border:1px solid var(--aura-btn,#22c55e) !important;outline:none !important;--tw-ring-shadow:0 0 #0000 !important;background-color:#000000 !important;caret-color:var(--aura-btn,#22c55e)}
+#message-input{box-shadow:none !important}
+#message-input:focus{box-shadow:inset 0 0 0 1px var(--aura-btn,#22c55e) !important}
 div:has(> #message-input){border-color:transparent !important}
 #chat-area [class*="border-b"],#chat-area [class*="border-t"]{border-top-width:0 !important;border-bottom-width:0 !important}
 #message-container{scrollbar-width:none;-ms-overflow-style:none}
@@ -113,12 +114,18 @@ function applyTheme(chatId) {
         root.removeAttribute('data-aura-theme');
         root.style.removeProperty('--aura-out');
         root.style.removeProperty('--aura-in');
+        // Varsayılan temada gönder butonunun asıl rengini oku, input çerçevesi onu kullansın
+        const sb = document.getElementById('send-btn');
+        const c = sb ? getComputedStyle(sb).backgroundColor : '';
+        if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') root.style.setProperty('--aura-btn', c);
+        else root.style.removeProperty('--aura-btn');
         mc.style.background = '';
         return;
     }
     root.setAttribute('data-aura-theme', t.id);
     root.style.setProperty('--aura-out', t.out);
     root.style.setProperty('--aura-in', t.inc);
+    root.style.setProperty('--aura-btn', t.out);
     mc.style.background = t.bg;
 }
 
