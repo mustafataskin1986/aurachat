@@ -37,8 +37,11 @@ export const THEMES = [
     if (document.getElementById('aura-theme-css')) return;
     const s = document.createElement('style');
     s.id = 'aura-theme-css';
-    s.textContent = String.raw`#message-container[data-aura-theme] > div > div.bg-\[\#005c4b\]{background-color:var(--aura-out) !important}
-#message-container[data-aura-theme] > div > div.bg-\[\#202c33\]{background-color:var(--aura-in) !important}`;
+    s.textContent = String.raw`html[data-aura-theme] #message-container > div > div.bg-\[\#005c4b\]{background-color:var(--aura-out) !important}
+html[data-aura-theme] #message-container > div > div.bg-\[\#202c33\]{background-color:var(--aura-in) !important}
+html[data-aura-theme] #send-btn,html[data-aura-theme] #mic-btn{background-color:var(--aura-out) !important;background-image:none !important}
+#chat-area:not(.translate-x-full){transition:none !important}
+#sidebar.-translate-x-full{transition:none !important}`;
     document.head.appendChild(s);
 })();
 
@@ -76,18 +79,19 @@ function resolveTheme(saved) {
 function applyTheme(chatId) {
     const mc = document.getElementById('message-container');
     if (!mc || !chatId) return;
+    const root = document.documentElement;
     const t = resolveTheme(loadSaved(chatId));
     if (!t) {
-        mc.removeAttribute('data-aura-theme');
+        root.removeAttribute('data-aura-theme');
+        root.style.removeProperty('--aura-out');
+        root.style.removeProperty('--aura-in');
         mc.style.background = '';
-        mc.style.removeProperty('--aura-out');
-        mc.style.removeProperty('--aura-in');
         return;
     }
-    mc.setAttribute('data-aura-theme', t.id);
+    root.setAttribute('data-aura-theme', t.id);
+    root.style.setProperty('--aura-out', t.out);
+    root.style.setProperty('--aura-in', t.inc);
     mc.style.background = t.bg;
-    mc.style.setProperty('--aura-out', t.out);
-    mc.style.setProperty('--aura-in', t.inc);
 }
 
 // Sohbet değişince (başlıktaki isim yenilenince) o sohbetin temasını uygula
