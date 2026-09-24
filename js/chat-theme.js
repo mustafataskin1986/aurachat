@@ -48,6 +48,11 @@ div:has(> #message-input){border-color:transparent !important}
 #chat-area [class*="border-b"],#chat-area [class*="border-t"]{border-top-width:0 !important;border-bottom-width:0 !important}
 #message-container{scrollbar-width:none;-ms-overflow-style:none}
 #message-container::-webkit-scrollbar{display:none;width:0;height:0}
+#sidebar [class*="border-b"],#sidebar [class*="border-t"]{border-top-width:0 !important;border-bottom-width:0 !important}
+#sidebar [class*="divide-y"] > *,#chat-area [class*="divide-y"] > *{border-top-width:0 !important;border-bottom-width:0 !important}
+nav,footer{border-top-width:0 !important}
+#sidebar,#chat-area{border-width:0 !important}
+body :has(#sidebar),body :has(#chat-area){border-width:0 !important}
 html[data-aura-black] #sidebar{background-color:#000 !important}
 html[data-aura-black] #sidebar [class*="bg-[#202c33]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#111b21]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#0b141a]"]:not(input):not(textarea){background-color:#000 !important}
 html[data-aura-black] #chat-area [class*="bg-[#202c33]"]:not(input):not(textarea):not(#message-container *){background-color:#000 !important}
