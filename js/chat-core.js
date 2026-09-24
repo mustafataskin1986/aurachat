@@ -67,7 +67,7 @@ import "./image-viewer.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
-const messageInput = setupChatInput();
+const messageInput = setupChatInput2();
 const sendBtn = document.getElementById('send-btn');
 const attachBtn = document.getElementById('attach-btn');
 const imageInput = document.getElementById('image-input');
@@ -281,6 +281,121 @@ textarea#message-input::-webkit-scrollbar{display:none}`;
     });
     window.addEventListener('resize', resize);
     resize();
+    return ta;
+}
+
+// Mesaj kutusu (3. sürüm). Kutunun yüksekliğini elle yazmıyoruz: görünmez bir "ayna" kutu
+// aynı yazıyı taşır, satır sayısını tarayıcı hesaplar, textarea onun yüksekliğine uzar.
+// Tek satırda [+][kutu][gönder]. İkinci satırda kutu boydan boya yayılır, + ve gönder/mikrofon
+// kutunun içinde en alt satırda kalır, yazı satır satır yukarı uzar.
+function setupChatInput2() {
+    const old = document.getElementById('message-input');
+    if (!old) return old;
+
+    const SINGLE_H = 46;   // tek satır yüksekliği (px)
+    const MAX_H = 166;     // en fazla 6 satır, sonra içeride kayar
+
+    // <input> ise aynı id ve class'larla <textarea>'ya çevir (eski inline style taşınmaz)
+    let ta = old;
+    const valueDesc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+    if (old.tagName !== 'TEXTAREA') {
+        ta = document.createElement('textarea');
+        Array.from(old.attributes).forEach((a) => {
+            if (a.name === 'type' || a.name === 'value' || a.name === 'style') return;
+            ta.setAttribute(a.name, a.value);
+        });
+        valueDesc.set.call(ta, old.value || '');
+        old.replaceWith(ta);
+    }
+    ta.rows = 1;
+    ta.setAttribute('enterkeyhint', 'enter');
+    ta.setAttribute('autocomplete', 'off');
+
+    const row = ta.parentElement;
+    const attach = document.getElementById('attach-btn');
+    const layoutOk = !!(row && row.querySelector('#attach-btn') && row.querySelector('#send-btn'));
+
+    const style = document.createElement('style');
+    style.textContent = `
+.aura-input-row{display:grid !important;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:8px}
+.aura-input-row[style*="display: none"]{display:none !important}
+.aura-input-row > *{margin:0 !important}
+.aura-input-row > #attach-btn{grid-column:1;grid-row:1}
+.aura-input-row > #message-input,.aura-input-row > .aura-mirror{grid-column:2;grid-row:1}
+.aura-input-row > #send-btn,.aura-input-row > #mic-btn{grid-column:3;grid-row:1}
+.aura-input-row > :not(#attach-btn):not(#message-input):not(.aura-mirror):not(#send-btn):not(#mic-btn){grid-column:1 / 3;grid-row:1}
+.aura-input-row.aura-multi > #message-input,.aura-input-row.aura-multi > .aura-mirror{grid-column:1 / -1;grid-row:1;padding-left:var(--aura-pl,52px) !important;padding-right:var(--aura-pr,52px) !important}
+.aura-input-row.aura-multi > #attach-btn{grid-column:1;grid-row:1;align-self:end;justify-self:start;z-index:2;margin:0 0 2px 4px !important}
+.aura-input-row.aura-multi > #send-btn,.aura-input-row.aura-multi > #mic-btn{grid-column:3;grid-row:1;align-self:end;justify-self:end;z-index:2;margin:0 2px 2px 0 !important}
+textarea#message-input,.aura-mirror{box-sizing:border-box !important;width:100%;padding:10px 16px !important;line-height:24px !important;border-radius:23px;white-space:pre-wrap;overflow-wrap:break-word}
+textarea#message-input{display:block;height:auto !important;align-self:stretch !important;min-height:${SINGLE_H}px;resize:none !important;overflow-x:hidden;overflow-y:auto;scrollbar-width:none;touch-action:manipulation}
+textarea#message-input::-webkit-scrollbar{display:none}
+.aura-mirror{visibility:hidden;pointer-events:none;border:1px solid transparent;align-self:stretch;min-height:${SINGLE_H}px;max-height:${MAX_H}px;overflow:hidden}`;
+    document.head.appendChild(style);
+
+    // Yerleşim uygun değilse (+ ve gönder aynı satırda değil) sadece basit uzama
+    if (!layoutOk) {
+        function simpleGrow() {
+            ta.style.height = 'auto';
+            ta.style.height = Math.min(ta.scrollHeight + 2, MAX_H) + 'px';
+        }
+        Object.defineProperty(ta, 'value', {
+            configurable: true,
+            get() { return valueDesc.get.call(this); },
+            set(v) { valueDesc.set.call(this, v); simpleGrow(); }
+        });
+        ta.addEventListener('input', simpleGrow);
+        return ta;
+    }
+
+    row.classList.add('aura-input-row');
+
+    // Görünmez ayna kutu: textarea ile aynı hücrede, aynı yazıyı taşır
+    const mirror = document.createElement('div');
+    mirror.className = 'aura-mirror';
+    ta.insertAdjacentElement('afterend', mirror);
+
+    function sync() {
+        if (!ta.isConnected) return;
+        const cs = getComputedStyle(ta);
+        mirror.style.fontFamily = cs.fontFamily;
+        mirror.style.fontSize = cs.fontSize;
+        mirror.style.fontWeight = cs.fontWeight;
+        mirror.style.letterSpacing = cs.letterSpacing;
+        mirror.style.borderLeftWidth = cs.borderLeftWidth;
+        mirror.style.borderRightWidth = cs.borderRightWidth;
+        mirror.style.borderTopWidth = cs.borderTopWidth;
+        mirror.style.borderBottomWidth = cs.borderBottomWidth;
+        mirror.textContent = ta.value + '\u200b';
+
+        // Tek satır genişliğinde ölç: sığmıyorsa iki satırlı düzene geç
+        row.classList.remove('aura-multi');
+        if (mirror.offsetHeight > SINGLE_H + 2) {
+            const sb = document.getElementById('send-btn');
+            const mb = document.getElementById('mic-btn');
+            const rightW = Math.max(sb ? sb.offsetWidth : 0, mb ? mb.offsetWidth : 0) || 44;
+            const leftW = (attach ? attach.offsetWidth : 0) || 44;
+            row.style.setProperty('--aura-pl', (leftW + 8) + 'px');
+            row.style.setProperty('--aura-pr', (rightW + 8) + 'px');
+            row.classList.add('aura-multi');
+        }
+
+        // En üst sınıra gelince imleç en alt satırda görünsün
+        if (ta.value && ta.selectionStart === ta.value.length && mirror.scrollHeight > mirror.clientHeight) {
+            ta.scrollTop = ta.scrollHeight;
+        }
+    }
+
+    // "messageInput.value = ''" yazılınca da kutu tek satıra dönsün
+    Object.defineProperty(ta, 'value', {
+        configurable: true,
+        get() { return valueDesc.get.call(this); },
+        set(v) { valueDesc.set.call(this, v); sync(); }
+    });
+
+    ta.addEventListener('input', sync);
+    window.addEventListener('resize', sync);
+    sync();
     return ta;
 }
 // Modül durumu
