@@ -90,7 +90,7 @@ function setupChatInput() {
 
     const SINGLE_H = 46;    // tek satır yüksekliği (px)
     const WRAP_LIMIT = 56;  // scrollHeight bunu geçerse ikinci satır var demektir
-    const MAX_H = 160;      // çok uzun yazıda en fazla bu kadar uzar
+    const MAX_H = 166;      // 6 satıra kadar uzar, sonra içeride kayar
 
     const style = document.createElement('style');
     style.textContent = `
@@ -121,7 +121,7 @@ textarea#message-input::-webkit-scrollbar{display:none}`;
         old.replaceWith(ta);
     }
     ta.rows = 1;
-    ta.setAttribute('enterkeyhint', 'send');
+ ta.setAttribute('enterkeyhint', 'enter');
     ta.setAttribute('autocomplete', 'off');
 
     // + ve gönder butonu kutuyla aynı satırdaysa grid düzenini aç
@@ -137,11 +137,12 @@ textarea#message-input::-webkit-scrollbar{display:none}`;
 
         if (ta.scrollHeight > WRAP_LIMIT) {
             if (layoutOk) row.classList.add('aura-multi');
-            ta.style.height = 'auto';
+          ta.style.height = '0px';
             const border = ta.offsetHeight - ta.clientHeight;
             const h = ta.scrollHeight + border;
             ta.style.height = Math.min(h, MAX_H) + 'px';
             ta.style.overflowY = h > MAX_H ? 'auto' : 'hidden';
+            if (h > MAX_H) ta.scrollTop = ta.scrollHeight;
         }
     }
 
@@ -152,7 +153,10 @@ textarea#message-input::-webkit-scrollbar{display:none}`;
         set(v) { valueDesc.set.call(this, v); resize(); }
     });
 
-    ta.addEventListener('input', resize);
+ta.addEventListener('input', () => {
+        resize();
+        requestAnimationFrame(resize);
+    });
     window.addEventListener('resize', resize);
     resize();
     return ta;
@@ -1874,7 +1878,7 @@ let bodyHtml;
 } else if (msg.type === 'audio') {
         bodyHtml = buildAudioBubbleHtml(msgId, msg);
     } else {
-        bodyHtml = `<p class="break-words">${escapeHtml(msg.text)}</p>`;
+        bodyHtml = `<p class="break-words whitespace-pre-wrap">${escapeHtml(msg.text)}</p>`;
     }
 
   const forwardedLabel = msg.forwarded
@@ -3105,8 +3109,10 @@ async function sendMessage() {
 }
 
 sendBtn.addEventListener('click', sendMessage);
-messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
+messageInput.addEventListener('keydown', (e) => {
+    // Telefonda Enter alt satıra geçer, gönderme sadece butonla.
+    // Bilgisayarda (fare varsa) Enter gönderir, Shift+Enter alt satıra geçer.
+    if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(pointer: fine)').matches) {
         e.preventDefault();
         sendMessage();
     }
