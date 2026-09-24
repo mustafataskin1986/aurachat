@@ -12,6 +12,7 @@ import { getCurrentUser, getCurrentChatId, selectChat, sendPushToUser, leaveGrou
 import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
+import { openChatThemePicker } from "./chat-theme.js";
 
 const sidebar = document.getElementById('sidebar');
 const chatAreaEl = document.getElementById('chat-area');
@@ -867,6 +868,10 @@ async function openChatMenu() {
         <button type="button" data-chat-menu="mute" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-solid ${muted ? 'fa-bell' : 'fa-bell-slash'} text-amber-400 w-4"></i><span>${muted ? 'Sesi aç' : 'Sessize al'}</span>
         </button>`;
+        itemsHtml += `
+        <button type="button" data-chat-menu="theme" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid fa-palette text-pink-400 w-4"></i><span>Sohbet teması</span>
+        </button>`;
 
     let otherUidForBlock = null;
     if (!isGrp) {
@@ -895,6 +900,7 @@ async function openChatMenu() {
 
         if (action === 'info') { openGroupInfo(id); return; }
         if (action === 'add') { openAddPanelForGroup(id); return; }
+        if (action === 'theme') { openChatThemePicker(id); return; }
 
         if (action === 'mute') {
             try {
