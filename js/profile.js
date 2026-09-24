@@ -11,6 +11,7 @@ import { signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth
 import { getCurrentUser, setCurrentUser } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
+import { openImageCropper } from "./image-cropper.js";
 
 const profileBtn = document.getElementById('profile-btn');
 const profilePanel = document.getElementById('profile-panel');
@@ -164,14 +165,19 @@ if (profileBackBtn) {
 if (profileAvatarInput) {
     profileAvatarInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
+        profileAvatarInput.value = '';
         if (!file) return;
+
+        // WhatsApp tarzı kırpma ekranı
+        const cropped = await openImageCropper(file, { size: 400, quality: 0.75 });
+        if (!cropped) return; // İptal
 
         if (profileAvatar) {
             profileAvatar.innerHTML = `<div class="w-full h-full flex items-center justify-center"><i class="fa-solid fa-spinner fa-spin text-white"></i></div>`;
         }
 
         try {
-            pendingAvatarBase64 = await compressAvatarToDataUrl(file);
+            pendingAvatarBase64 = cropped;
             if (profileAvatar) {
                 profileAvatar.style.backgroundColor = '';
                 profileAvatar.innerHTML = `<img src="${pendingAvatarBase64}" class="w-full h-full object-cover">`;
