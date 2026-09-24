@@ -11,6 +11,7 @@ import { collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, arrayUni
 import { getCurrentUser, getCurrentChatId, selectChat, sendPushToUser, leaveGroup, showToast, toggleBlockUser } from "./chat-core.js";
 import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
+import { openImageCropper } from "./image-cropper.js";
 
 const sidebar = document.getElementById('sidebar');
 const chatAreaEl = document.getElementById('chat-area');
@@ -631,7 +632,8 @@ async function changeGroupPhoto() {
     if (!file) return;
 
     try {
-        const photo = await makeSquareThumb(file, 192);
+        const photo = await openImageCropper(file, { size: 192, quality: 0.7 });
+        if (!photo) return; // İptal
         await updateDoc(doc(db, "groups", gid), { photo: photo });
         await postGroupEvent(gid, g, `${me.name} grup fotoğrafını değiştirdi`, { groupPhoto: photo });
         showToast('Grup fotoğrafı değişti');
