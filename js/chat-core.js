@@ -64,10 +64,12 @@ import { watchCallForChat, startCall } from "./video-call.js";
 import { watchVoiceCallForChat, startVoiceCall } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
 import "./image-viewer.js";
+import { setupComposer } from "./chat-composer.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
-const messageInput = document.getElementById('message-input');
+const composer = setupComposer();
+const messageInput = composer.input;
 const sendBtn = document.getElementById('send-btn');
 const attachBtn = document.getElementById('attach-btn');
 const imageInput = document.getElementById('image-input');
@@ -90,6 +92,7 @@ let currentOtherUid = null;
 let currentOtherAvatar = '';
 let currentIsGroup = false;
 let typingTimeout = null;
+let sendPendingImages = async () => {};
 
 let selectionMode = false;
 const selectedMessageIds = new Set();
@@ -1040,7 +1043,7 @@ export async function selectChat(otherUser) {
     cancelReply();
     currentIsGroup = false;
     toggleCallButtonsForGroup(false);
-
+composer.clearImages();
     let chatId, chatName, otherUid, otherAvatar;
 
     if (otherUser === 'global') {
@@ -1136,6 +1139,7 @@ if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.
 }
  
 function doCloseChatView() {
+composer.clearImages();
 closeAttachMenu();
 cancelReply();
 unreadDivider = null;
@@ -3028,11 +3032,21 @@ async function sendMessage() {
     }
 }
 
-sendBtn.addEventListener('click', sendMessage);
-messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
+// Önce bekleyen resimler, sonra yazı gider
+async function sendFromComposer() {
+    const files = composer.takeImages();
+    if (files.length) await sendPendingImages(files);
+    if (messageInput.value.trim()) await sendMessage();
+    updateMicToggle();
+}
+
+sendBtn.addEventListener('click', sendFromComposer);
+messageInput.addEventListener('keydown', (e) => {
+    // Telefonda Enter alt satıra geçer, gönderme sadece butonla.
+    // Bilgisayarda (fare varsa) Enter gönderir, Shift+Enter alt satıra geçer.
+    if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(pointer: fine)').matches) {
         e.preventDefault();
-        sendMessage();
+        sendFromComposer();
     }
 });
 
@@ -3117,10 +3131,19 @@ if (attachBtn && imageInput) {
     messageInput.addEventListener('focus', closeAttachMenu);
     messageContainer.addEventListener('click', closeAttachMenu);
 
-    imageInput.addEventListener('change', async (e) => {
-        const files = Array.from(e.target.files || []);
-        if (!files.length || !currentUser || !currentChatId) return;
+    // Seçilen resimler hemen gitmez: kutunun üstünde önizleme olarak bekler, gönder tuşuyla gider
+    imageInput.addEventListener('change', (e) => {
+        const picked = Array.from(e.target.files || []).filter((f) => f.type.startsWith('image/'));
         imageInput.value = '';
+        if (!picked.length) {
+            alert("Lütfen bir görsel dosyası seç kanka!");
+            return;
+        }
+        composer.addImages(picked);
+    });
+
+    sendPendingImages = async (files) => {
+        if (!files.length || !currentUser || !currentChatId) return;
         const replyPayload = consumeReplyPayload();
 
         const validFiles = files.filter((f) => f.type.startsWith('image/'));
@@ -3226,7 +3249,7 @@ if (attachBtn && imageInput) {
                 activeChatStatus.textContent = '';
             }
         }
-    });
+};
 }
 
 // ------------------------------------------
@@ -3249,7 +3272,7 @@ function fmtAudioTime(sec) {
 // Yazı varsa gönder, yoksa mikrofon düğmesi görünsün
 function updateMicToggle() {
     if (!micBtn || !sendBtn || !messageInput) return;
-    const hasText = messageInput.value.trim().length > 0;
+    const hasText = messageInput.value.trim().length > 0 || composer.hasImages();
     sendBtn.style.display = hasText ? '' : 'none';
     micBtn.style.display = hasText ? 'none' : '';
 }
@@ -3473,6 +3496,7 @@ async function sendVoiceMessage(dataUrl, durationSec) {
     micBtn.addEventListener('contextmenu', (e) => e.preventDefault());
 
     messageInput.addEventListener('input', updateMicToggle);
+    composer.onChange(updateMicToggle);
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden' && recState) finishVoiceRecording(true);
     });
