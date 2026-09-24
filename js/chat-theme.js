@@ -15,7 +15,7 @@ import { openImageCropper } from "./image-cropper.js";
 const STORE_PREFIX = 'aurachat_theme_';
 const DEFAULT_BG = '#0b141a';
 const DEFAULT_OUT = '#005c4b';
-const DEFAULT_IN = '#202c33';
+const DEFAULT_IN = '#212121';
 
 // id, name, bg (CSS arka plan), out (giden balon), inc (gelen balon)
 export const THEMES = [
@@ -38,7 +38,7 @@ export const THEMES = [
     const s = document.createElement('style');
     s.id = 'aura-theme-css';
     s.textContent = String.raw`html[data-aura-theme] #message-container > div > div.bg-\[\#005c4b\]{background-color:var(--aura-out) !important}
-html[data-aura-theme] #message-container > div > div.bg-\[\#202c33\]{background-color:var(--aura-in) !important}
+#message-container > div > div.bg-\[\#202c33\]{background-color:#212121 !important}
 html[data-aura-theme] #send-btn,html[data-aura-theme] #mic-btn{background-color:var(--aura-out) !important;background-image:none !important}
 #chat-area:not(.translate-x-full){transition:none !important}
 #sidebar.-translate-x-full{transition:none !important}
@@ -48,6 +48,7 @@ div:has(> #message-input){border-color:transparent !important}
 #chat-area [class*="border-b"],#chat-area [class*="border-t"]{border-top-width:0 !important;border-bottom-width:0 !important}
 #message-container{scrollbar-width:none;-ms-overflow-style:none}
 #message-container::-webkit-scrollbar{display:none;width:0;height:0}
+#back-btn,#back-btn *,#voice-call-btn,#voice-call-btn *,#video-call-btn,#video-call-btn *,#chat-menu-btn,#chat-menu-btn *,#attach-btn,#attach-btn *,#send-btn,#send-btn *,#mic-btn,#mic-btn *,#selection-cancel-btn,#selection-cancel-btn *,#selection-delete-btn,#selection-delete-btn *,#main-menu-btn,#main-menu-btn *,#sidebar > div:first-child button,#sidebar > div:first-child button *{color:#ffffff !important}
 #sidebar [class*="border-b"],#sidebar [class*="border-t"]{border-top-width:0 !important;border-bottom-width:0 !important}
 #sidebar [class*="divide-y"] > *,#chat-area [class*="divide-y"] > *{border-top-width:0 !important;border-bottom-width:0 !important}
 nav,footer{border-top-width:0 !important}
@@ -206,7 +207,7 @@ function paintBlackSwitch() {
 function updatePreview() {
     const t = resolveTheme(loadSaved(pickerChatId));
     panelEl.querySelector('#theme-preview').style.background = t ? t.bg : DEFAULT_BG;
-    panelEl.querySelector('#theme-prev-in').style.backgroundColor = t ? t.inc : DEFAULT_IN;
+    panelEl.querySelector('#theme-prev-in').style.backgroundColor = DEFAULT_IN;
     panelEl.querySelector('#theme-prev-out').style.backgroundColor = t ? t.out : DEFAULT_OUT;
 }
 
@@ -235,7 +236,7 @@ function renderGrid() {
         tile.className = 'cursor-pointer';
         tile.innerHTML = `
             <div class="relative rounded-xl border-2 ${on ? 'border-emerald-500' : 'border-transparent'} overflow-hidden" style="aspect-ratio:3/4;background:${t.bg || DEFAULT_BG};">
-                <div class="absolute left-2 top-3 w-1/2 h-3 rounded" style="background:${t.inc || DEFAULT_IN};"></div>
+                <div class="absolute left-2 top-3 w-1/2 h-3 rounded" style="background:${DEFAULT_IN};"></div>
                 <div class="absolute right-2 top-9 w-2/3 h-3 rounded" style="background:${t.out || DEFAULT_OUT};"></div>
                 ${on ? '<i class="fa-solid fa-circle-check text-emerald-400 absolute top-1.5 right-1.5"></i>' : ''}
             </div>
