@@ -41,9 +41,28 @@ export const THEMES = [
 html[data-aura-theme] #message-container > div > div.bg-\[\#202c33\]{background-color:var(--aura-in) !important}
 html[data-aura-theme] #send-btn,html[data-aura-theme] #mic-btn{background-color:var(--aura-out) !important;background-image:none !important}
 #chat-area:not(.translate-x-full){transition:none !important}
-#sidebar.-translate-x-full{transition:none !important}`;
+#sidebar.-translate-x-full{transition:none !important}
+html[data-aura-theme] #message-input,html[data-aura-theme] #message-input:focus{border-color:var(--aura-out) !important;--tw-ring-color:var(--aura-out) !important;outline-color:var(--aura-out) !important;caret-color:var(--aura-out)}
+html[data-aura-theme] div:has(> #message-input){border-color:var(--aura-out) !important}
+html[data-aura-black] #sidebar{background-color:#000 !important}
+html[data-aura-black] #sidebar [class*="bg-[#202c33]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#111b21]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#0b141a]"]:not(input):not(textarea){background-color:#000 !important}
+html[data-aura-black] #chat-area [class*="bg-[#202c33]"]:not(input):not(textarea):not(#message-container *){background-color:#000 !important}
+html[data-aura-black] #chat-area [class*="bg-[#111b21]"]:not(input):not(textarea):not(#message-container *):not(#message-container){background-color:#000 !important}`;
     document.head.appendChild(s);
 })();
+
+// ---------- Siyah arayüz (tüm sohbetler için tek ayar) ----------
+const BLACK_KEY = 'aurachat_black_ui';
+
+function isBlackUi() {
+    try { return localStorage.getItem(BLACK_KEY) === '1'; } catch (e) { return false; }
+}
+
+function applyBlackUi() {
+    if (isBlackUi()) document.documentElement.setAttribute('data-aura-black', '1');
+    else document.documentElement.removeAttribute('data-aura-black');
+}
+applyBlackUi();
 
 // ---------- Kayıt ----------
 function loadSaved(chatId) {
@@ -139,14 +158,40 @@ function ensurePanel() {
                 <div class="flex justify-start"><div id="theme-prev-in" class="text-white text-sm px-4 py-2 rounded-xl shadow">Selam kanka 👋</div></div>
                 <div class="flex justify-end"><div id="theme-prev-out" class="text-white text-sm px-4 py-2 rounded-xl shadow">Tema nasıl olmuş?</div></div>
             </div>
+            <div id="theme-black-row" class="flex items-center justify-between px-4 py-3 border-b border-gray-800/40 cursor-pointer">
+                <div class="pr-3">
+                    <p class="text-white text-sm">Siyah arayüz</p>
+                    <p class="text-gray-400 text-xs mt-0.5">Üst bar, alt bar ve liste ekranı siyah olur (tüm sohbetlerde)</p>
+                </div>
+                <div id="theme-black-track" style="width:44px;height:24px;border-radius:12px;position:relative;flex:none;transition:background .15s;">
+                    <div id="theme-black-knob" style="position:absolute;top:2px;width:20px;height:20px;border-radius:10px;background:#fff;transition:left .15s;"></div>
+                </div>
+            </div>
             <p class="text-gray-400 text-xs px-4 pt-4 pb-2">Renkler ve arka planlar</p>
             <div id="theme-grid" class="grid grid-cols-3 gap-3 px-4 pb-8"></div>
         </div>
     `;
     document.body.appendChild(el);
     el.querySelector('#theme-back').addEventListener('click', closePanel);
+    el.querySelector('#theme-black-row').addEventListener('click', () => {
+        try {
+            if (isBlackUi()) localStorage.removeItem(BLACK_KEY);
+            else localStorage.setItem(BLACK_KEY, '1');
+        } catch (e) {
+            showToast('Ayar kaydedilemedi', 2500);
+        }
+        applyBlackUi();
+        paintBlackSwitch();
+    });
     panelEl = el;
     return el;
+}
+
+function paintBlackSwitch() {
+    if (!panelEl) return;
+    const on = isBlackUi();
+    panelEl.querySelector('#theme-black-track').style.background = on ? '#22c55e' : '#4b5563';
+    panelEl.querySelector('#theme-black-knob').style.left = on ? '22px' : '2px';
 }
 
 function updatePreview() {
@@ -225,6 +270,7 @@ export function openChatThemePicker(chatId) {
     const el = ensurePanel();
     pickerChatId = chatId;
     updatePreview();
+    paintBlackSwitch();
     renderGrid();
     if (panelOpen) return;
     el.classList.remove('hidden');
