@@ -6,10 +6,11 @@
 //                   ayrı bir satıra iner (form.js'teki 3 katmanlı düzen)
 // Üstte:            seçilen resimlerin önizleme şeridi (kırmızı × ile silinir)
 //
+// - Enter (sağ alt tuş) telefonda alt satıra geçer, mesaj göndermez.
 // - Yükseklik ölçümü YOK: görünmez "ayna" kutu yazıyı taşır, tarayıcı satırı hesaplar.
 // - Kaç satır olduğunu (tek satır mı çok satır mı) ayrı bir görünmez "prob" kutu belirler.
 // - #message-input <input> ise otomatik <textarea>'ya çevrilir (aynı id, aynı class).
-// - Yazı: DM Sans 20px, satır 1.2 (Kozmik'teki #soru_girdisi_xyz ile aynı).
+// - Yazı: DM Sans 16px (Kozmik'teki #soru_girdisi_xyz fontu).
 // - Klavyenin sağ alt tuşu alt satıra geçer, harfleri otomatik büyütmez.
 // - Çerçeve rengi ve imleç: gönder butonunun rengi (--aura-btn), aktifken 2 kat kalın.
 //
@@ -21,11 +22,11 @@ export function setupComposer() {
     if (!old) return { input: old, addImages() {}, takeImages() { return []; }, clearImages() {}, hasImages() { return false; }, onChange() {} };
 
     const LINE = 24;         // 20px * 1.2 satır yüksekliği (px)
-    const SINGLE_H = 46;     // tek satır toplam yükseklik (px, çerçeve dahil)
-    const MAX_TEXT_H = 164;  // yazı alanı en fazla bu kadar (6 satır), sonra içeride kayar
+    const SINGLE_H = 52;     // tek satır toplam yükseklik (px, çerçeve dahil)
+    const MAX_TEXT_H = 170;  // yazı alanı en fazla bu kadar (6 satır), sonra içeride kayar
     const MAX_IMAGES = 20;
     const FONT = `'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    const TEXT_CSS = `font-family:${FONT} !important;font-size:20px !important;line-height:${LINE}px !important;letter-spacing:0.02em !important;white-space:pre-wrap;overflow-wrap:anywhere;`;
+    const TEXT_CSS = `font-family:${FONT} !important;font-size:16px !important;line-height:${LINE}px !important;letter-spacing:0.02em !important;white-space:pre-wrap;overflow-wrap:anywhere;`;
 
     // ---------- <input> ise <textarea> yap ----------
     let ta = old;
@@ -59,18 +60,18 @@ export function setupComposer() {
 #chat-area .aura-composer.aura-composer[style*="display: none"]{display:none !important}
 .aura-composer > *{margin:0 !important}
 
-.aura-composer > #message-input{grid-row:2;grid-column:1;display:block;width:100% !important;min-width:0;box-sizing:border-box !important;height:auto !important;min-height:0 !important;max-height:none !important;padding:10px var(--aura-pr,62px) 10px var(--aura-pl,52px) !important;color:#ffffff;caret-color:var(--aura-btn,#22c55e);resize:none !important;overflow-x:hidden;overflow-y:auto;scrollbar-width:none;touch-action:manipulation;${TEXT_CSS}}
+.aura-composer > #message-input{grid-row:2;grid-column:1;display:block;width:100% !important;min-width:0;box-sizing:border-box !important;height:auto !important;min-height:0 !important;max-height:none !important;padding:13px var(--aura-pr,62px) 13px var(--aura-pl,52px) !important;color:#ffffff;caret-color:var(--aura-btn,#22c55e);resize:none !important;overflow-x:hidden;overflow-y:auto;scrollbar-width:none;touch-action:manipulation;${TEXT_CSS}}
 #chat-area .aura-composer > #message-input,#chat-area .aura-composer > #message-input:focus{background:transparent !important;border:0 !important;border-radius:0 !important;outline:0 !important;box-shadow:none !important}
 .aura-composer > #message-input::-webkit-scrollbar{display:none}
-.aura-composer > .aura-mirror{grid-row:2;grid-column:1;visibility:hidden;pointer-events:none;box-sizing:border-box;min-height:${SINGLE_H - 2}px;max-height:${MAX_TEXT_H}px;overflow:hidden;padding:10px var(--aura-pr,62px) 10px var(--aura-pl,52px);${TEXT_CSS}}
+.aura-composer > .aura-mirror{grid-row:2;grid-column:1;visibility:hidden;pointer-events:none;box-sizing:border-box;min-height:${SINGLE_H - 2}px;max-height:${MAX_TEXT_H}px;overflow:hidden;padding:13px var(--aura-pr,62px) 13px var(--aura-pl,52px);${TEXT_CSS}}
 
 /* Çok satır: yazı boydan boya, + ve gönder alt satıra iner */
-.aura-composer.aura-multi > #message-input,.aura-composer.aura-multi > .aura-mirror{padding:10px 40px 2px 16px !important}
+.aura-composer.aura-multi > #message-input,.aura-composer.aura-multi > .aura-mirror{padding:10px 5px 2px 5px !important}
 
-.aura-composer > #attach-btn{grid-row:2;grid-column:1;align-self:end;justify-self:start;z-index:2;margin:0 0 2px 4px !important}
-.aura-composer > #send-btn,.aura-composer > #mic-btn{grid-row:2;grid-column:1;align-self:end;justify-self:end;z-index:2;margin:0 3px 2px 0 !important}
-.aura-composer.aura-multi > #attach-btn{grid-row:3;align-self:center;margin:0 0 4px 4px !important}
-.aura-composer.aura-multi > #send-btn,.aura-composer.aura-multi > #mic-btn{grid-row:3;align-self:center;margin:0 4px 4px 0 !important}
+.aura-composer > #attach-btn{grid-row:2;grid-column:1;align-self:end;justify-self:start;z-index:2;margin:0 0 4px 8px !important}
+.aura-composer > #send-btn,.aura-composer > #mic-btn{grid-row:2;grid-column:1;align-self:end;justify-self:end;z-index:2;margin:0 8px 4px 0 !important}
+.aura-composer.aura-multi > #attach-btn{grid-row:3;align-self:center;margin:0 0 6px 8px !important}
+.aura-composer.aura-multi > #send-btn,.aura-composer.aura-multi > #mic-btn{grid-row:3;align-self:center;margin:0 8px 6px 0 !important}
 
 .aura-composer > :not(#attach-btn):not(#message-input):not(#send-btn):not(#mic-btn):not(.aura-mirror):not(.aura-tray):not(.aura-clear){grid-row:2;grid-column:1;align-self:center;z-index:1;background:transparent !important;margin-right:56px !important}
 
@@ -122,8 +123,8 @@ export function setupComposer() {
         const rightW = Math.max(send ? send.offsetWidth : 0, mic ? mic.offsetWidth : 0);
         const leftW = (attach && row.contains(attach)) ? attach.offsetWidth : 0;
         const rightInside = !!((send && row.contains(send)) || (mic && row.contains(mic)));
-        const pl = leftW ? leftW + 10 : 16;
-        const pr = rightInside ? (rightW || 46) + 10 : 16;
+        const pl = leftW ? leftW + 16 : 16;
+        const pr = rightInside ? (rightW || 46) + 16 : 16;
         row.style.setProperty('--aura-pl', pl + 'px');
         row.style.setProperty('--aura-pr', pr + 'px');
 
@@ -154,6 +155,25 @@ export function setupComposer() {
     });
     ta.addEventListener('input', sync);
     window.addEventListener('resize', sync);
+
+    // ---------- Enter (klavyenin sağ alt tuşu) ----------
+    // Telefonda: alt satıra geçer, mesaj göndermez. Bilgisayarda (fare varsa) chat-core'a bırakılır.
+    // Bu dinleyiciler chat-core'unkilerden önce kaydolur, o yüzden eski "Enter = gönder" kodu araya giremez.
+    const isDesktop = () => window.matchMedia('(pointer: fine)').matches;
+    function insertNewline() {
+        const s = ta.selectionStart;
+        const e = ta.selectionEnd;
+        ta.setRangeText('\n', s, e, 'end');
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    ['keydown', 'keypress'].forEach((type) => {
+        ta.addEventListener(type, (e) => {
+            if (e.key !== 'Enter' || isDesktop()) return;
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            if (type === 'keydown') insertNewline();
+        }, true);
+    });
 
     // ---------- Resim önizleme şeridi ----------
     let pending = []; // { file, url }
