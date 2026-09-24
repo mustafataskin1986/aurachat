@@ -42,8 +42,12 @@ html[data-aura-theme] #message-container > div > div.bg-\[\#202c33\]{background-
 html[data-aura-theme] #send-btn,html[data-aura-theme] #mic-btn{background-color:var(--aura-out) !important;background-image:none !important}
 #chat-area:not(.translate-x-full){transition:none !important}
 #sidebar.-translate-x-full{transition:none !important}
-html[data-aura-theme] #message-input,html[data-aura-theme] #message-input:focus{border-color:var(--aura-out) !important;--tw-ring-color:var(--aura-out) !important;outline-color:var(--aura-out) !important;caret-color:var(--aura-out)}
-html[data-aura-theme] div:has(> #message-input){border-color:var(--aura-out) !important}
+#message-input,#message-input:focus{border-color:transparent !important;outline:none !important;box-shadow:none !important;--tw-ring-shadow:0 0 #0000 !important}
+html[data-aura-theme] #message-input{caret-color:var(--aura-out)}
+div:has(> #message-input){border-color:transparent !important}
+#chat-area [class*="border-b"],#chat-area [class*="border-t"]{border-top-width:0 !important;border-bottom-width:0 !important}
+#message-container{scrollbar-width:none;-ms-overflow-style:none}
+#message-container::-webkit-scrollbar{display:none;width:0;height:0}
 html[data-aura-black] #sidebar{background-color:#000 !important}
 html[data-aura-black] #sidebar [class*="bg-[#202c33]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#111b21]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#0b141a]"]:not(input):not(textarea){background-color:#000 !important}
 html[data-aura-black] #chat-area [class*="bg-[#202c33]"]:not(input):not(textarea):not(#message-container *){background-color:#000 !important}
