@@ -2,20 +2,6 @@
 // APP INIT
 // index.html tarafından tek modül olarak import edilir.
 // giris.js başarılı girişten sonra window.initApp()'i çağırır.
-//
-// Bildirimden gelen "şu sohbeti aç" bilgisi listeyi göstermeye karar
-// vermeden ÖNCE kontrol ediliyor - soğuk açılışta önce listenin
-// görünüp sonra sohbete sıçraması bu şekilde önleniyor.
-// window.__aurachatReady bayrağı, uygulamanın açılış sürecini bitirip
-// bitirmediğini index.html'deki bildirim dinleyicisine bildiriyor.
-//
-// Bildirime tıklandığında ilgili sohbeti açan
-// window.openChatFromNotification() burada tanımlanıyor. PWA
-// tarafında sw.js'ten gelen mesajı ve cold-start URL parametresini
-// de burada karşılıyoruz.
-//
-// Grup bildirimlerinde otherUid alanı grup kimliğini taşıyor, o yüzden
-// önce bu kimlikle bir grup var mı diye bakılıyor.
 // ==========================================
 
 import { db } from "./firebase-init.js";
@@ -26,10 +12,26 @@ import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
 import { loadContacts, initAdminPanel } from "./contacts.js";
 
+// CAPACITOR SPLASH SCREEN IMPORTO
+import { SplashScreen } from 'https://cdn.jsdelivr.net/npm/@capacitor/splash-screen@5.0.0/+esm'; 
+// NOT: Eğer projen npm / bundler kullanıyorsa üsttekini comment'leyip:
+// import { SplashScreen } from '@capacitor/splash-screen'; yapabilirsin.
+
 const sidebar = document.getElementById('sidebar');
 const chatArea = document.getElementById('chat-area');
 
 window.__aurachatReady = false;
+
+// Splash ekranını yumuşakça kapatan yardımcı fonksiyon
+async function hideNativeSplash() {
+    try {
+        if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+            await SplashScreen.hide({ fadeDuration: 250 });
+        }
+    } catch (e) {
+        // Web ortamındaysa veya plugin yoksa pas geç
+    }
+}
 
 async function ensureUid(user) {
     if (user.uid) return user;
@@ -54,7 +56,6 @@ async function ensureUid(user) {
 window.openChatFromNotification = async function (otherUser) {
     if (!otherUser || !otherUser.uid) return;
 
-    // Grup bildirimlerinde otherUid alanı grup kimliğini taşıyor
     try {
         const groupSnap = await getDoc(doc(db, "groups", otherUser.uid));
         if (groupSnap.exists()) {
@@ -63,7 +64,6 @@ window.openChatFromNotification = async function (otherUser) {
         }
     } catch (e) {}
 
-    // Bildirim verisinde avatar yok, yüklü kişi listesinden bul
     let target = otherUser;
     try {
         const usersMap = window.__aurachatUsers;
@@ -111,17 +111,13 @@ if (pendingOpenChatUid) {
     };
 }
 
-// Kişi/sohbet listesi yüklenmeden ÖNCE tek seferlik hızlı kontrol: gelen
-// arama varsa (soğuk açılış tam ekran bildiriminden geldiyse) çağrı
-// ekranı, büyük kişi/sohbet listeleriyle ağ bant genişliği paylaşmadan
-// hemen kurulsun.
 async function checkIncomingCallFast(uid) {
     try {
         const snap = await getDoc(doc(db, "incomingCalls", uid));
         if (!snap.exists()) return;
         const d = snap.data();
         if (!d || !d.chatId || !d.at) return;
-        if (Math.abs(Date.now() - d.at) > 90000) return; // eski arama
+        if (Math.abs(Date.now() - d.at) > 90000) return;
 
         if (d.isGroup) {
             window.__aurachatGroupIds = window.__aurachatGroupIds || new Set();
@@ -136,7 +132,12 @@ async function checkIncomingCallFast(uid) {
 
 window.initApp = async function () {
     let currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
-    if (!currentUser) return;
+    
+    // Oturum kapalıysa (Giriş ekranı açılacaksa) doğrudan koyu Splash'i kaldır
+    if (!currentUser) {
+        await hideNativeSplash();
+        return;
+    }
 
     currentUser = await ensureUid(currentUser);
 
@@ -150,9 +151,6 @@ window.initApp = async function () {
         window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
     }
 
-    // Bekleyen bir bildirim hedefi varsa (soğuk açılış, bildirimden
-    // geldiyse) ÖNCE onu kontrol et - varsayılan liste görünümüne hiç
-    // geçmeden direkt sohbete gidelim.
     if (window.pendingOpenChat) {
         window.openChatFromNotification(window.pendingOpenChat);
         window.pendingOpenChat = null;
@@ -162,9 +160,16 @@ window.initApp = async function () {
     }
 
     window.__aurachatReady = true;
+
+    // Arayüz tam olarak yüklendi, kişilerin çekilmesi vs. bitti! 
+    // Splash ekranını şimdi yumuşak bir animasyonla kaldırıyoruz:
+    await hideNativeSplash();
 };
 
 const existingUser = JSON.parse(localStorage.getItem('aurachat_user'));
 if (existingUser) {
     window.initApp();
+} else {
+    // Oturum yoksa açılış ekranında kalmasın diye hemen kaldır
+    hideNativeSplash();
 }
