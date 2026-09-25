@@ -1776,12 +1776,14 @@ function buildMessageElement(msg, isMine, msgId) {
     const initialImgSrc = localCachedSrc || msg.imageUrl || '';
 
 let bodyHtml;
-    if (isAlbum) {
+if (isAlbum) {
         bodyHtml = buildAlbumTilesHtml(currentChatId, msgId, imagesCount);
+        if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
     } else if (isSingleImage) {
         bodyHtml = initialImgSrc
             ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`
             : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`;
+        if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
 } else if (msg.type === 'location') {
         bodyHtml = `<div class="cursor-pointer" style="min-width:200px;" onclick="openLocation(${Number(msg.lat)},${Number(msg.lng)})">
             <div class="rounded-lg bg-black/25 flex items-center justify-center" style="height:90px;"><i class="fa-solid fa-location-dot text-rose-500 text-4xl"></i></div>
@@ -3035,8 +3037,13 @@ async function sendMessage() {
 // Önce bekleyen resimler, sonra yazı gider
 async function sendFromComposer() {
     const files = composer.takeImages();
-    if (files.length) await sendPendingImages(files);
-    if (messageInput.value.trim()) await sendMessage();
+    if (files.length) {
+        const caption = messageInput.value.trim();
+        messageInput.value = '';
+        await sendPendingImages(files, caption);
+    } else if (messageInput.value.trim()) {
+        await sendMessage();
+    }
     updateMicToggle();
 }
 
@@ -3142,9 +3149,12 @@ if (attachBtn && imageInput) {
         composer.addImages(picked);
     });
 
-    sendPendingImages = async (files) => {
+    sendPendingImages = async (files, caption = '') => {
         if (!files.length || !currentUser || !currentChatId) return;
         const replyPayload = consumeReplyPayload();
+        if (currentChatId !== 'global') {
+            setDoc(doc(db, "chats", currentChatId), { [`typing_${currentUser.uid}`]: false }, { merge: true }).catch(() => {});
+        }
 
         const validFiles = files.filter((f) => f.type.startsWith('image/'));
         if (!validFiles.length) {
@@ -3197,11 +3207,11 @@ if (attachBtn && imageInput) {
                 return;
             }
 
-         if (compressed.length === 1) {
+       if (compressed.length === 1) {
                 await addDoc(collection(db, "chats", currentChatId, "messages"), {
                     type: 'image',
                     imageUrl: compressed[0],
-                    text: '',
+                    text: caption,
                     senderUid: currentUser.uid,
                     senderName: currentUser.name,
                     createdAt: serverTimestamp(),
@@ -3214,7 +3224,7 @@ if (attachBtn && imageInput) {
                     images: compressed,
                     imagesCount: compressed.length,
                     imagesDelivered: false,
-                    text: '',
+                    text: caption,
                     senderUid: currentUser.uid,
                     senderName: currentUser.name,
                     createdAt: serverTimestamp(),
@@ -3223,11 +3233,13 @@ if (attachBtn && imageInput) {
                 });
             }
 
-            await updateChatSummaries(compressed.length > 1 ? `📷 ${compressed.length} Fotoğraf` : '📷 Fotoğraf');
-            pushToGroupMembers(compressed.length > 1 ? `📷 ${compressed.length} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi");
+            const photoLabel = compressed.length > 1 ? `📷 ${compressed.length} Fotoğraf` : '📷 Fotoğraf';
+            const summaryText = caption ? `${photoLabel} ${caption}` : photoLabel;
+            await updateChatSummaries(summaryText);
+            pushToGroupMembers(summaryText);
 
             if (currentChatId !== 'global' && currentOtherUid) {
-                sendPushToUser(currentOtherUid, `${currentUser.name}`, compressed.length > 1 ? `📷 ${compressed.length} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi", {
+                sendPushToUser(currentOtherUid, `${currentUser.name}`, summaryText, {
                     chatId: currentChatId,
                     otherUid: currentUser.uid,
                     otherName: currentUser.name
