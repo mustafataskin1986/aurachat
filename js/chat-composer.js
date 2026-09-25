@@ -60,7 +60,7 @@ export function setupComposer() {
     const style = document.createElement('style');
     style.id = 'aura-composer-css';
     style.textContent = `
-#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;align-content:center;position:relative;margin:8px 10px !important;padding:0 !important;background:#000000 !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:10px !important;overflow:hidden;min-height:${SINGLE_H}px}
+#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;align-content:center;position:relative;margin:0 !important;padding:0 !important;background:#000000 !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:10px !important;overflow:hidden;min-height:${SINGLE_H}px}
 #chat-area .aura-composer.aura-composer:focus-within{box-shadow:inset 0 0 0 1px var(--aura-btn,#22c55e) !important}
 #chat-area .aura-composer.aura-composer[style*="display: none"]{display:none !important}
 .aura-composer > *{margin:0 !important}
@@ -92,11 +92,12 @@ export function setupComposer() {
 .aura-probe{position:fixed;left:-9999px;top:0;visibility:hidden;pointer-events:none;box-sizing:content-box;padding:0;border:0;overflow:hidden;${TEXT_CSS}}`;
     document.head.appendChild(style);
 
-    // ---------- Alt bar sarmalayıcısının arka planını kaldır ----------
+    // ---------- Alt bar sarmalayıcısının arka planını ve boşluğunu kaldır ----------
     // index.html'i görmediğimiz için sarmalayıcının sınıf adını bilmiyoruz; composer'ın
     // (row) dışındaki kapsayıcı katmanları #chat-area'ya kadar (dahil) temizliyoruz.
     // Asıl tema rengini chat-theme.js #chat-area'ya kendisi basıyor, burası sadece
-    // araya giren opak katmanları şeffaflaştırıyor.
+    // araya giren opak katmanları ve boşlukları temizliyor - composer duvardan duvara
+    // ve klavyeye bitişik dursun diye.
     let ancestor = row.parentElement;
     let ancestorHops = 0;
     while (ancestor && ancestorHops < 6) {
@@ -105,6 +106,9 @@ export function setupComposer() {
         ancestor.style.setProperty('backdrop-filter', 'none', 'important');
         ancestor.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
         ancestor.style.setProperty('box-shadow', 'none', 'important');
+        ancestor.style.setProperty('padding', '0', 'important');
+        ancestor.style.setProperty('margin', '0', 'important');
+        ancestor.style.setProperty('border', '0', 'important');
         ancestorHops++;
         if (ancestor.id === 'chat-area') break;
         ancestor = ancestor.parentElement;
@@ -201,7 +205,34 @@ export function setupComposer() {
     function insertNewlineAtCursor() {
         const s = ta.selectionStart;
         const e = ta.selectionEnd;
-        ta.setRangeText('\n', s, e, 'end');
+        let ok = false;
+
+        // 1. yöntem: setRangeText (modern tarayıcılar)
+        try {
+            if (typeof ta.setRangeText === 'function') {
+                ta.setRangeText('\n', s, e, 'end');
+                ok = true;
+            }
+        } catch (err) {}
+
+        // 2. yöntem: execCommand (eski WebView'lerde hâlâ çalışabilir)
+        if (!ok) {
+            try {
+                ta.focus();
+                ta.setSelectionRange(s, e);
+                ok = document.execCommand('insertText', false, '\n');
+            } catch (err) {}
+        }
+
+        // 3. yöntem: değeri elle böl ve native setter ile yaz
+        if (!ok) {
+            try {
+                const v = valueDesc.get.call(ta);
+                valueDesc.set.call(ta, v.slice(0, s) + '\n' + v.slice(e));
+                ta.selectionStart = ta.selectionEnd = s + 1;
+            } catch (err) {}
+        }
+
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
     ['keydown', 'keypress'].forEach((type) => {
