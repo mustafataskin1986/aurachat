@@ -101,8 +101,13 @@ export function setupComposer() {
     let ancestor = row.parentElement;
     let ancestorHops = 0;
     while (ancestor && ancestorHops < 6) {
-        ancestor.style.setProperty('background', 'transparent', 'important');
-        ancestor.style.setProperty('background-image', 'none', 'important');
+        if (ancestorHops === 0) {
+            // "Alt panel": form.js'teki gibi koyu, yukarı doğru şeffaflaşan gradient
+            ancestor.style.setProperty('background', 'linear-gradient(to top, rgba(0,0,0,.95) 0%, rgba(0,0,0,.75) 30%, rgba(0,0,0,.45) 60%, rgba(0,0,0,.15) 85%, rgba(0,0,0,0) 100%)', 'important');
+        } else {
+            ancestor.style.setProperty('background', 'transparent', 'important');
+            ancestor.style.setProperty('background-image', 'none', 'important');
+        }
         ancestor.style.setProperty('backdrop-filter', 'none', 'important');
         ancestor.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
         ancestor.style.setProperty('box-shadow', 'none', 'important');
