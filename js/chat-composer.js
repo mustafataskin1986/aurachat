@@ -57,7 +57,7 @@ export function setupComposer() {
     const style = document.createElement('style');
     style.id = 'aura-composer-css';
     style.textContent = `
-#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;align-content:center;position:relative;margin:8px 10px !important;padding:0 !important;background:#000000 !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:30px !important;overflow:hidden;min-height:${SINGLE_H}px}
+#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;align-content:center;position:relative;margin:8px 10px !important;padding:0 !important;background:#000000 !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:10px !important;overflow:hidden;min-height:${SINGLE_H}px}
 #chat-area .aura-composer.aura-composer:focus-within{box-shadow:inset 0 0 0 1px var(--aura-btn,#22c55e) !important}
 #chat-area .aura-composer.aura-composer[style*="display: none"]{display:none !important}
 .aura-composer > *{margin:0 !important}
@@ -90,16 +90,21 @@ export function setupComposer() {
 .aura-probe{position:fixed;left:-9999px;top:0;visibility:hidden;pointer-events:none;box-sizing:content-box;padding:0;border:0;overflow:hidden;${TEXT_CSS}}`;
     document.head.appendChild(style);
 
-    // ---------- Alt bar sarmalayıcısının arka planını kaldır ----------
+// ---------- Alt bar sarmalayıcısının arka planını kaldır ----------
     // index.html'i görmediğimiz için sarmalayıcının sınıf adını bilmiyoruz; composer'ın
-    // (row) hemen dışındaki 1-2 kapsayıcı katmandan arka plan/gölge/bulanıklığı temizliyoruz.
+    // (row) dışındaki kapsayıcı katmanları #chat-area'ya kadar (dahil) temizliyoruz.
+    // Asıl tema rengini chat-theme.js #chat-area'ya kendisi basıyor, burası sadece
+    // araya giren opak katmanları şeffaflaştırıyor.
     let ancestor = row.parentElement;
-    for (let i = 0; i < 2 && ancestor && ancestor !== document.body; i++) {
+    let ancestorHops = 0;
+    while (ancestor && ancestorHops < 6) {
         ancestor.style.setProperty('background', 'transparent', 'important');
         ancestor.style.setProperty('background-image', 'none', 'important');
         ancestor.style.setProperty('backdrop-filter', 'none', 'important');
         ancestor.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
         ancestor.style.setProperty('box-shadow', 'none', 'important');
+        ancestorHops++;
+        if (ancestor.id === 'chat-area') break;
         ancestor = ancestor.parentElement;
     }
 
@@ -177,7 +182,11 @@ export function setupComposer() {
     // chat-core'daki kendi Enter dinleyicisi gönderir. document üzerinde YAKALAMA
     // (capture) aşamasında dinlenir: bu, ta'ya sonradan eklenmiş başka bir Enter
     // dinleyicisinden (kayıt sırası ne olursa olsun) ÖNCE çalışmayı garanti eder.
-    const isDesktop = () => window.matchMedia('(pointer: fine)').matches;
+    const isDesktop = () => {
+        const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        if (hasTouch) return false; // dokunmatik cihazda asla masaüstü sayılmaz
+        try { return window.matchMedia('(pointer: fine)').matches; } catch (e) { return false; }
+    };
     function insertNewlineAtCursor() {
         const s = ta.selectionStart;
         const e = ta.selectionEnd;
