@@ -2070,21 +2070,27 @@ let attachDragStartY = null;
 function ensureAttachMenu() {
     if (attachMenuEl) return attachMenuEl;
     const el = document.createElement('div');
-    el.className = 'hidden flex-shrink-0 bg-[#202c33] px-4 pt-2 pb-6';
+    el.className = 'hidden flex-shrink-0 pt-3 pb-6 rounded-t-[20px] bg-[var(--aura-out,#1c1c1e)]';
     el.innerHTML = `
-        <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-4"></div>
-        <div class="grid grid-cols-4 gap-y-4">
-            <button type="button" data-attach="gallery" class="flex flex-col items-center space-y-1.5">
-                <span class="w-16 h-11 rounded-full border border-gray-700 flex items-center justify-center text-sky-400 text-xl"><i class="fa-solid fa-images"></i></span>
-                <span class="text-gray-300 text-xs">Galeri</span>
+        <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5"></div>
+        <div class="flex justify-around px-4 pb-1">
+            <button type="button" data-attach="gallery" class="flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="w-14 h-14 rounded-full bg-white/10 active:bg-white/20 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#eee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                </span>
+                <span class="text-gray-300 text-[12.5px] font-medium">Galeri</span>
             </button>
-            <button type="button" data-attach="camera" class="flex flex-col items-center space-y-1.5">
-                <span class="w-16 h-11 rounded-full border border-gray-700 flex items-center justify-center text-pink-500 text-xl"><i class="fa-solid fa-camera"></i></span>
-              <span class="text-gray-300 text-xs">Kamera</span>
+            <button type="button" data-attach="camera" class="flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="w-14 h-14 rounded-full bg-white/10 active:bg-white/20 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#eee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                </span>
+                <span class="text-gray-300 text-[12.5px] font-medium">Kamera</span>
             </button>
-            <button type="button" data-attach="location" class="flex flex-col items-center space-y-1.5">
-                <span class="w-16 h-11 rounded-full border border-gray-700 flex items-center justify-center text-emerald-400 text-xl"><i class="fa-solid fa-location-dot"></i></span>
-                <span class="text-gray-300 text-xs">Konum</span>
+            <button type="button" data-attach="location" class="flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="w-14 h-14 rounded-full bg-white/10 active:bg-white/20 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#eee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
+                </span>
+                <span class="text-gray-300 text-[12.5px] font-medium">Konum</span>
             </button>
         </div>
     `;
