@@ -60,7 +60,7 @@ export function setupComposer() {
     const style = document.createElement('style');
     style.id = 'aura-composer-css';
     style.textContent = `
-#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;align-content:center;position:relative;margin:0 !important;padding:0 !important;background:#000000 !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:10px !important;overflow:hidden;min-height:${SINGLE_H}px}
+#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;align-content:center;position:relative;margin:0 !important;padding:0 !important;background:#000000 !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:0 !important;overflow:hidden;min-height:${SINGLE_H}px}
 #chat-area .aura-composer.aura-composer:focus-within{box-shadow:inset 0 0 0 1px var(--aura-btn,#22c55e) !important}
 #chat-area .aura-composer.aura-composer[style*="display: none"]{display:none !important}
 .aura-composer > *{margin:0 !important}
@@ -205,39 +205,57 @@ export function setupComposer() {
     function insertNewlineAtCursor() {
         const s = ta.selectionStart;
         const e = ta.selectionEnd;
+        const before = valueDesc.get.call(ta);
         let ok = false;
+        let usedMethod = '';
 
         // 1. yöntem: setRangeText (modern tarayıcılar)
         try {
             if (typeof ta.setRangeText === 'function') {
                 ta.setRangeText('\n', s, e, 'end');
-                ok = true;
+                if (valueDesc.get.call(ta) !== before) { ok = true; usedMethod = 'setRangeText'; }
+            } else {
+                alert('DEBUG: setRangeText fonksiyonu yok');
             }
-        } catch (err) {}
+        } catch (err) {
+            alert('DEBUG: setRangeText hata verdi: ' + err.message);
+        }
 
         // 2. yöntem: execCommand (eski WebView'lerde hâlâ çalışabilir)
         if (!ok) {
             try {
                 ta.focus();
                 ta.setSelectionRange(s, e);
-                ok = document.execCommand('insertText', false, '\n');
-            } catch (err) {}
+                const res = document.execCommand('insertText', false, '\n');
+                if (valueDesc.get.call(ta) !== before) { ok = true; usedMethod = 'execCommand(res=' + res + ')'; }
+                else alert('DEBUG: execCommand sonucu ' + res + ' ama değer değişmedi');
+            } catch (err) {
+                alert('DEBUG: execCommand hata verdi: ' + err.message);
+            }
         }
 
         // 3. yöntem: değeri elle böl ve native setter ile yaz
         if (!ok) {
             try {
-                const v = valueDesc.get.call(ta);
-                valueDesc.set.call(ta, v.slice(0, s) + '\n' + v.slice(e));
+                valueDesc.set.call(ta, before.slice(0, s) + '\n' + before.slice(e));
                 ta.selectionStart = ta.selectionEnd = s + 1;
-            } catch (err) {}
+                if (valueDesc.get.call(ta) !== before) { ok = true; usedMethod = 'native-setter'; }
+            } catch (err) {
+                alert('DEBUG: native-setter hata verdi: ' + err.message);
+            }
         }
+
+        const after = valueDesc.get.call(ta);
+        alert('DEBUG sonuç: ok=' + ok + ' yöntem=' + usedMethod + '\nönce uzunluk=' + before.length + ' sonra uzunluk=' + after.length + '\nönce içerir \\n mi: ' + before.includes('\n') + ' sonra içerir \\n mi: ' + after.includes('\n'));
 
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
     ['keydown', 'keypress'].forEach((type) => {
         document.addEventListener(type, (e) => {
-            if (e.target !== ta || e.key !== 'Enter' || isDesktop()) return;
+            const looksLikeEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter';
+            if (e.target !== ta || !looksLikeEnter) return;
+            alert('DEBUG: ' + type + ' yakalandı. key=' + e.key + ' keyCode=' + e.keyCode + ' isDesktop=' + isDesktop());
+            if (isDesktop()) return;
             e.preventDefault();
             e.stopPropagation();
             if (type === 'keydown') insertNewlineAtCursor();
