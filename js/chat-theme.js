@@ -108,6 +108,7 @@ function resolveTheme(saved) {
 function applyTheme(chatId) {
     const mc = document.getElementById('message-container');
     if (!mc || !chatId) return;
+    const ca = document.getElementById('chat-area');
     const root = document.documentElement;
     const t = resolveTheme(loadSaved(chatId));
     if (!t) {
@@ -120,6 +121,7 @@ function applyTheme(chatId) {
         if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') root.style.setProperty('--aura-btn', c);
         else root.style.removeProperty('--aura-btn');
         mc.style.background = '';
+        if (ca) ca.style.background = '';
         return;
     }
     root.setAttribute('data-aura-theme', t.id);
@@ -127,6 +129,7 @@ function applyTheme(chatId) {
     root.style.setProperty('--aura-in', t.inc);
     root.style.setProperty('--aura-btn', t.out);
     mc.style.background = t.bg;
+    if (ca) ca.style.background = t.bg;
 }
 
 // Sohbet değişince (başlıktaki isim yenilenince) o sohbetin temasını uygula
