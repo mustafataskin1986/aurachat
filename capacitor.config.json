@@ -3,7 +3,7 @@
   "appName": "AuraChat",
   "webDir": "www",
   "bundledWebRuntime": false,
-  "backgroundColor": "#000000",
+  "backgroundColor": "#050b14",
   "server": {
     "url": "https://aurachat-amber.vercel.app",
     "cleartext": true
@@ -17,8 +17,9 @@
     "SplashScreen": {
       "launchShowDuration": 0,
       "launchAutoHide": false,
-      "backgroundColor": "#000000",
-      "splashImmersive": true
+      "backgroundColor": "#050b14",
+      "splashImmersive": true,
+      "splashFullScreen": true
     }
   }
 }
