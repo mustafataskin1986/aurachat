@@ -2070,7 +2070,9 @@ let attachDragStartY = null;
 function ensureAttachMenu() {
     if (attachMenuEl) return attachMenuEl;
     const el = document.createElement('div');
-    el.className = 'hidden flex-shrink-0 pt-3 pb-6 rounded-t-[20px] bg-[var(--aura-out,#1c1c1e)]';
+    el.className = 'hidden flex-shrink-0 pt-3 pb-6 rounded-t-[20px] min-h-[45vh]';
+    el.style.background = 'linear-gradient(to top, rgba(20,20,20,.95) 0%, rgba(35,35,35,.75) 100%, rgba(20,20,20,.95) 100%), var(--aura-out, #1c1c1e)';
+    el.style.backgroundBlendMode = 'hard-light';
     el.innerHTML = `
         <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5"></div>
         <div class="flex justify-around px-4 pb-1">
@@ -2148,13 +2150,22 @@ function closeAttachMenuFromBack() {
 function openAttachMenu() {
     if (attachMenuOpen) return;
     const menu = ensureAttachMenu();
+    const hadFocus = document.activeElement === messageInput;
     messageInput.blur();
-    menu.style.transition = '';
-    menu.style.transform = '';
-    menu.classList.remove('hidden');
-    attachMenuOpen = true;
-    pushBackState(closeAttachMenuFromBack);
-    scrollToBottom();
+
+    const reveal = () => {
+        menu.style.transition = '';
+        menu.style.transform = '';
+        menu.classList.remove('hidden');
+        attachMenuOpen = true;
+        pushBackState(closeAttachMenuFromBack);
+        scrollToBottom();
+    };
+
+    // Klavye açıktıysa kapanma animasyonu bitene kadar bekle, popup klavyenin
+    // üstünde bir an görünmesin - sadece popup görünsün.
+    if (hadFocus) setTimeout(reveal, 300);
+    else reveal();
 }
 
 function closeAttachMenu() {
