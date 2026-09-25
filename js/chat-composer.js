@@ -207,55 +207,39 @@ export function setupComposer() {
         const e = ta.selectionEnd;
         const before = valueDesc.get.call(ta);
         let ok = false;
-        let usedMethod = '';
 
-        // 1. yöntem: setRangeText (modern tarayıcılar)
+        // 1. yöntem: setRangeText (bu cihazda çalıştığı doğrulandı)
         try {
             if (typeof ta.setRangeText === 'function') {
                 ta.setRangeText('\n', s, e, 'end');
-                if (valueDesc.get.call(ta) !== before) { ok = true; usedMethod = 'setRangeText'; }
-            } else {
-                alert('DEBUG: setRangeText fonksiyonu yok');
+                if (valueDesc.get.call(ta) !== before) ok = true;
             }
-        } catch (err) {
-            alert('DEBUG: setRangeText hata verdi: ' + err.message);
-        }
+        } catch (err) {}
 
-        // 2. yöntem: execCommand (eski WebView'lerde hâlâ çalışabilir)
+        // 2. yöntem: execCommand (yedek)
         if (!ok) {
             try {
                 ta.focus();
                 ta.setSelectionRange(s, e);
-                const res = document.execCommand('insertText', false, '\n');
-                if (valueDesc.get.call(ta) !== before) { ok = true; usedMethod = 'execCommand(res=' + res + ')'; }
-                else alert('DEBUG: execCommand sonucu ' + res + ' ama değer değişmedi');
-            } catch (err) {
-                alert('DEBUG: execCommand hata verdi: ' + err.message);
-            }
+                document.execCommand('insertText', false, '\n');
+                if (valueDesc.get.call(ta) !== before) ok = true;
+            } catch (err) {}
         }
 
-        // 3. yöntem: değeri elle böl ve native setter ile yaz
+        // 3. yöntem: değeri elle böl ve native setter ile yaz (son çare)
         if (!ok) {
             try {
                 valueDesc.set.call(ta, before.slice(0, s) + '\n' + before.slice(e));
                 ta.selectionStart = ta.selectionEnd = s + 1;
-                if (valueDesc.get.call(ta) !== before) { ok = true; usedMethod = 'native-setter'; }
-            } catch (err) {
-                alert('DEBUG: native-setter hata verdi: ' + err.message);
-            }
+            } catch (err) {}
         }
-
-        const after = valueDesc.get.call(ta);
-        alert('DEBUG sonuç: ok=' + ok + ' yöntem=' + usedMethod + '\nönce uzunluk=' + before.length + ' sonra uzunluk=' + after.length + '\nönce içerir \\n mi: ' + before.includes('\n') + ' sonra içerir \\n mi: ' + after.includes('\n'));
 
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
     ['keydown', 'keypress'].forEach((type) => {
         document.addEventListener(type, (e) => {
             const looksLikeEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter';
-            if (e.target !== ta || !looksLikeEnter) return;
-            alert('DEBUG: ' + type + ' yakalandı. key=' + e.key + ' keyCode=' + e.keyCode + ' isDesktop=' + isDesktop());
-            if (isDesktop()) return;
+            if (e.target !== ta || !looksLikeEnter || isDesktop()) return;
             e.preventDefault();
             e.stopPropagation();
             if (type === 'keydown') insertNewlineAtCursor();
