@@ -258,7 +258,7 @@ export function setupComposer() {
 
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    ['keydown', 'keypress'].forEach((type) => {
+['keydown', 'keypress'].forEach((type) => {
         document.addEventListener(type, (e) => {
             const looksLikeEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter';
             if (e.target !== ta || !looksLikeEnter || isDesktop()) return;
@@ -268,6 +268,15 @@ export function setupComposer() {
         }, true);
     });
 
+    // GÜVENLİK AĞI: bazı Android klavyelerinde (Gboard'da otomatik
+    // düzeltme/öneri açıkken) Enter gerçek bir keydown/keypress olarak değil,
+    // doğrudan "beforeinput" (insertLineBreak) olarak geliyor - üstteki
+    // yakalayıcı bunu hiç görmüyor ve tuş tepkisiz kalıyordu.
+    ta.addEventListener('beforeinput', (e) => {
+        if (e.inputType !== 'insertLineBreak' || isDesktop()) return;
+        e.preventDefault();
+        insertNewlineAtCursor();
+    });
     // ---------- Resim önizleme şeridi ----------
     let pending = []; // { file, url }
     const listeners = [];
