@@ -628,8 +628,13 @@
 
 
     <script>
+        window.__auraFullViewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+
         function syncViewport() {
             if (!window.visualViewport) return;
+            if (window.visualViewport.height > window.__auraFullViewportHeight) {
+                window.__auraFullViewportHeight = window.visualViewport.height;
+            }
             document.body.style.height = window.visualViewport.height + 'px';
             document.body.style.top = window.visualViewport.offsetTop + 'px';
             window.scrollTo(0, 0);
