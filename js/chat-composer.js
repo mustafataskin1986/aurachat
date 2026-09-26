@@ -166,13 +166,24 @@ export function setupComposer() {
         ta.setRangeText('\n', s, e, 'end');
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    ['keydown', 'keypress'].forEach((type) => {
+['keydown', 'keypress'].forEach((type) => {
         ta.addEventListener(type, (e) => {
-            if (e.key !== 'Enter' || isDesktop()) return;
+            const looksLikeEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter';
+            if (!looksLikeEnter || isDesktop()) return;
             e.stopImmediatePropagation();
             e.preventDefault();
             if (type === 'keydown') insertNewline();
         }, true);
+    });
+
+    // GÜVENLİK AĞI: bazı Android klavyelerinde Enter gerçek bir
+    // keydown/keypress olarak değil, doğrudan "beforeinput"
+    // (insertLineBreak) olarak geliyor - üstteki yakalayıcı bunu hiç
+    // görmüyor ve tuş tepkisiz kalıyordu.
+    ta.addEventListener('beforeinput', (e) => {
+        if (e.inputType !== 'insertLineBreak' || isDesktop()) return;
+        e.preventDefault();
+        insertNewline();
     });
 
     // ---------- Resim önizleme şeridi ----------
