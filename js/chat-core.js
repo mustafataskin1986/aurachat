@@ -2153,35 +2153,21 @@ function openAttachMenu() {
     const hadFocus = document.activeElement === messageInput;
     messageInput.blur();
 
-    const reveal = () => {
-        menu.style.transition = '';
-        menu.style.transform = '';
-        menu.classList.remove('hidden');
-        attachMenuOpen = true;
-        pushBackState(closeAttachMenuFromBack);
-        scrollToBottom();
-    };
-
-    // Klavye açıktıysa: sabit bir süre beklemek yerine, viewport'un
-    // (ve onunla birlikte body yüksekliğinin) gerçekten klavyesiz boyuta
-    // dönmesini bekliyoruz - aksi halde popup açılırken layout hâlâ
-    // "klavye açıkmış gibi" kalıp input eski konumda asılı görünüyordu.
-    if (hadFocus && window.visualViewport) {
-        const startH = window.visualViewport.height;
-        const startT = Date.now();
-        const maxWait = 600;
-        const check = () => {
-            const grown = window.visualViewport.height > startH + 40;
-            const timedOut = Date.now() - startT > maxWait;
-            if (grown || timedOut) reveal();
-            else requestAnimationFrame(check);
-        };
-        requestAnimationFrame(check);
-    } else if (hadFocus) {
-        setTimeout(reveal, 300);
-    } else {
-        reveal();
+    // Klavyenin kapanmasını viewport olayından "beklemek" güvenilir değildi
+    // (ne zaman geleceği garanti yok, input popup'un üzerinde asılı kalmaya
+    // devam ediyordu). Bunun yerine klavyesiz tam yüksekliği kendimiz hemen
+    // uyguluyoruz - tarayıcının haber vermesini beklemiyoruz.
+    if (hadFocus) {
+        document.body.style.height = window.innerHeight + 'px';
+        document.body.style.top = '0px';
     }
+
+    menu.style.transition = '';
+    menu.style.transform = '';
+    menu.classList.remove('hidden');
+    attachMenuOpen = true;
+    pushBackState(closeAttachMenuFromBack);
+    scrollToBottom();
 }
 
 function closeAttachMenu() {
