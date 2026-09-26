@@ -627,16 +627,7 @@
         
 
 
-  <script>
-        function isTypingElement(el) {
-            return !!(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT'));
-        }
-
-        function killKeyboardIfOpen() {
-            const active = document.activeElement;
-            if (isTypingElement(active)) active.blur();
-        }
-
+    <script>
         function syncViewport() {
             if (!window.visualViewport) return;
             document.body.style.height = window.visualViewport.height + 'px';
@@ -654,16 +645,6 @@
             window.visualViewport.addEventListener('scroll', syncViewport);
         }
         syncViewport();
-
-        // Klavyeyi arka plana geçerken kapatıyoruz (blur), ama bazı
-        // cihazlarda Android'in native focus hafızası bunu görmezden gelip
-        // öne dönüşte klavyeyi yine kendiliğinden açabiliyor. Bu yüzden hem
-        // arka plana geçişte HEM DE öne her dönüşte (klavye tetiklenmeye
-        // fırsat bulamadan hemen) tekrar blur ediyoruz - ekranı nasıl
-        // bıraktıysak öyle bulunması için.
-        document.addEventListener('visibilitychange', () => {
-            killKeyboardIfOpen();
-        });
     </script>
 
     <script>
