@@ -56,7 +56,6 @@ jobs:
             @capacitor/cli@5.7.0 \
             @capacitor/android@5.7.0 \
             @capacitor/app@5.0.7 \
-            @capacitor/splash-screen@5.0.7 \
             @capacitor-community/contacts@5.0.5 \
             @codetrix-studio/capacitor-google-auth@3.3.0 \
             @capacitor/push-notifications@5.1.0 \
@@ -77,7 +76,6 @@ jobs:
             "appName": "AuraChat",
             "webDir": "www",
             "bundledWebRuntime": false,
-            "backgroundColor": "#050b14",
             "server": {
               "url": "https://aurachat-amber.vercel.app",
               "cleartext": true
@@ -90,13 +88,6 @@ jobs:
               },
               "PushNotifications": {
                 "presentationOptions": ["badge", "sound", "alert"]
-              },
-              "SplashScreen": {
-                "launchShowDuration": 0,
-                "launchAutoHide": false,
-                "backgroundColor": "#050b14",
-                "splashImmersive": true,
-                "splashFullScreen": true
               }
             }
           }
@@ -312,7 +303,7 @@ jobs:
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   WebSettings settings = this.bridge.getWebView().getSettings();
-                  settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+                settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
                   // Başka uygulamadan (galeri vb.) "Paylaş" ile gelen resimleri JS'e köprüle
                   this.bridge.getWebView().addJavascriptInterface(new ShareBridge(), "AuraShare");
@@ -346,8 +337,7 @@ jobs:
           import android.app.NotificationChannel;
           import android.app.NotificationManager;
           import android.app.PendingIntent;
-          import android.content.Context;
-          import android.content.Intent;
+          import android.content.Context;                       import android.content.Intent;
           import android.media.AudioAttributes;
           import android.media.AudioManager;
           import android.media.RingtoneManager;
@@ -462,18 +452,6 @@ jobs:
               sed -i 's/android:allowBackup="true"/android:allowBackup="false"/' "$MANIFEST_PATH"
             elif ! grep -q 'android:allowBackup' "$MANIFEST_PATH"; then
               sed -i 's/<application/<application android:allowBackup="false"/' "$MANIFEST_PATH"
-            fi
-
-            # Klavye açılırken Android'in kendisi de pencereyi yeniden
-            # boyutlandırıyor (adjustResize), bizim visualViewport tabanlı
-            # JS kodumuz da AYNI ANDA kendi boyutlandırmasını yapıyor - iki
-            # sistem çakışıp composer'ın bir an kaybolup gelmesine sebep
-            # oluyor. Boyutlandırmayı tamamen JS'e bırakıp Android'in kendi
-            # resize'ını kapatıyoruz.
-            if grep -q 'android:windowSoftInputMode=' "$MANIFEST_PATH"; then
-              sed -i 's/android:windowSoftInputMode="[^"]*"/android:windowSoftInputMode="adjustPan"/' "$MANIFEST_PATH"
-            else
-              sed -i 's/android:name="\.MainActivity"/android:name=".MainActivity"\n            android:windowSoftInputMode="adjustPan"/' "$MANIFEST_PATH"
             fi
             add_perm() {
               if ! grep -q "$1" "$MANIFEST_PATH"; then
