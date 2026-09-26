@@ -745,15 +745,23 @@
                 }
                 return;
             }
-            if (keyboardWasOpenOnHide) {
+if (keyboardWasOpenOnHide) {
                 showResumeMask();
                 lastVvHeight = null;
                 lastVvTop = null;
-                // Maske sonsuza kadar takılı kalmasın diye güvenlik freni
-                resumeMaskTimeout = setTimeout(hideResumeMask, 600);
-                setTimeout(syncViewport, 50);
-                setTimeout(syncViewport, 200);
-                setTimeout(syncViewport, 400);
+                // Sabit zamanlı deneme yerine: klavye gerçekten geri
+                // bağlanıp viewport oturana kadar (arka planda uzun süre
+                // kalınca bu gecikme uzayabiliyor - composer klavyenin
+                // altında gizli kalıp liste eski konumunda görünüyordu)
+                // sürekli ölçmeye devam et, en fazla 1.5 sn boyunca.
+                const pollStart = Date.now();
+                function pollResume() {
+                    syncViewport();
+                    if (!document.documentElement.classList.contains('aura-resume-mask')) return;
+                    if (Date.now() - pollStart > 1500) { hideResumeMask(); return; }
+                    requestAnimationFrame(pollResume);
+                }
+                requestAnimationFrame(pollResume);
             }
         });
     </script>
