@@ -711,16 +711,7 @@
                 messageContainer.scrollTop = messageContainer.scrollHeight;
             }
 
-            // Klavye görsel olarak kapandığı halde (ör. geri tuşuyla) input
-            // hâlâ focus'lu kalabiliyor - bu yüzden uygulama arka plandan
-            // dönünce sistem klavyeyi kendiliğinden yeniden açıyordu. Klavye
-            // gerçekten kapalıyken (viewport tam yükseklikteyken) odaktaki
-            // input'u kendimiz blur ediyoruz.
-            if (Math.abs(h - vvFullHeight) < 2 && isTypingElement(document.activeElement)) {
-                document.activeElement.blur();
-            }
-
-            // Maskeyi, viewport bir önceki ölçümle AYNI çıkıp gerçekten
+         // Maskeyi, viewport bir önceki ölçümle AYNI çıkıp gerçekten
             // oturduktan sonra kaldır - yanlış ara-frame hiç görünmesin
             if (!changed) hideResumeMask();
         }
@@ -738,7 +729,21 @@
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
-                keyboardWasOpenOnHide = isTypingElement(document.activeElement);
+                const active = document.activeElement;
+                const curH = window.visualViewport ? window.visualViewport.height : vvFullHeight;
+                // Arka plana geçtiği ANDA klavye gerçekten açık mıydı (viewport
+                // belirgin küçülmüş müydü) diye bak - sadece input focus'lu
+                // olması yetmez, geri tuşuyla kapatılmış ama focus'u
+                // bırakılmamış inputlar da focus'lu görünür
+                const keyboardLooksOpen = isTypingElement(active) && (vvFullHeight - curH) > 40;
+                keyboardWasOpenOnHide = keyboardLooksOpen;
+
+                if (isTypingElement(active) && !keyboardLooksOpen) {
+                    // Klavye zaten kapalıyken input hâlâ focus'lu kalmış -
+                    // arka plana geçmeden kendimiz blur edelim ki dönünce
+                    // sistem klavyeyi kendiliğinden açmasın
+                    active.blur();
+                }
                 return;
             }
             if (keyboardWasOpenOnHide) {
