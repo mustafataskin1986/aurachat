@@ -2157,8 +2157,9 @@ function openAttachMenu() {
     // (ne zaman geleceği garanti yok, input popup'un üzerinde asılı kalmaya
     // devam ediyordu). Bunun yerine klavyesiz tam yüksekliği kendimiz hemen
     // uyguluyoruz - tarayıcının haber vermesini beklemiyoruz.
-    if (hadFocus) {
-        document.body.style.height = window.innerHeight + 'px';
+   if (hadFocus) {
+        const fullH = window.__auraFullViewportHeight || window.innerHeight;
+        document.body.style.height = fullH + 'px';
         document.body.style.top = '0px';
     }
 
