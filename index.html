@@ -661,8 +661,20 @@
         // arka plana geçişte HEM DE öne her dönüşte (klavye tetiklenmeye
         // fırsat bulamadan hemen) tekrar blur ediyoruz - ekranı nasıl
         // bıraktıysak öyle bulunması için.
+        let hiddenAtMs = 0;
         document.addEventListener('visibilitychange', () => {
-            killKeyboardIfOpen();
+            if (document.visibilityState === 'hidden') {
+                hiddenAtMs = Date.now();
+                return;
+            }
+            // Kısa süreli arka plana atılıp hemen dönülürse (<1.5 sn)
+            // klavye sorunsuz geri geliyor - dokunmuyoruz, açık bıraktığın
+            // gibi kalsın. Uzun süre arka planda kalınca klavyenin native
+            // olarak yeniden bağlanma süreci titremeye sebep olduğu için
+            // sadece o durumda kapatıyoruz.
+            if (Date.now() - hiddenAtMs > 1500) {
+                killKeyboardIfOpen();
+            }
         });
     </script>
 
