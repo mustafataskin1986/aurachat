@@ -2071,8 +2071,6 @@ function ensureAttachMenu() {
     if (attachMenuEl) return attachMenuEl;
     const el = document.createElement('div');
     el.className = 'hidden flex-shrink-0 pt-3 pb-6 rounded-t-[20px] min-h-[45vh]';
-    el.style.background = 'linear-gradient(to top, rgba(20,20,20,.95) 0%, rgba(35,35,35,.75) 100%, rgba(20,20,20,.95) 100%), var(--aura-out, #1c1c1e)';
-    el.style.backgroundBlendMode = 'hard-light';
     el.innerHTML = `
         <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5"></div>
         <div class="flex justify-around px-4 pb-1">
@@ -2143,6 +2141,7 @@ function closeAttachMenuFromBack() {
         attachMenuEl.classList.add('hidden');
         attachMenuEl.style.transition = '';
         attachMenuEl.style.transform = '';
+        attachMenuEl.style.height = '';
     }
     messageInput.parentElement.style.display = '';
     attachMenuOpen = false;
@@ -2152,12 +2151,32 @@ function openAttachMenu() {
     if (attachMenuOpen) return;
     const menu = ensureAttachMenu();
     const hadFocus = document.activeElement === messageInput;
+
+    // Klavye kapanmadan ÖNCE ne kadar yer kapladığını ölç - popup'ı tam o
+    // boşluk kadar açacağız.
+    let kbHeight = 0;
+    if (hadFocus && window.visualViewport && window.__auraFullViewportHeight) {
+        kbHeight = window.__auraFullViewportHeight - window.visualViewport.height;
+    }
+
     messageInput.blur();
 
     if (hadFocus) {
         const fullH = window.__auraFullViewportHeight || window.innerHeight;
         document.body.style.height = fullH + 'px';
         document.body.style.top = '0px';
+    }
+
+    // Popup rengini üst barla eşitle - tema değişip üst bar rengi
+    // değişirse popup da otomatik takip etsin diye her açılışta canlı okunuyor
+    const topBar = document.getElementById('chat-top-bar');
+    if (topBar) menu.style.backgroundColor = getComputedStyle(topBar).backgroundColor;
+
+    // Popup'ı klavyenin kapladığı boşluk kadar aç
+    if (kbHeight > 100) {
+        menu.style.height = kbHeight + 'px';
+    } else {
+        menu.style.height = '';
     }
 
     // Input'u popup açıkken tamamen gizliyoruz - "eski konumda asılı
