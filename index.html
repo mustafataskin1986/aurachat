@@ -318,4 +318,344 @@
         </div>
 
         <!-- SAĞ TARAF: Aktif Mesajlaşma Ekranı -->
-       <div id="chat-area" class="w-full lg:flex-1 flex flex-col bg-[#0b141a] absolute lg:relative inset
+       <div id="chat-area" class="w-full lg:flex-1 flex flex-col bg-[#0b141a] absolute lg:relative inset-y-0 right-0 z-30 translate-x-full lg:translate-x-0 transition-transform duration-300 h-full overflow-hidden">
+            <!-- Sohbet Üst Barı -->
+            <div class="bg-[#202c33] px-4 py-3 flex justify-between items-center border-b border-gray-800 flex-shrink-0 z-10">
+             <div class="flex items-center space-x-3 min-w-0">
+                   <button id="back-btn" class="lg:hidden text-gray-400 mr-1 hover:text-white transition text-lg px-1 py-0.5">
+                        <i class="fa-solid fa-arrow-left"></i>
+                    </button>
+                    <div id="active-chat-avatar" class="w-10 h-10 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0">
+                        <i class="fa-solid fa-globe text-sm"></i>
+                    </div>
+               <div class="min-w-0">
+                     <h4 id="active-chat-name" class="text-white font-medium text-sm md:text-base truncate">AuraChat</h4>
+                        <span id="active-chat-status" class="block truncate text-[11px] text-emerald-400 font-medium"></span>
+                    </div>
+                </div>
+           <div class="flex space-x-5 text-gray-400 text-lg">
+                    <i class="fa-solid fa-phone cursor-pointer hover:text-white transition" id="voice-call-btn"></i>
+                    <i class="fa-solid fa-video cursor-pointer hover:text-white transition" id="video-call-btn"></i>
+          
+                <i class="fa-solid fa-ellipsis-vertical cursor-pointer hover:text-white transition" id="chat-menu-btn"></i>
+                </div>
+            </div>
+
+            <!-- MESAJ SEÇİM TOOLBAR'I (silme modu) -->
+            <div id="selection-toolbar" class="hidden absolute top-0 left-0 right-0 bg-[#2a3942] px-4 py-3 items-center justify-between border-b border-gray-800 flex-shrink-0 z-20">
+                <div class="flex items-center space-x-4">
+                    <button id="selection-cancel-btn" class="text-gray-300 hover:text-white text-lg px-1">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <span id="selection-count" class="text-white font-medium text-sm">0 seçildi</span>
+                </div>
+                <button id="selection-delete-btn" class="text-gray-300 hover:text-rose-400 text-lg px-1">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+
+            <!-- Mesajların Akış Alanı -->
+            <div id="message-container" class="flex-1 min-h-0 p-4 md:p-6 pb-10 overflow-y-auto space-y-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat opacity-95"></div>
+
+            <!-- Mesaj Yazma Paneli -->
+            <div class="bg-[#202c33] px-3 md:px-4 py-3 flex items-center space-x-3 border-t border-gray-800 flex-shrink-0 z-10 relative">
+           
+                <i class="fa-solid fa-plus text-gray-400 text-xl cursor-pointer hover:text-white transition" id="attach-btn"></i>
+                <input type="file" id="image-input" accept="image/*" class="hidden">
+
+                <textarea id="message-input" name="aura_chat_msg_input_no_autofill" rows="1" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="true" data-lpignore="true" data-form-type="other" placeholder="Bir mesaj yazın..." class="bg-[#2a3942] text-white px-4 py-2.5 rounded-xl flex-1 text-sm focus:outline-none placeholder-gray-400 border border-transparent focus:border-emerald-500/50 transition resize-none overflow-hidden leading-tight" style="height:42px; max-height:42px;" oninput="this.value = this.value.replace(/\n/g, '');"></textarea>
+
+                <button id="send-btn" class="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-500 transition shadow flex-shrink-0">
+                    <i class="fa-solid fa-paper-plane text-sm"></i>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- PROFİL PANELİ -->
+    <div id="profile-panel" class="fixed inset-0 z-50 bg-[#0b141a] hidden flex-col">
+        <div class="bg-[#202c33] px-4 py-3.5 flex items-center space-x-4 border-b border-gray-800 flex-shrink-0">
+            <button id="profile-back-btn" class="text-gray-400 hover:text-white transition text-lg px-1">
+                <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <h2 class="text-white font-medium text-base">Profil</h2>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6 flex flex-col items-center">
+            <label for="profile-avatar-input" class="cursor-pointer group relative mb-6">
+                <div id="profile-avatar" class="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg overflow-hidden flex-shrink-0"></div>
+                <div class="absolute bottom-1 right-1 bg-emerald-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-xs shadow-md">
+                    <i class="fa-solid fa-camera"></i>
+                </div>
+            </label>
+            <input type="file" id="profile-avatar-input" accept="image/*" class="hidden">
+
+            <div class="w-full max-w-sm space-y-4">
+                <div class="bg-[#111b21] rounded-xl p-4">
+                    <span class="text-[11px] text-gray-500 uppercase tracking-wide">İsim</span>
+                    <input id="profile-name" type="text" maxlength="40" class="w-full bg-transparent text-white text-base mt-1 focus:outline-none border-b border-transparent focus:border-emerald-500/50 transition">
+                </div>
+                <div class="bg-[#111b21] rounded-xl p-4">
+                    <span class="text-[11px] text-gray-500 uppercase tracking-wide">Durum</span>
+                    <input id="profile-about" type="text" maxlength="100" placeholder="Merhaba, AuraChat kullanıyorum!" class="w-full bg-transparent text-white text-base mt-1 focus:outline-none border-b border-transparent focus:border-emerald-500/50 transition placeholder-gray-600">
+                </div>
+                <div class="bg-[#111b21] rounded-xl p-4">
+                    <span class="text-[11px] text-gray-500 uppercase tracking-wide">E-posta</span>
+                    <p id="profile-email" class="text-white text-base mt-1 break-words"></p>
+                </div>
+                <div class="bg-[#111b21] rounded-xl p-4">
+                    <span class="text-[11px] text-gray-500 uppercase tracking-wide">Telefon</span>
+                    <p id="profile-phone" class="text-white text-base mt-1 break-words"></p>
+                </div>
+            </div>
+
+            <button id="profile-save-btn" class="w-full max-w-sm mt-6 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2">
+                <i class="fa-solid fa-check"></i>
+                <span>Kaydet</span>
+            </button>
+
+            <button id="profile-logout-btn" class="w-full max-w-sm mt-3 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2 border border-rose-600/20">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <span>Çıkış Yap</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- GÖRSEL BÜYÜTME (LIGHTBOX) -->
+    <div id="image-lightbox" class="fixed inset-0 z-[60] bg-black/90 hidden items-center justify-center p-4" onclick="closeImageLightboxUI()">
+        <img id="lightbox-img" src="" class="max-w-full max-h-full rounded-lg object-contain">
+    </div>
+
+    <!-- GELEN ARAMA EKRANI -->
+    <div id="incoming-call-overlay" class="fixed inset-0 z-[70] bg-black/95 hidden flex-col items-center justify-center p-6 text-center">
+        <div id="incoming-caller-avatar" class="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg mb-4 overflow-hidden flex-shrink-0"></div>
+    <p id="incoming-call-type-label" class="text-gray-400 text-sm mb-1">Görüntülü arama</p>
+        <h3 id="incoming-caller-name" class="text-white text-xl font-semibold mb-10"></h3>
+        <div class="flex items-center space-x-12">
+            <button id="btn-decline-call" class="w-16 h-16 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-2xl flex items-center justify-center shadow-lg transition">
+                <i class="fa-solid fa-phone-slash"></i>
+            </button>
+            <button id="btn-accept-call" class="w-16 h-16 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-2xl flex items-center justify-center shadow-lg transition animate-pulse">
+                <i id="btn-accept-call-icon" class="fa-solid fa-video"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- AKTİF ARAMA EKRANI -->
+<div id="active-call-overlay" class="fixed inset-0 z-[70] bg-black hidden flex-col">
+        <video id="remote-video" autoplay playsinline class="absolute inset-0 w-full h-full object-cover bg-black"></video>
+        <video id="local-video" autoplay playsinline muted class="absolute bottom-24 right-4 w-28 h-40 rounded-xl object-cover shadow-lg border border-white/20 z-10 bg-gray-900"></video>
+        <audio id="voice-remote-audio" autoplay></audio>
+        <div id="voice-call-display" class="hidden absolute inset-0 flex-col items-center justify-center">
+            <div id="voice-call-avatar" class="w-28 h-28 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg mb-4 overflow-hidden flex-shrink-0"></div>
+            <h3 id="voice-call-name" class="text-white text-xl font-semibold"></h3>
+        </div>
+        <p id="call-status-text" class="absolute top-6 left-0 right-0 text-center text-white text-sm font-medium z-10"></p>
+  <div class="absolute bottom-6 left-0 right-0 flex items-center justify-center space-x-6 z-10">
+            <button id="btn-toggle-mic" class="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 text-white text-lg flex items-center justify-center transition">
+                <i class="fa-solid fa-microphone"></i>
+            </button>
+            <button id="btn-hangup" class="w-16 h-16 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-2xl flex items-center justify-center shadow-lg transition">
+                <i class="fa-solid fa-phone-slash"></i>
+            </button>
+            <button id="btn-toggle-cam" class="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 text-white text-lg flex items-center justify-center transition">
+                <i class="fa-solid fa-video"></i>
+            </button>
+            <button id="btn-switch-camera" class="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 text-white text-lg flex items-center justify-center transition">
+                <i class="fa-solid fa-camera-rotate"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- GİRİŞ MODÜLÜ -->
+    <script type="module" src="js/giris.js"></script>
+
+    <!-- UYGULAMA MANTIĞI (chat-core.js ve contacts.js'i başlatır) -->
+    <script type="module" src="js/app-init.js"></script>
+    <script type="module" src="js/profile.js"></script>
+    <script type="module" src="js/groups.js"></script>
+<script type="module" src="js/video-call.js"></script>
+    <script type="module" src="js/voice-call.js"></script>
+
+    <!-- PUSH NOTIFICATION (FCM / CAPACITOR / WEB PWA) ENTEGRASYONU -->
+    <script type="module">
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getMessaging, getToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging.js";
+        import { prewarmChatMedia } from "./js/chat-core.js";
+
+        // Firestore'a Token Kaydeden Ortak Fonksiyon
+        async function saveFcmTokenToFirestore(user, tokenValue, platformName) {
+            try {
+                const db = getFirestore();
+                const userRef = doc(db, 'users', user.uid);
+                await setDoc(userRef, {
+                    fcmToken: tokenValue,
+                    lastTokenUpdate: new Date().toISOString(),
+                    platform: platformName
+                }, { merge: true });
+                console.log(`🚀 [${platformName}] FCM Token Firestore kullanıcı profiline başarıyla kaydedildi:`, tokenValue);
+            } catch (err) {
+                console.error('FCM Token Firestore kaydı hatası:', err);
+            }
+        }
+
+        // Web / PWA Ortamı İçin FCM Token Alma
+        async function initWebPush(user) {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                console.warn('Bu tarayıcı ortamı bildirimleri desteklemiyor.');
+                return;
+            }
+
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    console.warn('Web bildirim izni reddedildi kanka.');
+                    return;
+                }
+
+                const messaging = getMessaging();
+                
+                // Firebase Console > Project Settings > Cloud Messaging > Web Configuration altındaki VAPID Key:
+                const vapidKey = 'BInsdaxUR8evOPjrEaH95C5dQ12uoEDTePiyv3xxBB1-AY_K7hNJxmaP7rM5wNcSL7lY1k9pMCb5D0XfTxbMSVI'; 
+ 
+                const token = await getToken(messaging, { 
+                    vapidKey: vapidKey,
+                    serviceWorkerRegistration: await navigator.serviceWorker.ready
+                });
+
+                if (token) {
+                    await saveFcmTokenToFirestore(user, token, 'pwa-web');
+                } else {
+                    console.warn('Web FCM Token alınamadı.');
+                }
+            } catch (error) {
+                console.error('Web Push Notification hatası:', error);
+            }
+        }
+
+        // Native Capacitor Ortamı İçin Push
+        async function initCapacitorPush(user) {
+            const Capacitor = window.Capacitor;
+            const PushNotifications = Capacitor.Plugins ? Capacitor.Plugins.PushNotifications : null;
+
+            if (!PushNotifications) return;
+
+            try {
+                // Eski kanalda ses tanımsızdı ve Android kanal ayarını sonradan değiştirmeye izin vermiyor: yeni kanal
+                try { await PushNotifications.deleteChannel({ id: 'aurachat-high' }); } catch (e) {}
+                await PushNotifications.createChannel({
+                    id: 'aurachat-messages',
+                    name: 'Mesaj Bildirimleri',
+                    description: 'Yeni mesaj bildirimleri',
+                    importance: 5,
+                    visibility: 1,
+                    vibration: true
+                });
+
+                let permStatus = await PushNotifications.checkPermissions();
+                if (permStatus.receive === 'prompt' || permStatus.receive === 'prompt-with-rationale') {
+                    permStatus = await PushNotifications.requestPermissions();
+                }
+
+                if (permStatus.receive !== 'granted') return;
+
+                await PushNotifications.register();
+
+                PushNotifications.addListener('registration', async (token) => {
+                    await saveFcmTokenToFirestore(user, token.value, Capacitor.getPlatform ? Capacitor.getPlatform() : 'android');
+                });
+
+                PushNotifications.addListener('registrationError', (error) => {
+                    console.error('Push Notification Kayıt Hatası:', error);
+                });
+
+                PushNotifications.addListener('pushNotificationReceived', (notification) => {
+                    console.log('Uygulama açıkken bildirim düştü:', notification);
+
+                    // Uygulama arka planda canlıyken bildirim gelince, kullanıcı
+                    // sohbeti hiç açmadan resmi sessizce cihaza indirip önbelleğe al.
+                    const data = notification.data || (notification.notification && notification.notification.data) || {};
+                    if (data.chatId) {
+                        prewarmChatMedia(data.chatId, data.otherUid || null).catch(() => {});
+                    }
+                });
+
+                PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
+                    const data = notification.notification ? notification.notification.data : null;
+                    if (data && data.otherUid) {
+                        const target = {
+                            uid: data.otherUid,
+                            name: data.otherName || 'Sohbet',
+                            avatar: data.otherAvatar || ''
+                        };
+                        // Uygulama zaten çalışıyorsa (sıcak açılış) direkt sohbete geç.
+                        // Henüz açılış sürecindeyse (soğuk açılış), app-init.js'in
+                        // listeyi göstermeye karar vermeden önce kontrol edeceği
+                        // bayrağa yaz - "önce liste sonra sohbet" sıçramasını önler.
+                        if (window.__aurachatReady && window.openChatFromNotification) {
+                            window.openChatFromNotification(target);
+                        } else {
+                            window.pendingOpenChat = target;
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error('Capacitor Push yapılandırılırken hata:', error);
+            }
+        }
+
+       // Push başlatmayı dışarıya (app-init.js'e) açıyoruz - böylece rehber izni
+        // tamamen bittikten SONRA bildirim izni isteniyor, ikisi üst üste çakışmıyor.
+        window.initPushForUser = function (user) {
+            if (!user) return;
+            const Capacitor = window.Capacitor;
+            const isNative = Capacitor && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+
+            if (isNative) {
+                console.log('📱 Native Capacitor ortamı algılandı.');
+                initCapacitorPush(user);
+            } else {
+                console.log('🌐 Web / PWA ortamı algılandı.');
+                initWebPush(user);
+            }
+        };
+        </script>
+    
+        
+
+
+    <script>
+        function syncViewport() {
+            if (!window.visualViewport) return;
+            document.body.style.height = window.visualViewport.height + 'px';
+            document.body.style.top = window.visualViewport.offsetTop + 'px';
+            window.scrollTo(0, 0);
+
+            const messageContainer = document.getElementById('message-container');
+            if (messageContainer) {
+                messageContainer.scrollTop = messageContainer.scrollHeight;
+            }
+        }
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', syncViewport);
+            window.visualViewport.addEventListener('scroll', syncViewport);
+        }
+        syncViewport();
+    </script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker kaydedildi 👍', reg.scope))
+                    .catch(err => console.log('Service Worker hatası ❌', err));
+            });
+        }
+    </script>
+
+</body>
+</html>
