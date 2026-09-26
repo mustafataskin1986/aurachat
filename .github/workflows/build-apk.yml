@@ -463,6 +463,18 @@ jobs:
             elif ! grep -q 'android:allowBackup' "$MANIFEST_PATH"; then
               sed -i 's/<application/<application android:allowBackup="false"/' "$MANIFEST_PATH"
             fi
+
+            # Klavye açılırken Android'in kendisi de pencereyi yeniden
+            # boyutlandırıyor (adjustResize), bizim visualViewport tabanlı
+            # JS kodumuz da AYNI ANDA kendi boyutlandırmasını yapıyor - iki
+            # sistem çakışıp composer'ın bir an kaybolup gelmesine sebep
+            # oluyor. Boyutlandırmayı tamamen JS'e bırakıp Android'in kendi
+            # resize'ını kapatıyoruz.
+            if grep -q 'android:windowSoftInputMode=' "$MANIFEST_PATH"; then
+              sed -i 's/android:windowSoftInputMode="[^"]*"/android:windowSoftInputMode="adjustPan"/' "$MANIFEST_PATH"
+            else
+              sed -i 's/android:name="\.MainActivity"/android:name=".MainActivity"\n            android:windowSoftInputMode="adjustPan"/' "$MANIFEST_PATH"
+            fi
             add_perm() {
               if ! grep -q "$1" "$MANIFEST_PATH"; then
                 sed -i "/<\/manifest>/i \    <uses-permission android:name=\"$1\" \/>" "$MANIFEST_PATH"
