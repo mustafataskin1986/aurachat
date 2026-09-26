@@ -627,25 +627,7 @@
         
 
 
-    <script>
-        function syncViewport() {
-            if (!window.visualViewport) return;
-            document.body.style.height = window.visualViewport.height + 'px';
-            document.body.style.top = window.visualViewport.offsetTop + 'px';
-            window.scrollTo(0, 0);
-
-            const messageContainer = document.getElementById('message-container');
-            if (messageContainer) {
-                messageContainer.scrollTop = messageContainer.scrollHeight;
-            }
-        }
-
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', syncViewport);
-            window.visualViewport.addEventListener('scroll', syncViewport);
-        }
-        syncViewport();
-    </script>
+  
 
     <script>
         if ('serviceWorker' in navigator) {
