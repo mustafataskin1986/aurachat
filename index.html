@@ -1,36 +1,6 @@
 <!DOCTYPE html>
-<html lang="tr" style="background-color: #050b14;">
+<html lang="tr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#000000">
-    <meta name="msapplication-Navbutton-color" content="#000000">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<style>
-        /* CSS dosyaları yüklenmeden önce ekranın parlamasını önler */
-        html, body {
-            background-color: #000000 !important;
-            height: 100%;
-            margin: 0;
-        }
-     /* Klavye açıkken arka plana atılıp birkaç saniye sonra öne
-           gelince oluşan kısa titremeyi (yazıların klavyenin üstüne
-           vurup yerine dönmesi) tamamen gizler. body'yi gizlemiyoruz
-           (odaktaki textarea gizlenirse klavye kendiliğinden kapanıyordu),
-           bunun yerine üstüne opak bir katman kapatıyoruz. */
-        #aura-resume-overlay {
-            position: fixed;
-            inset: 0;
-            z-index: 999999;
-            background: #000000;
-            display: none;
-            pointer-events: none;
-        }
-        html.aura-resume-mask #aura-resume-overlay {
-            display: block;
-        }
-    </style>
-
 <script>
 ((function () {
     var shown = 0;
@@ -657,67 +627,17 @@
         
 
 
-<script>
-        let vvRafId = null;
-        let lastVvHeight = null;
-        let lastVvTop = null;
-        let resumeMaskTimeout = null;
-        let keyboardWasOpenOnHide = false;
-        let vvFullHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-
-        function isTypingElement(el) {
-            return !!(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT'));
-        }
-
-        let resumeOverlayEl = null;
-
-        function ensureResumeOverlay() {
-            if (resumeOverlayEl) return resumeOverlayEl;
-            const el = document.createElement('div');
-            el.id = 'aura-resume-overlay';
-            document.body.appendChild(el);
-            resumeOverlayEl = el;
-            return el;
-        }
-
-        function showResumeMask() {
-            ensureResumeOverlay();
-            document.documentElement.classList.add('aura-resume-mask');
-        }
-
-        function hideResumeMask() {
-            document.documentElement.classList.remove('aura-resume-mask');
-            if (resumeMaskTimeout) { clearTimeout(resumeMaskTimeout); resumeMaskTimeout = null; }
-        }
-
-        function applyViewport() {
-            vvRafId = null;
+    <script>
+        function syncViewport() {
             if (!window.visualViewport) return;
-            const h = window.visualViewport.height;
-            const t = window.visualViewport.offsetTop;
-            if (h > vvFullHeight) vvFullHeight = h;
-
-            const changed = (h !== lastVvHeight || t !== lastVvTop);
-            lastVvHeight = h;
-            lastVvTop = t;
-
-            document.body.style.height = h + 'px';
-            document.body.style.top = t + 'px';
+            document.body.style.height = window.visualViewport.height + 'px';
+            document.body.style.top = window.visualViewport.offsetTop + 'px';
             window.scrollTo(0, 0);
 
             const messageContainer = document.getElementById('message-container');
             if (messageContainer) {
                 messageContainer.scrollTop = messageContainer.scrollHeight;
             }
-
-         // Maskeyi, viewport bir önceki ölçümle AYNI çıkıp gerçekten
-            // oturduktan sonra kaldır - yanlış ara-frame hiç görünmesin
-            if (!changed) hideResumeMask();
-        }
-
-        function syncViewport() {
-            if (vvRafId) return;
-            vvRafId = requestAnimationFrame(applyViewport);
         }
 
         if (window.visualViewport) {
@@ -725,45 +645,6 @@
             window.visualViewport.addEventListener('scroll', syncViewport);
         }
         syncViewport();
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'hidden') {
-                const active = document.activeElement;
-                const curH = window.visualViewport ? window.visualViewport.height : vvFullHeight;
-                // Arka plana geçtiği ANDA klavye gerçekten açık mıydı (viewport
-                // belirgin küçülmüş müydü) diye bak - sadece input focus'lu
-                // olması yetmez, geri tuşuyla kapatılmış ama focus'u
-                // bırakılmamış inputlar da focus'lu görünür
-                const keyboardLooksOpen = isTypingElement(active) && (vvFullHeight - curH) > 40;
-                keyboardWasOpenOnHide = keyboardLooksOpen;
-
-                if (isTypingElement(active) && !keyboardLooksOpen) {
-                    // Klavye zaten kapalıyken input hâlâ focus'lu kalmış -
-                    // arka plana geçmeden kendimiz blur edelim ki dönünce
-                    // sistem klavyeyi kendiliğinden açmasın
-                    active.blur();
-                }
-                return;
-            }
-if (keyboardWasOpenOnHide) {
-                showResumeMask();
-                lastVvHeight = null;
-                lastVvTop = null;
-                // Sabit zamanlı deneme yerine: klavye gerçekten geri
-                // bağlanıp viewport oturana kadar (arka planda uzun süre
-                // kalınca bu gecikme uzayabiliyor - composer klavyenin
-                // altında gizli kalıp liste eski konumunda görünüyordu)
-                // sürekli ölçmeye devam et, en fazla 1.5 sn boyunca.
-                const pollStart = Date.now();
-                function pollResume() {
-                    syncViewport();
-                    if (!document.documentElement.classList.contains('aura-resume-mask')) return;
-                    if (Date.now() - pollStart > 1500) { hideResumeMask(); return; }
-                    requestAnimationFrame(pollResume);
-                }
-                requestAnimationFrame(pollResume);
-            }
-        });
     </script>
 
     <script>
