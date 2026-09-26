@@ -14,11 +14,21 @@
             height: 100%;
             margin: 0;
         }
-        /* Klavye açıkken arka plana atılıp birkaç saniye sonra öne
+     /* Klavye açıkken arka plana atılıp birkaç saniye sonra öne
            gelince oluşan kısa titremeyi (yazıların klavyenin üstüne
-           vurup yerine dönmesi) tamamen gizler */
-        html.aura-resume-mask body {
-            visibility: hidden !important;
+           vurup yerine dönmesi) tamamen gizler. body'yi gizlemiyoruz
+           (odaktaki textarea gizlenirse klavye kendiliğinden kapanıyordu),
+           bunun yerine üstüne opak bir katman kapatıyoruz. */
+        #aura-resume-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 999999;
+            background: #000000;
+            display: none;
+            pointer-events: none;
+        }
+        html.aura-resume-mask #aura-resume-overlay {
+            display: block;
         }
     </style>
 
@@ -659,7 +669,19 @@
             return !!(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT'));
         }
 
+        let resumeOverlayEl = null;
+
+        function ensureResumeOverlay() {
+            if (resumeOverlayEl) return resumeOverlayEl;
+            const el = document.createElement('div');
+            el.id = 'aura-resume-overlay';
+            document.body.appendChild(el);
+            resumeOverlayEl = el;
+            return el;
+        }
+
         function showResumeMask() {
+            ensureResumeOverlay();
             document.documentElement.classList.add('aura-resume-mask');
         }
 
