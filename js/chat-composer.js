@@ -55,15 +55,15 @@ export function setupComposer() {
     const style = document.createElement('style');
     style.id = 'aura-composer-css';
     style.textContent = `
-#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;position:relative;margin:8px 10px !important;padding:0 !important;background:#000000 !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:30px !important;overflow:hidden;min-height:${SINGLE_H}px}
+#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;position:relative;margin:8px 10px !important;padding:0 !important;background:#000000 !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:5px !important;overflow:hidden;min-height:${SINGLE_H}px}
 #chat-area .aura-composer.aura-composer:focus-within{box-shadow:inset 0 0 0 1px var(--aura-btn,#22c55e) !important}
 #chat-area .aura-composer.aura-composer[style*="display: none"]{display:none !important}
 .aura-composer > *{margin:0 !important}
 
-.aura-composer > #message-input{grid-row:2;grid-column:1;display:block;width:100% !important;min-width:0;box-sizing:border-box !important;height:auto !important;min-height:0 !important;max-height:none !important;padding:13px var(--aura-pr,62px) 13px var(--aura-pl,52px) !important;color:#ffffff;caret-color:var(--aura-btn,#22c55e);resize:none !important;overflow-x:hidden;overflow-y:auto;scrollbar-width:none;touch-action:manipulation;${TEXT_CSS}}
+.aura-composer > #message-input{grid-row:2;grid-column:1;display:block;width:100% !important;min-width:0;box-sizing:border-box !important;height:auto !important;min-height:0 !important;max-height:none !important;padding:5px var(--aura-pr,62px) 5px var(--aura-pl,52px) !important;color:#ffffff;caret-color:var(--aura-btn,#22c55e);resize:none !important;overflow-x:hidden;overflow-y:auto;scrollbar-width:none;touch-action:manipulation;${TEXT_CSS}}
 #chat-area .aura-composer > #message-input,#chat-area .aura-composer > #message-input:focus{background:transparent !important;border:0 !important;border-radius:0 !important;outline:0 !important;box-shadow:none !important}
 .aura-composer > #message-input::-webkit-scrollbar{display:none}
-.aura-composer > .aura-mirror{grid-row:2;grid-column:1;visibility:hidden;pointer-events:none;box-sizing:border-box;min-height:${SINGLE_H - 2}px;max-height:${MAX_TEXT_H}px;overflow:hidden;padding:13px var(--aura-pr,62px) 13px var(--aura-pl,52px);${TEXT_CSS}}
+.aura-composer > .aura-mirror{grid-row:2;grid-column:1;visibility:hidden;pointer-events:none;box-sizing:border-box;min-height:${SINGLE_H - 2}px;max-height:${MAX_TEXT_H}px;overflow:hidden;padding:5px var(--aura-pr,62px) 5px var(--aura-pl,52px);${TEXT_CSS}}
 
 /* Çok satır: yazı boydan boya, + ve gönder alt satıra iner */
 .aura-composer.aura-multi > #message-input,.aura-composer.aura-multi > .aura-mirror{padding:10px 5px 2px 5px !important}
@@ -82,7 +82,7 @@ export function setupComposer() {
 .aura-composer.has-tray > .aura-tray{display:flex}
 .aura-thumb{position:relative;flex:none;width:65px;height:65px}
 .aura-thumb img{width:100%;height:100%;display:block;object-fit:cover;border-radius:12px;border:1px solid rgba(255,255,255,.15);box-shadow:0 2px 8px rgba(0,0,0,.3)}
-.aura-thumb button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#f44336;color:#ffffff;border:0;font-size:12px;font-weight:bold;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.6);z-index:2}
+.aura-thumb button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--aura-btn,#22c55e);color:#ffffff;border:0;font-size:12px;font-weight:bold;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.6);z-index:2}
 
 .aura-probe{position:fixed;left:-9999px;top:0;visibility:hidden;pointer-events:none;box-sizing:content-box;padding:0;border:0;overflow:hidden;${TEXT_CSS}}`;
     document.head.appendChild(style);
@@ -202,6 +202,9 @@ export function setupComposer() {
             const x = document.createElement('button');
             x.type = 'button';
             x.textContent = '×';
+            // mousedown'da preventDefault: input'un focus'unu (ve klavyeyi)
+            // çalmasın - resim silince klavye açıksa açık, kapalıysa kapalı kalsın
+            x.addEventListener('mousedown', (e) => e.preventDefault());
             x.addEventListener('click', (e) => { e.stopPropagation(); removeAt(i); });
             wrap.appendChild(img);
             wrap.appendChild(x);
