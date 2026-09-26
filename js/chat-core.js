@@ -2144,6 +2144,7 @@ function closeAttachMenuFromBack() {
         attachMenuEl.style.transition = '';
         attachMenuEl.style.transform = '';
     }
+    messageInput.parentElement.style.display = '';
     attachMenuOpen = false;
 }
 
@@ -2153,15 +2154,15 @@ function openAttachMenu() {
     const hadFocus = document.activeElement === messageInput;
     messageInput.blur();
 
-    // Klavyenin kapanmasını viewport olayından "beklemek" güvenilir değildi
-    // (ne zaman geleceği garanti yok, input popup'un üzerinde asılı kalmaya
-    // devam ediyordu). Bunun yerine klavyesiz tam yüksekliği kendimiz hemen
-    // uyguluyoruz - tarayıcının haber vermesini beklemiyoruz.
-   if (hadFocus) {
+    if (hadFocus) {
         const fullH = window.__auraFullViewportHeight || window.innerHeight;
         document.body.style.height = fullH + 'px';
         document.body.style.top = '0px';
     }
+
+    // Input'u popup açıkken tamamen gizliyoruz - "eski konumda asılı
+    // kalma" görüntüsü artık hiç oluşamaz çünkü ekranda değil.
+    messageInput.parentElement.style.display = 'none';
 
     menu.style.transition = '';
     menu.style.transform = '';
