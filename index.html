@@ -664,6 +664,7 @@
         let lastVvTop = null;
         let resumeMaskTimeout = null;
         let keyboardWasOpenOnHide = false;
+        let vvFullHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
 
         function isTypingElement(el) {
             return !!(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT'));
@@ -695,6 +696,7 @@
             if (!window.visualViewport) return;
             const h = window.visualViewport.height;
             const t = window.visualViewport.offsetTop;
+            if (h > vvFullHeight) vvFullHeight = h;
 
             const changed = (h !== lastVvHeight || t !== lastVvTop);
             lastVvHeight = h;
@@ -707,6 +709,15 @@
             const messageContainer = document.getElementById('message-container');
             if (messageContainer) {
                 messageContainer.scrollTop = messageContainer.scrollHeight;
+            }
+
+            // Klavye görsel olarak kapandığı halde (ör. geri tuşuyla) input
+            // hâlâ focus'lu kalabiliyor - bu yüzden uygulama arka plandan
+            // dönünce sistem klavyeyi kendiliğinden yeniden açıyordu. Klavye
+            // gerçekten kapalıyken (viewport tam yükseklikteyken) odaktaki
+            // input'u kendimiz blur ediyoruz.
+            if (Math.abs(h - vvFullHeight) < 2 && isTypingElement(document.activeElement)) {
+                document.activeElement.blur();
             }
 
             // Maskeyi, viewport bir önceki ölçümle AYNI çıkıp gerçekten
