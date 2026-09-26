@@ -151,7 +151,7 @@ export function setupComposer() {
 
     // ---------- Senkron: kenar boşlukları, mod (tek/çok satır), gerçek yükseklik ----------
     function sync() {
-        if (!ta.isConnected) return;
+        if (!ta.isConnected || document.hidden) return;
         const val = ta.value;
 
         // + ve gönder butonunun genişliği kadar kenar boşluğu (tek satır modu)
@@ -165,6 +165,10 @@ export function setupComposer() {
         row.style.setProperty('--aura-pr', singlePr + 'px');
 
         const inner = row.clientWidth;
+        // Klavye açılıp kapanırken (özellikle arka plandan dönüşte) bir an
+        // için 0 veya anlamsız genişlik okunabiliyor - bu yanlış değerle
+        // hesaplayıp sonra doğrusuna "zıplamak" yerine, geçersiz okumayı atla
+        if (inner <= 0) return;
 
         // 1) Tek satır genişliğinde kaç satır çıkıyor? (moda karar vermek için)
         const singleWidth = inner - singlePl - singlePr;
@@ -194,8 +198,21 @@ export function setupComposer() {
         get() { return valueDesc.get.call(this); },
         set(v) { valueDesc.set.call(this, v); sync(); }
     });
+    let resizeRafId = null;
+    function syncOnResize() {
+        // Art arda gelen resize olaylarını (klavye açılıp kapanırken
+        // onlarca kez ateşleniyor) tek bir animasyon karesinde birleştir
+        if (resizeRafId) return;
+        resizeRafId = requestAnimationFrame(() => {
+            resizeRafId = null;
+            sync();
+        });
+    }
     ta.addEventListener('input', sync);
-    window.addEventListener('resize', sync);
+    window.addEventListener('resize', syncOnResize);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') syncOnResize();
+    });
 
     // ---------- ENTER (klavyenin sağ alt tuşu) ----------
     // Telefonda mutlaka alt satıra geçer. Masaüstünde (dokunmatik yoksa VE fare varsa)
