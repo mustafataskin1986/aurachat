@@ -642,11 +642,26 @@
         
 
 
-    <script>
-        function syncViewport() {
+ <script>
+        let vvRafId = null;
+        let lastVvHeight = null;
+        let lastVvTop = null;
+
+        function applyViewport() {
+            vvRafId = null;
             if (!window.visualViewport) return;
-            document.body.style.height = window.visualViewport.height + 'px';
-            document.body.style.top = window.visualViewport.offsetTop + 'px';
+            const h = window.visualViewport.height;
+            const t = window.visualViewport.offsetTop;
+
+            // Değer gerçekten değişmediyse DOM'a dokunma - arka plandan
+            // dönüşte klavye durumu art arda birkaç kez tetiklenip
+            // ekranın titremesine sebep oluyordu
+            if (h === lastVvHeight && t === lastVvTop) return;
+            lastVvHeight = h;
+            lastVvTop = t;
+
+            document.body.style.height = h + 'px';
+            document.body.style.top = t + 'px';
             window.scrollTo(0, 0);
 
             const messageContainer = document.getElementById('message-container');
@@ -655,11 +670,30 @@
             }
         }
 
+        function syncViewport() {
+            // Art arda gelen resize/scroll olaylarını tek bir animasyon
+            // karesinde birleştir
+            if (vvRafId) return;
+            vvRafId = requestAnimationFrame(applyViewport);
+        }
+
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', syncViewport);
             window.visualViewport.addEventListener('scroll', syncViewport);
         }
         syncViewport();
+
+        // Uygulama arka plandan öne gelince (klavye açıkken atılıp geri
+        // açılan durum dahil), visualViewport bir süre eski/yanlış değeri
+        // raporlayıp sonra doğrusuna "zıplayabiliyor" - bu da titreme gibi
+        // görünüyordu. Öne gelince kısa gecikmeyle zorla yeniden ölç.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'visible') return;
+            lastVvHeight = null;
+            lastVvTop = null;
+            setTimeout(syncViewport, 150);
+            setTimeout(syncViewport, 400);
+        });
     </script>
 
     <script>
