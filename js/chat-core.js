@@ -2162,10 +2162,26 @@ function openAttachMenu() {
         scrollToBottom();
     };
 
-    // Klavye açıktıysa kapanma animasyonu bitene kadar bekle, popup klavyenin
-    // üstünde bir an görünmesin - sadece popup görünsün.
-    if (hadFocus) setTimeout(reveal, 300);
-    else reveal();
+    // Klavye açıktıysa: sabit bir süre beklemek yerine, viewport'un
+    // (ve onunla birlikte body yüksekliğinin) gerçekten klavyesiz boyuta
+    // dönmesini bekliyoruz - aksi halde popup açılırken layout hâlâ
+    // "klavye açıkmış gibi" kalıp input eski konumda asılı görünüyordu.
+    if (hadFocus && window.visualViewport) {
+        const startH = window.visualViewport.height;
+        const startT = Date.now();
+        const maxWait = 600;
+        const check = () => {
+            const grown = window.visualViewport.height > startH + 40;
+            const timedOut = Date.now() - startT > maxWait;
+            if (grown || timedOut) reveal();
+            else requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+    } else if (hadFocus) {
+        setTimeout(reveal, 300);
+    } else {
+        reveal();
+    }
 }
 
 function closeAttachMenu() {
