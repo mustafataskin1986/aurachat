@@ -7,12 +7,18 @@
     <meta name="theme-color" content="#000000">
     <meta name="msapplication-Navbutton-color" content="#000000">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <style>
+<style>
         /* CSS dosyaları yüklenmeden önce ekranın parlamasını önler */
         html, body {
             background-color: #000000 !important;
             height: 100%;
             margin: 0;
+        }
+        /* Klavye açıkken arka plana atılıp birkaç saniye sonra öne
+           gelince oluşan kısa titremeyi (yazıların klavyenin üstüne
+           vurup yerine dönmesi) tamamen gizler */
+        html.aura-resume-mask body {
+            visibility: hidden !important;
         }
     </style>
 
@@ -642,10 +648,25 @@
         
 
 
- <script>
+<script>
         let vvRafId = null;
         let lastVvHeight = null;
         let lastVvTop = null;
+        let resumeMaskTimeout = null;
+        let keyboardWasOpenOnHide = false;
+
+        function isTypingElement(el) {
+            return !!(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT'));
+        }
+
+        function showResumeMask() {
+            document.documentElement.classList.add('aura-resume-mask');
+        }
+
+        function hideResumeMask() {
+            document.documentElement.classList.remove('aura-resume-mask');
+            if (resumeMaskTimeout) { clearTimeout(resumeMaskTimeout); resumeMaskTimeout = null; }
+        }
 
         function applyViewport() {
             vvRafId = null;
@@ -653,10 +674,7 @@
             const h = window.visualViewport.height;
             const t = window.visualViewport.offsetTop;
 
-            // Değer gerçekten değişmediyse DOM'a dokunma - arka plandan
-            // dönüşte klavye durumu art arda birkaç kez tetiklenip
-            // ekranın titremesine sebep oluyordu
-            if (h === lastVvHeight && t === lastVvTop) return;
+            const changed = (h !== lastVvHeight || t !== lastVvTop);
             lastVvHeight = h;
             lastVvTop = t;
 
@@ -668,11 +686,13 @@
             if (messageContainer) {
                 messageContainer.scrollTop = messageContainer.scrollHeight;
             }
+
+            // Maskeyi, viewport bir önceki ölçümle AYNI çıkıp gerçekten
+            // oturduktan sonra kaldır - yanlış ara-frame hiç görünmesin
+            if (!changed) hideResumeMask();
         }
 
         function syncViewport() {
-            // Art arda gelen resize/scroll olaylarını tek bir animasyon
-            // karesinde birleştir
             if (vvRafId) return;
             vvRafId = requestAnimationFrame(applyViewport);
         }
@@ -683,16 +703,21 @@
         }
         syncViewport();
 
-        // Uygulama arka plandan öne gelince (klavye açıkken atılıp geri
-        // açılan durum dahil), visualViewport bir süre eski/yanlış değeri
-        // raporlayıp sonra doğrusuna "zıplayabiliyor" - bu da titreme gibi
-        // görünüyordu. Öne gelince kısa gecikmeyle zorla yeniden ölç.
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState !== 'visible') return;
-            lastVvHeight = null;
-            lastVvTop = null;
-            setTimeout(syncViewport, 150);
-            setTimeout(syncViewport, 400);
+            if (document.visibilityState === 'hidden') {
+                keyboardWasOpenOnHide = isTypingElement(document.activeElement);
+                return;
+            }
+            if (keyboardWasOpenOnHide) {
+                showResumeMask();
+                lastVvHeight = null;
+                lastVvTop = null;
+                // Maske sonsuza kadar takılı kalmasın diye güvenlik freni
+                resumeMaskTimeout = setTimeout(hideResumeMask, 600);
+                setTimeout(syncViewport, 50);
+                setTimeout(syncViewport, 200);
+                setTimeout(syncViewport, 400);
+            }
         });
     </script>
 
