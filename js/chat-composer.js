@@ -68,9 +68,9 @@ export function setupComposer() {
 /* Çok satır: yazı boydan boya, + ve gönder alt satıra iner */
 .aura-composer.aura-multi > #message-input,.aura-composer.aura-multi > .aura-mirror{padding:10px 5px 2px 5px !important}
 
-.aura-composer > #attach-btn{grid-row:2;grid-column:1;align-self:end;justify-self:start;z-index:2;margin:0 0 4px 8px !important}
+..aura-composer > #attach-btn{grid-row:2;grid-column:1;align-self:end;justify-self:end;z-index:2;margin:0 var(--aura-attach-mr,56px) 4px 0 !important}
 .aura-composer > #send-btn,.aura-composer > #mic-btn{grid-row:2;grid-column:1;align-self:end;justify-self:end;z-index:2;margin:0 8px 4px 0 !important}
-.aura-composer.aura-multi > #attach-btn{grid-row:3;align-self:center;margin:0 0 6px 8px !important}
+.aura-composer.aura-multi > #attach-btn{grid-row:3;align-self:center;margin:0 var(--aura-attach-mr,56px) 6px 0 !important}
 .aura-composer.aura-multi > #send-btn,.aura-composer.aura-multi > #mic-btn{grid-row:3;align-self:center;margin:0 8px 6px 0 !important}
 
 .aura-composer > :not(#attach-btn):not(#message-input):not(#send-btn):not(#mic-btn):not(.aura-mirror):not(.aura-tray):not(.aura-clear){grid-row:2;grid-column:1;align-self:center;z-index:1;background:transparent !important;margin-right:56px !important}
@@ -118,15 +118,18 @@ export function setupComposer() {
     function sync() {
         if (!ta.isConnected) return;
 
-        // Tek satırdaki kenar boşlukları (+ ve gönder genişliği kadar)
+        // + artık sağda, sol tarafta ikon yok - sabit sol boşluk yeterli.
+        // Sağ boşluk hem + hem gönder/mikrofon butonunu kapsamalı.
         const mic = document.getElementById('mic-btn');
-        const rightW = Math.max(send ? send.offsetWidth : 0, mic ? mic.offsetWidth : 0);
-        const leftW = (attach && row.contains(attach)) ? attach.offsetWidth : 0;
-        const rightInside = !!((send && row.contains(send)) || (mic && row.contains(mic)));
-        const pl = leftW ? leftW + 16 : 16;
-        const pr = rightInside ? (rightW || 46) + 16 : 16;
+        const rightBtn = (send && row.contains(send)) ? send : ((mic && row.contains(mic)) ? mic : null);
+        const rightBtnW = rightBtn ? rightBtn.offsetWidth : 46;
+        const attachW = (attach && row.contains(attach)) ? attach.offsetWidth : 0;
+        const attachMr = attachW ? (rightBtnW + 16) : 0;
+        const pl = 16;
+        const pr = (attachW ? attachW + 8 : 0) + rightBtnW + 16;
         row.style.setProperty('--aura-pl', pl + 'px');
         row.style.setProperty('--aura-pr', pr + 'px');
+        row.style.setProperty('--aura-attach-mr', attachMr + 'px');
 
         // Tek satır genişliğinde kaç satır çıkıyor? (mod ne olursa olsun aynı ölçü)
         const inner = row.clientWidth;
