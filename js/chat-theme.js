@@ -57,7 +57,10 @@ body :has(#sidebar),body :has(#chat-area){border-width:0 !important}
 html[data-aura-black] #sidebar{background-color:#000 !important}
 html[data-aura-black] #sidebar [class*="bg-[#202c33]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#111b21]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#0b141a]"]:not(input):not(textarea){background-color:#000 !important}
 html[data-aura-black] #chat-area [class*="bg-[#202c33]"]:not(input):not(textarea):not(#message-container *){background-color:#000 !important}
-html[data-aura-black] #chat-area [class*="bg-[#111b21]"]:not(input):not(textarea):not(#message-container *):not(#message-container){background-color:#000 !important}`;
+html[data-aura-black] #chat-area [class*="bg-[#111b21]"]:not(input):not(textarea):not(#message-container *):not(#message-container){background-color:#000 !important}
+*{accent-color:var(--aura-btn,#22c55e)}
+::selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}
+::-moz-selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}`;
     document.head.appendChild(s);
 })();
 
