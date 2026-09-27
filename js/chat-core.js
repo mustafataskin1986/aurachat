@@ -2072,6 +2072,7 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
 let attachMenuEl = null;
 let attachMenuOpen = false;
 let attachDragStartY = null;
+let attachMenuTargetHeight = 0;
 
 function ensureAttachMenu() {
     if (attachMenuEl) return attachMenuEl;
@@ -2114,28 +2115,32 @@ function ensureAttachMenu() {
         el.style.transition = 'none';
     }, { passive: true });
 
-    el.addEventListener('touchmove', (e) => {
+  el.addEventListener('touchmove', (e) => {
         if (attachDragStartY === null) return;
-        const dy = e.touches[0].clientY - attachDragStartY;
-        el.style.transform = dy > 0 ? `translateY(${dy}px)` : '';
+        const dy = Math.max(0, e.touches[0].clientY - attachDragStartY);
+        // Popup'ın gerçek yüksekliğini küçültüyoruz - composer akışta
+        // olduğu için (popup'ın hemen üstünde) kendiliğinden aynı anda,
+        // canlı şekilde aşağı iner, ekstra kod gerekmiyor.
+        el.style.height = Math.max(0, attachMenuTargetHeight - dy) + 'px';
     }, { passive: true });
 
     el.addEventListener('touchend', (e) => {
         if (attachDragStartY === null) return;
-        const dy = e.changedTouches[0].clientY - attachDragStartY;
+        const dy = Math.max(0, e.changedTouches[0].clientY - attachDragStartY);
         attachDragStartY = null;
         if (dy > 60) {
             closeAttachMenu();
         } else {
-            el.style.transition = 'transform 0.15s ease-out';
-            el.style.transform = '';
+            el.style.transition = 'height 0.15s ease-out';
+            el.style.height = attachMenuTargetHeight + 'px';
+            setTimeout(() => { el.style.transition = ''; }, 160);
         }
     });
 
     el.addEventListener('touchcancel', () => {
         attachDragStartY = null;
-        el.style.transition = 'transform 0.15s ease-out';
-        el.style.transform = '';
+        el.style.transition = 'height 0.15s ease-out';
+        el.style.height = attachMenuTargetHeight + 'px';
     });
 
     attachMenuEl = el;
@@ -2149,7 +2154,6 @@ function closeAttachMenuFromBack() {
         attachMenuEl.style.transform = '';
         attachMenuEl.style.height = '';
     }
-    messageInput.parentElement.style.display = '';
     attachMenuOpen = false;
 }
 
@@ -2178,16 +2182,11 @@ function openAttachMenu() {
     const topBar = document.getElementById('chat-top-bar');
     if (topBar) menu.style.backgroundColor = getComputedStyle(topBar).backgroundColor;
 
-    // Popup'ı klavyenin kapladığı boşluk kadar aç
-    if (kbHeight > 100) {
-        menu.style.height = kbHeight + 'px';
-    } else {
-        menu.style.height = '';
-    }
-
-    // Input'u popup açıkken tamamen gizliyoruz - "eski konumda asılı
-    // kalma" görüntüsü artık hiç oluşamaz çünkü ekranda değil.
-    messageInput.parentElement.style.display = 'none';
+    // Popup'ı klavyenin kapladığı boşluk kadar aç - composer'ı gizlemiyoruz,
+    // normal akışta popup'ın hemen üstünde kalıyor, böylece ikisi arasında
+    // manuel senkron kod gerekmeden birlikte hareket ediyorlar.
+    attachMenuTargetHeight = kbHeight > 100 ? kbHeight : (menu.scrollHeight || 300);
+    menu.style.height = attachMenuTargetHeight + 'px';
 
     menu.style.transition = '';
     menu.style.transform = '';
