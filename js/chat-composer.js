@@ -51,6 +51,15 @@ export function setupComposer() {
     const send = document.getElementById('send-btn');
     row.classList.add('aura-composer');
 
+    // "+" ve gönder/mikrofon butonlarını tek bir kutuda birleştiriyoruz -
+    // ikisi birlikte tek blok halinde sağa yaslanıyor, + her zaman
+    // gönderin solunda duruyor, ayrı ayrı margin matematiği gerekmiyor.
+    const actionsWrapper = document.createElement('div');
+    actionsWrapper.className = 'aura-actions';
+    row.appendChild(actionsWrapper);
+    if (attach && row === attach.parentElement) actionsWrapper.appendChild(attach);
+    if (send && actionsWrapper !== send.parentElement) actionsWrapper.appendChild(send);
+
     // ---------- CSS ----------
     const style = document.createElement('style');
     style.id = 'aura-composer-css';
@@ -68,12 +77,10 @@ export function setupComposer() {
 /* Çok satır: yazı boydan boya, + ve gönder alt satıra iner */
 .aura-composer.aura-multi > #message-input,.aura-composer.aura-multi > .aura-mirror{padding:10px 5px 2px 5px !important}
 
-..aura-composer > #attach-btn{grid-row:2;grid-column:1;align-self:end;justify-self:end;z-index:2;margin:0 var(--aura-attach-mr,56px) 4px 0 !important}
-.aura-composer > #send-btn,.aura-composer > #mic-btn{grid-row:2;grid-column:1;align-self:end;justify-self:end;z-index:2;margin:0 8px 4px 0 !important}
-.aura-composer.aura-multi > #attach-btn{grid-row:3;align-self:center;margin:0 var(--aura-attach-mr,56px) 6px 0 !important}
-.aura-composer.aura-multi > #send-btn,.aura-composer.aura-multi > #mic-btn{grid-row:3;align-self:center;margin:0 8px 6px 0 !important}
+.aura-composer > .aura-actions{grid-row:2;grid-column:1;align-self:end;justify-self:end;z-index:2;display:flex;align-items:center;gap:8px;margin:0 8px 4px 0 !important}
+.aura-composer.aura-multi > .aura-actions{grid-row:3;align-self:center;margin:0 8px 6px 0 !important}
 
-.aura-composer > :not(#attach-btn):not(#message-input):not(#send-btn):not(#mic-btn):not(.aura-mirror):not(.aura-tray):not(.aura-clear){grid-row:2;grid-column:1;align-self:center;z-index:1;background:transparent !important;margin-right:56px !important}
+.aura-composer > :not(.aura-actions):not(#message-input):not(.aura-mirror):not(.aura-tray):not(.aura-clear){grid-row:2;grid-column:1;align-self:center;z-index:1;background:transparent !important;margin-right:56px !important}
 
 .aura-composer > .aura-clear{display:none;grid-row:2;grid-column:1;justify-self:end;align-self:start;margin:7px 8px 0 0 !important;width:22px;height:22px;border-radius:50%;background:#2a2b2d;border:1px solid rgba(255,255,255,.12);color:#ffffff;font-size:14px;font-weight:bold;line-height:1;align-items:center;justify-content:center;z-index:3;padding:0}
 
@@ -118,19 +125,13 @@ export function setupComposer() {
     function sync() {
         if (!ta.isConnected) return;
 
-        // + artık sağda, sol tarafta ikon yok - sabit sol boşluk yeterli.
-        // Sağ boşluk hem + hem gönder/mikrofon butonunu kapsamalı.
-        const mic = document.getElementById('mic-btn');
-        const rightBtn = (send && row.contains(send)) ? send : ((mic && row.contains(mic)) ? mic : null);
-        const rightBtnW = rightBtn ? rightBtn.offsetWidth : 46;
-        const attachW = (attach && row.contains(attach)) ? attach.offsetWidth : 0;
-        const attachMr = attachW ? (rightBtnW + 16) : 0;
+     // + ve gönder/mikrofon artık tek bir kutuda (aura-actions) birlikte -
+        // o kutunun gerçek genişliğini okuyup boşluğa yansıtıyoruz.
+        const actions = row.querySelector('.aura-actions');
         const pl = 16;
-        const pr = (attachW ? attachW + 8 : 0) + rightBtnW + 16;
+        const pr = actions ? actions.offsetWidth + 24 : 62;
         row.style.setProperty('--aura-pl', pl + 'px');
         row.style.setProperty('--aura-pr', pr + 'px');
-        row.style.setProperty('--aura-attach-mr', attachMr + 'px');
-
         // Tek satır genişliğinde kaç satır çıkıyor? (mod ne olursa olsun aynı ölçü)
         const inner = row.clientWidth;
         let multi = false;
