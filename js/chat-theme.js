@@ -61,7 +61,9 @@ html[data-aura-black] #chat-area [class*="bg-[#111b21]"]:not(input):not(textarea
 *{accent-color:var(--aura-btn,#22c55e)}
 ::selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}
 ::-moz-selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}
-.msg-selected{background-color:rgba(34,197,94,0.35) !important;background-color:color-mix(in srgb, var(--aura-btn, #22c55e) 35%, transparent) !important}`;
+.msg-selected{background-color:rgba(34,197,94,0.35) !important;background-color:color-mix(in srgb, var(--aura-btn, #22c55e) 35%, transparent) !important}
+:root{--aura-composer-bg:#202c33}
+html[data-aura-black]{--aura-composer-bg:#000}`;
     document.head.appendChild(s);
 })();
 
