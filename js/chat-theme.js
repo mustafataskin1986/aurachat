@@ -60,7 +60,8 @@ html[data-aura-black] #chat-area [class*="bg-[#202c33]"]:not(input):not(textarea
 html[data-aura-black] #chat-area [class*="bg-[#111b21]"]:not(input):not(textarea):not(#message-container *):not(#message-container){background-color:#000 !important}
 *{accent-color:var(--aura-btn,#22c55e)}
 ::selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}
-::-moz-selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}`;
+::-moz-selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}
+.msg-selected{background-color:rgba(34,197,94,0.35) !important;background-color:color-mix(in srgb, var(--aura-btn, #22c55e) 35%, transparent) !important}`;
     document.head.appendChild(s);
 })();
 
