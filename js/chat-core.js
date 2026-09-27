@@ -1821,13 +1821,18 @@ if (isAlbum) {
     if (isMine) {
         const isReadByAll = currentIsGroup ? groupMessageReadByAll(msg) : !!msg.read;
         const tickColor = isReadByAll ? 'text-[#53bdeb]' : 'text-gray-400';
-        const timeHtml = isImage
+        const timeHtml = isAlbum
+            ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1">
+                    <span class="text-[10px] text-white">${timeStr}</span>
+                <i class="fa-solid fa-check-double text-[10px] ${isReadByAll ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
+               </div>`
+            : isImage
             ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1 bg-black/45 rounded-full px-1.5 py-0.5">
                     <span class="text-[10px] text-white">${timeStr}</span>
                 <i class="fa-solid fa-check-double text-[10px] ${isReadByAll ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
                </div>`
             : `<div class="flex items-center justify-end space-x-1 mt-1">
-                    <span class="text-[10px] text-emerald-200">${timeStr}</span>
+                    <span class="text-[10px] text-white">${timeStr}</span>
                     <i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>
                </div>`;
 
@@ -1842,10 +1847,11 @@ if (isAlbum) {
             </div>
         `;
     } else {
-        const timeHtml = isImage
+        const timeHtml = isAlbum
+            ? `<div class="absolute bottom-2 right-2"><span class="text-[10px] text-white">${timeStr}</span></div>`
+            : isImage
             ? `<div class="absolute bottom-2 right-2 bg-black/45 rounded-full px-1.5 py-0.5"><span class="text-[10px] text-white">${timeStr}</span></div>`
-            : `<span class="text-[10px] text-gray-400 float-right ml-3 mt-1">${timeStr}</span>`;
-
+            : `<span class="text-[10px] text-white float-right ml-3 mt-1">${timeStr}</span>`;
         msgDiv.className = "flex justify-start rounded-lg transition-colors";
         msgDiv.innerHTML = `
             <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
