@@ -2074,6 +2074,22 @@ let attachMenuOpen = false;
 let attachDragStartY = null;
 let attachMenuTargetHeight = 0;
 let attachComposerHeight = 0;
+let composerWrap = null;
+
+function ensureComposerWrap() {
+    if (composerWrap) return composerWrap;
+    const composerRow = messageInput.parentElement;
+    const wrap = document.createElement('div');
+    wrap.style.overflow = 'hidden';
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.justifyContent = 'flex-end';
+    wrap.style.flexShrink = '0';
+    composerRow.parentElement.insertBefore(wrap, composerRow);
+    wrap.appendChild(composerRow);
+    composerWrap = wrap;
+    return wrap;
+}
 
 function ensureAttachMenu() {
     if (attachMenuEl) return attachMenuEl;
@@ -2119,38 +2135,36 @@ function ensureAttachMenu() {
 el.addEventListener('touchmove', (e) => {
         if (attachDragStartY === null) return;
         const dy = Math.max(0, e.touches[0].clientY - attachDragStartY);
-        const composerRow = messageInput.parentElement;
-
-        // Popup küçülürken input BİREBİR AYNI HIZDA büyür - ikisi tek bir
-        // toplam yükseklik gibi davranır, aralarında asla boşluk oluşmaz.
         el.style.height = Math.max(0, attachMenuTargetHeight - dy) + 'px';
         const reveal = Math.min(attachComposerHeight, dy);
-        composerRow.style.setProperty('height', reveal + 'px', 'important');
+        if (composerWrap) composerWrap.style.height = reveal + 'px';
     }, { passive: true });
 
-    el.addEventListener('touchend', (e) => {
+el.addEventListener('touchend', (e) => {
         if (attachDragStartY === null) return;
         const dy = Math.max(0, e.changedTouches[0].clientY - attachDragStartY);
         attachDragStartY = null;
-        const composerRow = messageInput.parentElement;
         if (dy > 60) {
             closeAttachMenu();
         } else {
             el.style.transition = 'height 0.15s ease-out';
             el.style.height = attachMenuTargetHeight + 'px';
-            composerRow.style.transition = 'height 0.15s ease-out';
-            composerRow.style.setProperty('height', '0px', 'important');
-            setTimeout(() => { el.style.transition = ''; composerRow.style.transition = ''; }, 160);
+            if (composerWrap) {
+                composerWrap.style.transition = 'height 0.15s ease-out';
+                composerWrap.style.height = '0px';
+            }
+            setTimeout(() => { el.style.transition = ''; if (composerWrap) composerWrap.style.transition = ''; }, 160);
         }
     });
 
-    el.addEventListener('touchcancel', () => {
+el.addEventListener('touchcancel', () => {
         attachDragStartY = null;
-        const composerRow = messageInput.parentElement;
         el.style.transition = 'height 0.15s ease-out';
         el.style.height = attachMenuTargetHeight + 'px';
-        composerRow.style.transition = 'height 0.15s ease-out';
-        composerRow.style.setProperty('height', '0px', 'important');
+        if (composerWrap) {
+            composerWrap.style.transition = 'height 0.15s ease-out';
+            composerWrap.style.height = '0px';
+        }
     });
 
     el.addEventListener('touchcancel', () => {
@@ -2173,14 +2187,10 @@ function closeAttachMenuFromBack() {
         attachMenuEl.style.transform = '';
         attachMenuEl.style.height = '';
     }
-    const composerRow = messageInput.parentElement;
-    composerRow.style.overflow = '';
-    composerRow.style.transition = '';
-    composerRow.style.removeProperty('height');
-    composerRow.style.removeProperty('min-height');
-    composerRow.style.removeProperty('padding');
-    composerRow.style.removeProperty('border-width');
-    composerRow.style.removeProperty('margin');
+    if (composerWrap) {
+        composerWrap.style.transition = '';
+        composerWrap.style.height = '';
+    }
     attachMenuOpen = false;
 }
 
@@ -2216,15 +2226,10 @@ attachMenuTargetHeight = kbHeight > 100 ? kbHeight : (menu.scrollHeight || 300);
     // gizliyoruz - popup ile aynı sütunda normal akışta oldukları için
     // aralarında boşluk oluşması imkansız hale geliyor. Sürüklerken
     // ikisinin yüksekliğini ters orantılı, birebir aynı anda değiştireceğiz.
-    const composerRow = messageInput.parentElement;
-    attachComposerHeight = composerRow.offsetHeight;
-    composerRow.style.overflow = 'hidden';
-    composerRow.style.transition = 'none';
-    composerRow.style.setProperty('height', '0px', 'important');
-    composerRow.style.setProperty('min-height', '0px', 'important');
-    composerRow.style.setProperty('padding', '0px', 'important');
-    composerRow.style.setProperty('border-width', '0px', 'important');
-    composerRow.style.setProperty('margin', '0px', 'important');
+    const wrap = ensureComposerWrap();
+    attachComposerHeight = wrap.offsetHeight;
+    wrap.style.transition = 'none';
+    wrap.style.height = '0px';
 
     menu.style.transition = '';
     menu.style.transform = '';
