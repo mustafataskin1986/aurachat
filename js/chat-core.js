@@ -1727,7 +1727,7 @@ function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
         const cachedSrc = mediaUriCache.get(`${chatId}/${msgId}_${i}`);
         const showOverlay = i === maxTiles - 1 && extra > 0;
         const inner = cachedSrc
-            ? `<img src="${cachedSrc}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})">`
+     ? `<img src="${cachedSrc}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" oncontextmenu="return false" draggable="false" style="-webkit-user-drag:none;" onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})">`
             : `<div class="w-full h-full flex items-center justify-center bg-black/20" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})"><i class="fa-solid fa-image text-gray-500"></i></div>`;
         tiles += `
             <div class="relative overflow-hidden" style="aspect-ratio:1/1;">
@@ -1781,7 +1781,7 @@ if (isAlbum) {
         if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
     } else if (isSingleImage) {
         bodyHtml = initialImgSrc
-            ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`
+            ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;-webkit-user-drag:none;" data-media-msg="${msgId}" oncontextmenu="return false" draggable="false" onclick="openImageLightbox(this.src)">`
             : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`;
         if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
 } else if (msg.type === 'location') {
@@ -1890,7 +1890,7 @@ if (isAlbum) {
                         if (tileEl.tagName === 'IMG') {
                             if (src !== tileEl.src) tileEl.src = src;
                         } else {
-                            tileEl.outerHTML = `<img src="${src}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openAlbumLightbox('${currentChatId}','${msgId}',${imagesCount},${i})">`;
+                            tileEl.outerHTML = `<img src="${src}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" oncontextmenu="return false" draggable="false" style="-webkit-user-drag:none;" onclick="openAlbumLightbox('${currentChatId}','${msgId}',${imagesCount},${i})">`;
                             const newTile = msgDiv.querySelector(`img[data-media-idx="${i}"]`);
                             if (newTile) {
                                 newTile.addEventListener('load', () => {
@@ -1923,7 +1923,7 @@ if (isAlbum) {
                 if (el.tagName === 'IMG') {
                     if (src !== el.src) el.src = src;
                 } else {
-                    el.outerHTML = `<img src="${src}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;" data-media-msg="${msgId}" onclick="openImageLightbox(this.src)">`;
+              el.outerHTML = `<img src="${src}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;-webkit-user-drag:none;" data-media-msg="${msgId}" oncontextmenu="return false" draggable="false" onclick="openImageLightbox(this.src)">`;
                     const newEl = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
                     if (newEl) {
                         newEl.addEventListener('load', () => {
