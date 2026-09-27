@@ -64,14 +64,16 @@ export function setupComposer() {
     const style = document.createElement('style');
     style.id = 'aura-composer-css';
     style.textContent = `
-#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;position:relative;margin:8px 10px !important;padding:0 !important;background:#000000 !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:5px !important;overflow:hidden;min-height:${SINGLE_H}px}
+#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;position:relative;margin:8px 10px !important;padding:0 !important;background:var(--aura-composer-bg,#202c33) !important;transition:background-color .2s;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:5px !important;overflow:hidden;min-height:${SINGLE_H}px}
+
 #chat-area .aura-composer.aura-composer:focus-within{box-shadow:inset 0 0 0 1px var(--aura-btn,#22c55e) !important}
 #chat-area .aura-composer.aura-composer[style*="display: none"]{display:none !important}
 .aura-composer > *{margin:0 !important}
 
 .aura-composer > #message-input{grid-row:2;grid-column:1;display:block;width:100% !important;min-width:0;box-sizing:border-box !important;height:auto !important;min-height:0 !important;max-height:${MAX_TEXT_H}px !important;padding:5px var(--aura-pr,62px) 5px var(--aura-pl,52px) !important;color:#ffffff;caret-color:var(--aura-btn,#22c55e);resize:none !important;overflow-x:hidden;overflow-y:auto;scrollbar-width:none;touch-action:manipulation;${TEXT_CSS}}
 
-#chat-area .aura-composer > #message-input,#chat-area .aura-composer > #message-input:focus{background:transparent !important;border:0 !important;border-radius:0 !important;outline:0 !important;box-shadow:none !important}
+#chat-area .aura-composer > #message-input,#chat-area .aura-composer > #message-input:focus,#chat-area .aura-composer > #message-input:hover,#chat-area .aura-composer > #message-input:active{background:transparent !important;background-color:transparent !important;border:0 !important;border-radius:0 !important;outline:0 !important;box-shadow:none !important}
+
 .aura-composer > #message-input::-webkit-scrollbar{display:none}
 .aura-composer > .aura-mirror{grid-row:2;grid-column:1;visibility:hidden;pointer-events:none;box-sizing:border-box;min-height:${SINGLE_H - 2}px;max-height:${MAX_TEXT_H}px;overflow:hidden;padding:5px var(--aura-pr,62px) 5px var(--aura-pl,52px);${TEXT_CSS}}
 
