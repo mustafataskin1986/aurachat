@@ -1188,7 +1188,7 @@ function enterSelectionMode(firstMsgId) {
 function exitSelectionModeFromBack() {
     selectionMode = false;
     selectedMessageIds.clear();
-    messageElementsById.forEach((el) => el.classList.remove('bg-emerald-900/40'));
+    messageElementsById.forEach((el) => el.classList.remove('msg-selected'));
     updateSelectionUI();
 }
 
@@ -1205,7 +1205,7 @@ function toggleMessageSelectionInternal(msgId) {
         selectedMessageIds.add(msgId);
     }
     const el = messageElementsById.get(msgId);
-    if (el) el.classList.toggle('bg-emerald-900/40', selectedMessageIds.has(msgId));
+    if (el) el.classList.toggle('msg-selected', selectedMessageIds.has(msgId));
 }
 
 function toggleMessageSelection(msgId) {
@@ -1938,8 +1938,8 @@ if (isAlbum) {
 
 if (msg.type === 'audio') bindAudioPlayer(msgDiv, msgId, msg);
 
-    if (selectedMessageIds.has(msgId)) {
-        msgDiv.classList.add('bg-emerald-900/40');
+if (selectedMessageIds.has(msgId)) {
+        msgDiv.classList.add('msg-selected');
     }
 
     attachSelectionHandlers(msgDiv, msgId, isReplyable, msg, isMine);
