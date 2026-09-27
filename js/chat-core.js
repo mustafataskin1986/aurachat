@@ -2094,7 +2094,10 @@ function ensureComposerWrap() {
 function ensureAttachMenu() {
     if (attachMenuEl) return attachMenuEl;
     const el = document.createElement('div');
-    el.className = 'hidden flex-shrink-0 pt-3 pb-6 rounded-t-[20px] min-h-[45vh]';
+    // min-h-[45vh] YOK: bu sınıf popup'ın JS'ten küçültülmesini CSS
+    // seviyesinde engelliyordu (görsel olarak 45vh'nin altına asla
+    // inmiyordu) - tüm önceki senkron sorunlarının asıl kaynağı buydu.
+    el.className = 'hidden flex-shrink-0 pt-3 pb-6 rounded-t-[20px]';
     el.innerHTML = `
         <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5"></div>
         <div class="flex justify-around px-4 pb-1">
