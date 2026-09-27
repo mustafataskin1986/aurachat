@@ -504,6 +504,13 @@ jobs:
             fi
           fi
 
+      - name: Seçim Tutamaçları Rengini Temaya Uydur
+        run: |
+          STYLES_PATH="android/app/src/main/res/values/styles.xml"
+          if [ -f "$STYLES_PATH" ] && ! grep -q "colorAccent" "$STYLES_PATH"; then
+            sed -i '0,/<\/style>/s#</style>#    <item name="colorAccent">#22c55e</item>\n    <item name="colorControlActivated">#22c55e</item>\n    <item name="colorControlNormal">#22c55e</item>\n</style>#' "$STYLES_PATH"
+          fi
+
       - name: APK Derle (Gradle)
         run: |
           cd android
