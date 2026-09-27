@@ -3238,6 +3238,7 @@ if (attachBtn && imageInput) {
             return;
         }
         composer.addImages(picked);
+        messageInput.focus();
     });
 
     sendPendingImages = async (files, caption = '') => {
