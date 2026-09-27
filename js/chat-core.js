@@ -2125,7 +2125,7 @@ el.addEventListener('touchmove', (e) => {
         // toplam yükseklik gibi davranır, aralarında asla boşluk oluşmaz.
         el.style.height = Math.max(0, attachMenuTargetHeight - dy) + 'px';
         const reveal = Math.min(attachComposerHeight, dy);
-        composerRow.style.height = reveal + 'px';
+        composerRow.style.setProperty('height', reveal + 'px', 'important');
     }, { passive: true });
 
     el.addEventListener('touchend', (e) => {
@@ -2139,7 +2139,7 @@ el.addEventListener('touchmove', (e) => {
             el.style.transition = 'height 0.15s ease-out';
             el.style.height = attachMenuTargetHeight + 'px';
             composerRow.style.transition = 'height 0.15s ease-out';
-            composerRow.style.height = '0px';
+            composerRow.style.setProperty('height', '0px', 'important');
             setTimeout(() => { el.style.transition = ''; composerRow.style.transition = ''; }, 160);
         }
     });
@@ -2150,7 +2150,7 @@ el.addEventListener('touchmove', (e) => {
         el.style.transition = 'height 0.15s ease-out';
         el.style.height = attachMenuTargetHeight + 'px';
         composerRow.style.transition = 'height 0.15s ease-out';
-        composerRow.style.height = '0px';
+        composerRow.style.setProperty('height', '0px', 'important');
     });
 
     el.addEventListener('touchcancel', () => {
@@ -2176,12 +2176,11 @@ function closeAttachMenuFromBack() {
     const composerRow = messageInput.parentElement;
     composerRow.style.overflow = '';
     composerRow.style.transition = '';
-    composerRow.style.height = '';
-    composerRow.style.minHeight = '';
-    composerRow.style.paddingTop = '';
-    composerRow.style.paddingBottom = '';
-    composerRow.style.border = '';
-    composerRow.style.margin = '';
+    composerRow.style.removeProperty('height');
+    composerRow.style.removeProperty('min-height');
+    composerRow.style.removeProperty('padding');
+    composerRow.style.removeProperty('border-width');
+    composerRow.style.removeProperty('margin');
     attachMenuOpen = false;
 }
 
@@ -2221,12 +2220,11 @@ attachMenuTargetHeight = kbHeight > 100 ? kbHeight : (menu.scrollHeight || 300);
     attachComposerHeight = composerRow.offsetHeight;
     composerRow.style.overflow = 'hidden';
     composerRow.style.transition = 'none';
-    composerRow.style.height = '0px';
-    composerRow.style.minHeight = '0px';
-    composerRow.style.paddingTop = '0px';
-    composerRow.style.paddingBottom = '0px';
-    composerRow.style.border = 'none';
-    composerRow.style.margin = '0px';
+    composerRow.style.setProperty('height', '0px', 'important');
+    composerRow.style.setProperty('min-height', '0px', 'important');
+    composerRow.style.setProperty('padding', '0px', 'important');
+    composerRow.style.setProperty('border-width', '0px', 'important');
+    composerRow.style.setProperty('margin', '0px', 'important');
 
     menu.style.transition = '';
     menu.style.transform = '';
