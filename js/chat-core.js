@@ -3125,7 +3125,7 @@ async function sendMessage() {
     }
 }
 
-// Önce bekleyen resimler, sonra yazı gider
+// Önce bekleyen resimler, sonra yazı gider (Gönderim sonrası klavyenin odak kaybı yaşamaması için focus korunur)
 async function sendFromComposer() {
     const files = composer.takeImages();
     if (files.length) {
@@ -3136,17 +3136,22 @@ async function sendFromComposer() {
         await sendMessage();
     }
     updateMicToggle();
+    // Mesaj gönderildikten sonra klavyenin açık kalması için odak tekrar inputa verilir
+    setTimeout(() => {
+        if (messageInput) messageInput.focus();
+    }, 50);
 }
 
+
 sendBtn.addEventListener('click', sendFromComposer);
+// Mobil cihazlarda Enter tuşunun çakışmasını önlemek ve alt satıra geçişi tamamen chat-composer'a bırakmak için buradaki engellemeyi kaldırıyoruz.
 messageInput.addEventListener('keydown', (e) => {
-    // Telefonda Enter alt satıra geçer, gönderme sadece butonla.
-    // Bilgisayarda (fare varsa) Enter gönderir, Shift+Enter alt satıra geçer.
     if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(pointer: fine)').matches) {
         e.preventDefault();
         sendFromComposer();
     }
 });
+
 
 messageInput.addEventListener('input', () => {
 if (!currentChatId || currentChatId === 'global' || !currentUser) return;
