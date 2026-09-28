@@ -59,6 +59,18 @@ export function setupComposer() {
     row.appendChild(actionsWrapper);
     if (attach && row === attach.parentElement) actionsWrapper.appendChild(attach);
     if (send && actionsWrapper !== send.parentElement) actionsWrapper.appendChild(send);
+    
+    // Gönder butonuna basınca odak kutudan kaçmasın, klavye açık kalsın.
+    // Klavye kapalıyken basılırsa açılmaz, sadece açıkken açık tutulur.
+    if (send) {
+        let keepKeyboard = false;
+        send.addEventListener('pointerdown', () => { keepKeyboard = document.activeElement === ta; });
+        send.addEventListener('mousedown', (e) => e.preventDefault());
+        send.addEventListener('click', () => {
+            if (keepKeyboard) setTimeout(() => ta.focus(), 0);
+            keepKeyboard = false;
+        });
+    }
 
     // ---------- CSS ----------
     const style = document.createElement('style');
