@@ -135,8 +135,8 @@ function applyTheme(chatId) {
     root.style.setProperty('--aura-out', t.out);
     root.style.setProperty('--aura-in', t.inc);
     root.style.setProperty('--aura-btn', t.out);
-    mc.style.background = 'transparent';
-    if (ca) ca.style.background = t.bg;
+    mc.style.background = t.bg;
+    if (ca) ca.style.background = '';
 }
 
 // Sohbet değişince (başlıktaki isim yenilenince) o sohbetin temasını uygula
