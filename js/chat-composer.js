@@ -149,19 +149,24 @@ export function setupComposer() {
     }
 
     // ---------- Enter (klavyenin sağ alt tuşu) ----------
+       // ---------- Enter (klavyenin sağ alt tuşu) ----------
     ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !window.matchMedia('(pointer: fine)').matches) {
-            e.stopPropagation();
-            e.preventDefault();
-            const start = ta.selectionStart;
-            const end = ta.selectionEnd;
-            const val = ta.value;
-            ta.value = val.substring(0, start) + '\n' + val.substring(end);
-            ta.selectionStart = ta.selectionEnd = start + 1;
-            sync();
-            ta.scrollTop = ta.scrollHeight;
+        if (e.key === 'Enter') {
+            if (!window.matchMedia('(pointer: fine)').matches) {
+                // Mobilde çift satır atlamayı önlemek için varsayılanı tamamen kesiyoruz
+                e.preventDefault();
+                e.stopPropagation();
+                const start = ta.selectionStart;
+                const end = ta.selectionEnd;
+                const val = ta.value;
+                ta.value = val.substring(0, start) + '\n' + val.substring(end);
+                ta.selectionStart = ta.selectionEnd = start + 1;
+                sync();
+                ta.scrollTop = ta.scrollHeight;
+            }
         }
     });
+
 
 
 
