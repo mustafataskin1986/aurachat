@@ -144,14 +144,25 @@ export function setupComposer() {
         row.classList.toggle('aura-multi', multi);
         clearBtn.style.display = multi ? 'flex' : 'none';
 
-        // Ayna kutuya ve textarea'ya güncel metni ve satır boşluğunu tam aktar
         mirror.textContent = ta.value + '\u200b';
-        
-        // Çok satırlı yazılarda alt satıra geçildiğinde imlecin ve yazının kaymasını önle
-        if (ta.value.includes('\n') || multi) {
+        ta.scrollTop = ta.scrollHeight;
+    }
+
+    // ---------- Enter (klavyenin sağ alt tuşu) ----------
+    ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !window.matchMedia('(pointer: fine)').matches) {
+            e.stopPropagation();
+            e.preventDefault();
+            const start = ta.selectionStart;
+            const end = ta.selectionEnd;
+            const val = ta.value;
+            ta.value = val.substring(0, start) + '\n' + val.substring(end);
+            ta.selectionStart = ta.selectionEnd = start + 1;
+            sync();
             ta.scrollTop = ta.scrollHeight;
         }
-    }
+    });
+
 
 
     // Mesaj sıfırlandığında klavyenin odak kaybı (blur) yaşamasını ve kapanmasını engelle
