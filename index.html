@@ -618,15 +618,19 @@
     
         
 
-    <script>
+      <script>
         function syncViewport() {
             if (!window.visualViewport) return;
             document.body.style.height = window.visualViewport.height + 'px';
             window.scrollTo(0, 0);
             
+            // Klavye açıkken chat alanını en alta sabitle ama kullanıcının yukarı okumasını bozma
             const messageContainer = document.getElementById('message-container');
-            if (messageContainer && (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight < 200)) {
-                messageContainer.scrollTop = messageContainer.scrollHeight;
+            if (messageContainer) {
+                const isNearBottom = (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight) < 250;
+                if (isNearBottom) {
+                    messageContainer.scrollTop = messageContainer.scrollHeight;
+                }
             }
         }
 
@@ -649,6 +653,7 @@
 
         syncViewport();
     </script>
+
 
 
     <script>
