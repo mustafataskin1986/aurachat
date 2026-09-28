@@ -128,12 +128,14 @@ export function setupComposer() {
     function sync() {
         if (!ta.isConnected) return;
 
+     // + ve gönder/mikrofon artık tek bir kutuda (aura-actions) birlikte -
+        // o kutunun gerçek genişliğini okuyup boşluğa yansıtıyoruz.
         const actions = row.querySelector('.aura-actions');
         const pl = 16;
         const pr = actions ? actions.offsetWidth + 24 : 62;
         row.style.setProperty('--aura-pl', pl + 'px');
         row.style.setProperty('--aura-pr', pr + 'px');
-
+        // Tek satır genişliğinde kaç satır çıkıyor? (mod ne olursa olsun aynı ölçü)
         const inner = row.clientWidth;
         let multi = false;
         if (inner > 0 && ta.value.length > 0) {
@@ -145,64 +147,51 @@ export function setupComposer() {
         clearBtn.style.display = multi ? 'flex' : 'none';
 
         mirror.textContent = ta.value + '\u200b';
-        ta.scrollTop = ta.scrollHeight;
+
+        // En üst sınıra gelince imleç en alt satırda görünsün
+        if (mirror.scrollHeight > mirror.clientHeight + 1 && ta.selectionStart >= ta.value.length - 1) {
+            ta.scrollTop = ta.scrollHeight;
+        }
     }
 
-    // ---------- Enter (klavyenin sağ alt tuşu) ----------
-       // ---------- Enter (klavyenin sağ alt tuşu) ----------
-    ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            if (!window.matchMedia('(pointer: fine)').matches) {
-                // Mobilde çift satır atlamayı önlemek için varsayılanı tamamen kesiyoruz
-                e.preventDefault();
-                e.stopPropagation();
-                const start = ta.selectionStart;
-                const end = ta.selectionEnd;
-                const val = ta.value;
-                ta.value = val.substring(0, start) + '\n' + val.substring(end);
-                ta.selectionStart = ta.selectionEnd = start + 1;
-                sync();
-                ta.scrollTop = ta.scrollHeight;
-            }
-        }
-    });
-
-
-
-
-    // Mesaj sıfırlandığında klavyenin odak kaybı (blur) yaşamasını ve kapanmasını engelle
+    // "messageInput.value = ''" (mesaj gidince) yazılınca da kutu tek satıra dönsün
     Object.defineProperty(ta, 'value', {
         configurable: true,
         get() { return valueDesc.get.call(this); },
-        set(v) { 
-            valueDesc.set.call(this, v); 
-            sync(); 
-            // Input sıfırlandığında odağın kaçmasını önle
-            if (document.activeElement !== ta && v === '') {
-                // Odak koruma
-            }
-        }
+        set(v) { valueDesc.set.call(this, v); sync(); }
     });
-
+    ta.addEventListener('input', sync);
+    window.addEventListener('resize', sync);
 
     // ---------- Enter (klavyenin sağ alt tuşu) ----------
-    // Mobilde Enter tuşunun klavyeyi kapatmasını engeller ve güvenle alt satıra geçmesini sağlar.
-    ta.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !window.matchMedia('(pointer: fine)').matches) {
-            e.stopPropagation();
-            // Eğer mobilde varsayılan satır atlama tetiklenmiyorsa manuel ekle
-            const start = ta.selectionStart;
-            const end = ta.selectionEnd;
-            if (start !== undefined && end !== undefined) {
-                e.preventDefault();
-                ta.value = ta.value.substring(0, start) + '\n' + ta.value.substring(end);
-                ta.selectionStart = ta.selectionEnd = start + 1;
-                sync();
-            }
-        }
+    // Telefonda: alt satıra geçer, mesaj göndermez. Bilgisayarda (fare varsa) chat-core'a bırakılır.
+    // Bu dinleyiciler chat-core'unkilerden önce kaydolur, o yüzden eski "Enter = gönder" kodu araya giremez.
+    const isDesktop = () => window.matchMedia('(pointer: fine)').matches;
+    function insertNewline() {
+        const s = ta.selectionStart;
+        const e = ta.selectionEnd;
+        ta.setRangeText('\n', s, e, 'end');
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+['keydown', 'keypress'].forEach((type) => {
+        ta.addEventListener(type, (e) => {
+            const looksLikeEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter';
+            if (!looksLikeEnter || isDesktop()) return;
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            if (type === 'keydown') insertNewline();
+        }, true);
     });
 
-
+    // GÜVENLİK AĞI: bazı Android klavyelerinde Enter gerçek bir
+    // keydown/keypress olarak değil, doğrudan "beforeinput"
+    // (insertLineBreak) olarak geliyor - üstteki yakalayıcı bunu hiç
+    // görmüyor ve tuş tepkisiz kalıyordu.
+    ta.addEventListener('beforeinput', (e) => {
+        if (e.inputType !== 'insertLineBreak' || isDesktop()) return;
+        e.preventDefault();
+        insertNewline();
+    });
 
     // ---------- Resim önizleme şeridi ----------
     let pending = []; // { file, url }
