@@ -3124,39 +3124,29 @@ async function sendMessage() {
         alert("Mesaj gönderilirken hata oluştu!");
     }
 }
+
+// Önce bekleyen resimler, sonra yazı gider
 async function sendFromComposer() {
     const files = composer.takeImages();
-    const textVal = messageInput.value.trim();
-    
-    if (!textVal && !files.length) return;
-
     if (files.length) {
+        const caption = messageInput.value.trim();
         messageInput.value = '';
-        updateMicToggle();
-        await sendPendingImages(files, textVal);
-    } else if (textVal) {
-        messageInput.value = '';
-        updateMicToggle();
+        await sendPendingImages(files, caption);
+    } else if (messageInput.value.trim()) {
         await sendMessage();
     }
-    
-    if (messageInput && document.activeElement !== messageInput) {
-        messageInput.focus();
-    }
+    updateMicToggle();
 }
 
-
-
-
 sendBtn.addEventListener('click', sendFromComposer);
-// Mobil cihazlarda Enter tuşunun çakışmasını önlemek ve alt satıra geçişi tamamen chat-composer'a bırakmak için buradaki engellemeyi kaldırıyoruz.
 messageInput.addEventListener('keydown', (e) => {
+    // Telefonda Enter alt satıra geçer, gönderme sadece butonla.
+    // Bilgisayarda (fare varsa) Enter gönderir, Shift+Enter alt satıra geçer.
     if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(pointer: fine)').matches) {
         e.preventDefault();
         sendFromComposer();
     }
 });
-
 
 messageInput.addEventListener('input', () => {
 if (!currentChatId || currentChatId === 'global' || !currentUser) return;
