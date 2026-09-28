@@ -618,17 +618,24 @@
     
         
 
-
     <script>
         function syncViewport() {
             if (!window.visualViewport) return;
             document.body.style.height = window.visualViewport.height + 'px';
             window.scrollTo(0, 0);
+            
+            const messageContainer = document.getElementById('message-container');
+            if (messageContainer && (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight < 200)) {
+                messageContainer.scrollTop = messageContainer.scrollHeight;
+            }
         }
 
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', () => {
                 requestAnimationFrame(syncViewport);
+            });
+            window.visualViewport.addEventListener('scroll', () => {
+                window.scrollTo(0, 0);
             });
         }
 
