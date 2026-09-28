@@ -620,15 +620,9 @@
 
 
     <script>
-        window.__auraFullViewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-
         function syncViewport() {
             if (!window.visualViewport) return;
-            if (window.visualViewport.height > window.__auraFullViewportHeight) {
-                window.__auraFullViewportHeight = window.visualViewport.height;
-            }
             document.body.style.height = window.visualViewport.height + 'px';
-            document.body.style.top = window.visualViewport.offsetTop + 'px';
             window.scrollTo(0, 0);
 
             const messageContainer = document.getElementById('message-container');
@@ -638,11 +632,22 @@
         }
 
         if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', syncViewport);
-            window.visualViewport.addEventListener('scroll', syncViewport);
+            window.visualViewport.addEventListener('resize', () => {
+                requestAnimationFrame(syncViewport);
+            });
         }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                setTimeout(() => {
+                    syncViewport();
+                }, 100);
+            }
+        });
+
         syncViewport();
     </script>
+
 
     <script>
         if ('serviceWorker' in navigator) {
