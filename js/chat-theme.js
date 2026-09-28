@@ -63,7 +63,8 @@ html[data-aura-black] #chat-area [class*="bg-[#111b21]"]:not(input):not(textarea
 ::-moz-selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}
 .msg-selected{background-color:rgba(34,197,94,0.35) !important;background-color:color-mix(in srgb, var(--aura-btn, #22c55e) 35%, transparent) !important}
 :root{--aura-composer-bg:#202c33}
-html[data-aura-black]{--aura-composer-bg:#000}`;
+html[data-aura-black]{--aura-composer-bg:#000}
+html[data-aura-black] #chat-scroll-wrapper div:has(> #search-contact){background-color:#202c33 !important}`;
     document.head.appendChild(s);
 })();
 
@@ -134,7 +135,7 @@ function applyTheme(chatId) {
     root.style.setProperty('--aura-out', t.out);
     root.style.setProperty('--aura-in', t.inc);
     root.style.setProperty('--aura-btn', t.out);
-    mc.style.background = t.bg;
+    mc.style.background = 'transparent';
     if (ca) ca.style.background = t.bg;
 }
 
