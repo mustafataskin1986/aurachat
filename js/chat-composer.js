@@ -128,14 +128,12 @@ export function setupComposer() {
     function sync() {
         if (!ta.isConnected) return;
 
-     // + ve gönder/mikrofon artık tek bir kutuda (aura-actions) birlikte -
-        // o kutunun gerçek genişliğini okuyup boşluğa yansıtıyoruz.
         const actions = row.querySelector('.aura-actions');
         const pl = 16;
         const pr = actions ? actions.offsetWidth + 24 : 62;
         row.style.setProperty('--aura-pl', pl + 'px');
         row.style.setProperty('--aura-pr', pr + 'px');
-        // Tek satır genişliğinde kaç satır çıkıyor? (mod ne olursa olsun aynı ölçü)
+
         const inner = row.clientWidth;
         let multi = false;
         if (inner > 0 && ta.value.length > 0) {
@@ -146,13 +144,15 @@ export function setupComposer() {
         row.classList.toggle('aura-multi', multi);
         clearBtn.style.display = multi ? 'flex' : 'none';
 
+        // Ayna kutuya ve textarea'ya güncel metni ve satır boşluğunu tam aktar
         mirror.textContent = ta.value + '\u200b';
-
-        // En üst sınıra gelince imleç en alt satırda görünsün
-        if (mirror.scrollHeight > mirror.clientHeight + 1 && ta.selectionStart >= ta.value.length - 1) {
+        
+        // Çok satırlı yazılarda alt satıra geçildiğinde imlecin ve yazının kaymasını önle
+        if (ta.value.includes('\n') || multi) {
             ta.scrollTop = ta.scrollHeight;
         }
     }
+
 
     // Mesaj sıfırlandığında klavyenin odak kaybı (blur) yaşamasını ve kapanmasını engelle
     Object.defineProperty(ta, 'value', {
