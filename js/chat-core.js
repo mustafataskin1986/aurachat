@@ -3124,29 +3124,27 @@ async function sendMessage() {
         alert("Mesaj gönderilirken hata oluştu!");
     }
 }
-
-// Önce bekleyen resimler, sonra yazı gider (Gönderim sonrası klavyenin odak kaybı yaşamaması için focus korunur)
 async function sendFromComposer() {
-    // Klavye odak kaybı (blur) yaşamasın diye focus'u koruyarak içeriği alıyoruz
     const files = composer.takeImages();
     const textVal = messageInput.value.trim();
     
     if (!textVal && !files.length) return;
 
-    messageInput.value = '';
-    updateMicToggle();
-
     if (files.length) {
+        messageInput.value = '';
+        updateMicToggle();
         await sendPendingImages(files, textVal);
     } else if (textVal) {
+        messageInput.value = '';
+        updateMicToggle();
         await sendMessage();
     }
     
-    // Klavyenin kapanıp açılmasını engellemek için anlık odak sabitleme
     if (messageInput && document.activeElement !== messageInput) {
         messageInput.focus();
     }
 }
+
 
 
 
