@@ -263,6 +263,24 @@ export function setupComposer() {
 
     sync();
     requestAnimationFrame(sync);
+    // Mesaj listesini composer'ın (ve açıksa klavyenin) arkasına kadar uzat -
+    // composer z-10 olduğu için üstte kalır, mesajlar onun arkasında/altında görünür.
+    const msgList = document.getElementById('message-container');
+    function syncBehindComposer() {
+        if (!msgList || !row.isConnected) return;
+        const rowH = row.offsetHeight || 0;
+        const vv = window.visualViewport;
+        const full = window.__auraFullViewportHeight || window.innerHeight;
+        const kb = vv ? Math.max(0, full - vv.height) : 0;
+        const gap = rowH + kb;
+        msgList.style.marginBottom = gap > 0 ? (-gap) + 'px' : '';
+        msgList.style.paddingBottom = gap > 0 ? (gap + 16) + 'px' : '';
+    }
+    if (window.ResizeObserver) new ResizeObserver(syncBehindComposer).observe(row);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', syncBehindComposer);
+    ta.addEventListener('focus', () => setTimeout(syncBehindComposer, 300));
+    ta.addEventListener('blur', () => setTimeout(syncBehindComposer, 300));
+    syncBehindComposer();
 
     return {
         input: ta,
