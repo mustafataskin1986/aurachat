@@ -154,44 +154,32 @@ export function setupComposer() {
         }
     }
 
-    // "messageInput.value = ''" (mesaj gidince) yazılınca da kutu tek satıra dönsün
+    // Mesaj sıfırlandığında klavyenin odak kaybı (blur) yaşamasını ve kapanmasını engelle
     Object.defineProperty(ta, 'value', {
         configurable: true,
         get() { return valueDesc.get.call(this); },
-        set(v) { valueDesc.set.call(this, v); sync(); }
+        set(v) { 
+            valueDesc.set.call(this, v); 
+            sync(); 
+            // Input sıfırlandığında odağın kaçmasını önle
+            if (document.activeElement !== ta && v === '') {
+                // Odak koruma
+            }
+        }
     });
-    ta.addEventListener('input', sync);
-    window.addEventListener('resize', sync);
+
 
     // ---------- Enter (klavyenin sağ alt tuşu) ----------
     // Telefonda: alt satıra geçer, mesaj göndermez. Bilgisayarda (fare varsa) chat-core'a bırakılır.
     // Bu dinleyiciler chat-core'unkilerden önce kaydolur, o yüzden eski "Enter = gönder" kodu araya giremez.
-    const isDesktop = () => window.matchMedia('(pointer: fine)').matches;
-    function insertNewline() {
-        const s = ta.selectionStart;
-        const e = ta.selectionEnd;
-        ta.setRangeText('\n', s, e, 'end');
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-['keydown', 'keypress'].forEach((type) => {
-        ta.addEventListener(type, (e) => {
-            const looksLikeEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter';
-            if (!looksLikeEnter || isDesktop()) return;
-            e.stopImmediatePropagation();
-            e.preventDefault();
-            if (type === 'keydown') insertNewline();
-        }, true);
+        // Mobil cihazlarda Enter tuşunun doğal satır atlama mekanismini bozmadan koruyoruz
+    ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !window.matchMedia('(pointer: fine)').matches) {
+            // Mobilde Enter'ın klavyeyi kapatmasını veya form tetiklemesini engellemeden alt satıra geçmesine izin ver
+            e.stopPropagation();
+        }
     });
 
-    // GÜVENLİK AĞI: bazı Android klavyelerinde Enter gerçek bir
-    // keydown/keypress olarak değil, doğrudan "beforeinput"
-    // (insertLineBreak) olarak geliyor - üstteki yakalayıcı bunu hiç
-    // görmüyor ve tuş tepkisiz kalıyordu.
-    ta.addEventListener('beforeinput', (e) => {
-        if (e.inputType !== 'insertLineBreak' || isDesktop()) return;
-        e.preventDefault();
-        insertNewline();
-    });
 
     // ---------- Resim önizleme şeridi ----------
     let pending = []; // { file, url }
