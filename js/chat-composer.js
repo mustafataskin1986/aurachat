@@ -170,15 +170,22 @@ export function setupComposer() {
 
 
     // ---------- Enter (klavyenin sağ alt tuşu) ----------
-    // Telefonda: alt satıra geçer, mesaj göndermez. Bilgisayarda (fare varsa) chat-core'a bırakılır.
-    // Bu dinleyiciler chat-core'unkilerden önce kaydolur, o yüzden eski "Enter = gönder" kodu araya giremez.
-        // Mobil cihazlarda Enter tuşunun doğal satır atlama mekanismini bozmadan koruyoruz
+    // Mobilde Enter tuşunun klavyeyi kapatmasını engeller ve güvenle alt satıra geçmesini sağlar.
     ta.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !window.matchMedia('(pointer: fine)').matches) {
-            // Mobilde Enter'ın klavyeyi kapatmasını veya form tetiklemesini engellemeden alt satıra geçmesine izin ver
             e.stopPropagation();
+            // Eğer mobilde varsayılan satır atlama tetiklenmiyorsa manuel ekle
+            const start = ta.selectionStart;
+            const end = ta.selectionEnd;
+            if (start !== undefined && end !== undefined) {
+                e.preventDefault();
+                ta.value = ta.value.substring(0, start) + '\n' + ta.value.substring(end);
+                ta.selectionStart = ta.selectionEnd = start + 1;
+                sync();
+            }
         }
     });
+
 
 
     // ---------- Resim önizleme şeridi ----------
