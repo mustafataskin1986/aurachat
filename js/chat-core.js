@@ -1042,6 +1042,10 @@ export async function toggleBlockUser(otherUid) {
 }
 
 export async function selectChat(otherUser) {
+    // Başka sohbete geçilirken önceki sohbetin "yazıyor..." bilgisini temizle
+    if (currentUser && currentChatId && currentChatId !== 'global') {
+        setDoc(doc(db, "chats", currentChatId), { [`typing_${currentUser.uid}`]: false }, { merge: true }).catch(() => {});
+    }
     exitSelectionMode();
     cancelReply();
     currentIsGroup = false;
@@ -1142,10 +1146,14 @@ if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.
 }
  
 function doCloseChatView() {
-composer.clearImages();
-closeAttachMenu();
-cancelReply();
-unreadDivider = null;
+    // Sohbet kapanırken "yazıyor..." durumunu Firebase'de temizle
+    if (currentUser && currentChatId && currentChatId !== 'global') {
+        setDoc(doc(db, "chats", currentChatId), { [`typing_${currentUser.uid}`]: false }, { merge: true }).catch(() => {});
+    }
+    composer.clearImages();
+    closeAttachMenu();
+    cancelReply();
+    unreadDivider = null;
     updateMyActiveChatId(null);
     currentChatId = null;
     currentChatName = '';
@@ -1161,6 +1169,7 @@ unreadDivider = null;
         chatArea.classList.add('translate-x-full');
     }
 }
+
 
 backBtn.addEventListener('click', () => {
     doCloseChatView();
