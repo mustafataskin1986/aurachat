@@ -82,9 +82,32 @@
             user-select: text;
         }
         /* Sohbet listesi seçili satır (mobil hover'ı ezer) */
-        .contact-list-item.chat-selected,
+    .contact-list-item.chat-selected,
         .contact-list-item.chat-selected:hover {
             background-color: rgba(16, 185, 129, 0.18) !important;
+        }
+        /* Seçili mesaj: WhatsApp gibi tam genişlikte, aralarda boşluk bırakmayan şerit */
+        #message-container .msg-selected {
+            position: relative;
+            isolation: isolate;
+            background-color: transparent !important;
+        }
+        #message-container .msg-selected::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            bottom: -8px;
+            left: -16px;
+            right: -16px;
+            background-color: rgba(16, 185, 129, 0.28);
+            z-index: -1;
+            pointer-events: none;
+        }
+        @media (min-width: 768px) {
+            #message-container .msg-selected::before {
+                left: -24px;
+                right: -24px;
+            }
         }
     </style>
 </head>
