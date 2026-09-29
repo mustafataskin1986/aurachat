@@ -3706,6 +3706,14 @@ function bindAudioPlayer(msgDiv, msgId, msg) {
     let maxH = vv ? vv.height : window.innerHeight;
     const keyboardOpen = () => (vv ? (maxH - vv.height) > 120 : true);
 
+    // Uygulama arka plana gidip dönerken ekran boyutu geçici oynar, bu sırada kutuyu bırakma
+    document.addEventListener('visibilitychange', () => {
+        window.__auraIgnoreResizeUntil = Date.now() + 2000;
+    });
+    window.addEventListener('focus', () => {
+        window.__auraIgnoreResizeUntil = Date.now() + 2000;
+    });
+
     // Mesaja basılı tutulurken odak kaybolmaya çalışırsa hemen geri ver (klavye kapanıp açılmasın)
     let refocusing = false;
     messageInput.addEventListener('blur', () => {
@@ -3721,6 +3729,7 @@ function bindAudioPlayer(msgDiv, msgId, msg) {
         vv.addEventListener('resize', () => {
             if (vv.height > maxH) maxH = vv.height;
          if ((window.__auraKeepFocusUntil || 0) > Date.now()) return;
+       if (Date.now() < (window.__auraIgnoreResizeUntil || 0)) return;
             if (!keyboardOpen() && document.activeElement === messageInput) messageInput.blur();
         });
     }
