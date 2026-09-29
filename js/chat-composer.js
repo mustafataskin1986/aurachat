@@ -70,7 +70,7 @@ export function setupComposer() {
     border-radius: 10px !important;
     overflow: hidden;
     min-height: ${SINGLE_H}px;
-    max-height: ${MAX_TEXT_H + 70}px;
+    max-height: ${MAX_TEXT_H + 80}px;
 }
 
 /* Sadece aktifken, odaklanıldığında veya resim/yazı varken yeşil çerçeve yap */
@@ -161,7 +161,7 @@ export function setupComposer() {
     z-index: 2;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 18px;
     margin: 0 8px 4px 0 !important;
 }
 .aura-composer.aura-multi > .aura-actions {
@@ -185,7 +185,7 @@ export function setupComposer() {
     grid-column: 1;
     justify-self: end;
     align-self: start;
-    margin: 7px 8px 0 0 !important;
+    margin: -3px 8px 0 0 !important;
     width: 22px;
     height: 22px;
     border-radius: 50%;
