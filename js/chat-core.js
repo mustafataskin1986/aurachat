@@ -2639,8 +2639,13 @@ function scrollToOriginalMessage(msgId) {
     const el = messageElementsById.get(msgId);
     if (!el) { showToast('Orijinal mesaj bulunamadı'); return; }
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el.classList.add('bg-emerald-900/30');
-    setTimeout(() => el.classList.remove('bg-emerald-900/30'), 1000);
+// Kaydırma bitince şerit belirir, sonra kendiliğinden solar
+    setTimeout(() => {
+        el.classList.remove('msg-flash');
+        void el.offsetWidth;
+        el.classList.add('msg-flash');
+        setTimeout(() => el.classList.remove('msg-flash'), 1900);
+    }, 350);
 }
 
 function buildReplyQuoteHtml(replyTo) {
