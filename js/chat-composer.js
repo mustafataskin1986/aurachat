@@ -76,7 +76,7 @@ export function setupComposer() {
     const style = document.createElement('style');
     style.id = 'aura-composer-css';
     style.textContent = `
-#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;align-items:stretch;position:relative;margin:0 !important;padding:5px !important;background:var(--aura-composer-bg,#202c33) !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:10px !important;overflow:hidden;min-height:${SINGLE_H}px}
+#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,${MAX_TEXT_H}px) auto;align-items:stretch;position:relative;margin:0 !important;padding:5px !important;background:var(--aura-composer-bg,#202c33) !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:10px !important;overflow:hidden;min-height:${SINGLE_H}px}
 
 #chat-area .aura-composer.aura-composer:focus-within{box-shadow:inset 0 0 0 1px var(--aura-btn,#22c55e) !important}
 #chat-area .aura-composer.aura-composer[style*="display: none"]{display:none !important}
