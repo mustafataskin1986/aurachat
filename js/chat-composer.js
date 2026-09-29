@@ -116,12 +116,7 @@ export function setupComposer() {
     ${TEXT_CSS}
 }
 
-/* İpucu (placeholder) ve gerçek metnin hizasını milimetrik eşitle */
-.aura-composer > #message-input::placeholder {
-    color: rgba(255, 255, 255, 0.4) !important;
-    opacity: 1 !important;
-    line-height: ${LINE}px !important;
-}
+
 
 
 #chat-area .aura-composer > #message-input,
