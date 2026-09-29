@@ -146,7 +146,8 @@ export function setupComposer() {
 
 .aura-composer.aura-multi > #message-input,
 .aura-composer.aura-multi > .aura-mirror {
-    padding: 10px 5px 2px 5px !important;
+align-self: start !important;
+    padding: 0px 15px 0px 15px !important;
 }
 
 .aura-composer > .aura-actions {
