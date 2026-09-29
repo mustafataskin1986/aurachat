@@ -111,7 +111,6 @@ export function setupComposer() {
     width: 100% !important;
     min-width: 0;
     box-sizing: border-box !important;
-    height: auto !important;
     min-height: 0 !important;
     max-height: ${MAX_TEXT_H}px !important;
     padding: 5px var(--aura-pr,62px) 5px var(--aura-pl,52px) !important;
@@ -324,8 +323,15 @@ export function setupComposer() {
 
         mirror.textContent = ta.value + '\u200b';
 
+        // Yüksekliği kendimiz ölçüp veriyoruz - grid'in "auto" tahminine güvenmiyoruz,
+        // bazı telefonlarda içerik az olsa bile direkt en büyük boya zıplıyordu.
+        const naturalH = mirror.scrollHeight;
+        const textH = Math.min(Math.max(naturalH, SINGLE_H - 10), MAX_TEXT_H);
+        ta.style.height = textH + 'px';
+        mirror.style.height = textH + 'px';
+
         // En üst sınıra gelince imleç en alt satırda görünsün
-        if (mirror.scrollHeight > mirror.clientHeight + 1 && ta.selectionStart >= ta.value.length - 1) {
+        if (naturalH > textH + 1 && ta.selectionStart >= ta.value.length - 1) {
             ta.scrollTop = ta.scrollHeight;
         }
     }
