@@ -1965,7 +1965,7 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
 
     const startPress = () => {
         longPressTriggered = false;
-        const wasTyping = document.activeElement === messageInput;
+        if (document.activeElement === messageInput) window.__auraKeepFocusUntil = Date.now() + 1500;
         pressTimer = setTimeout(() => {
             longPressTriggered = true;
             if (!selectionMode) {
@@ -1974,7 +1974,6 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
                 toggleMessageSelection(msgId);
             }
             if (navigator.vibrate) navigator.vibrate(30);
-            if (wasTyping) messageInput.focus();
         }, 450);
     };
 
@@ -3706,6 +3705,13 @@ function bindAudioPlayer(msgDiv, msgId, msg) {
     const vv = window.visualViewport;
     let maxH = vv ? vv.height : window.innerHeight;
     const keyboardOpen = () => (vv ? (maxH - vv.height) > 120 : true);
+
+    // Mesaja basılı tutulurken odak kaybolmaya çalışırsa hemen geri ver (klavye kapanıp açılmasın)
+    messageInput.addEventListener('blur', () => {
+        if ((window.__auraKeepFocusUntil || 0) > Date.now()) {
+            setTimeout(() => messageInput.focus(), 0);
+        }
+    });
 
     if (vv) {
         vv.addEventListener('resize', () => {
