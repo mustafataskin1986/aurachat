@@ -7,7 +7,7 @@ export function setupComposer() {
     if (!old) return { input: old, addImages() {}, takeImages() { return []; }, clearImages() {}, hasImages() { return false; }, onChange() {} };
 
     const LINE = 24;         // 20px * 1.2 satır yüksekliği (px)
-    const SINGLE_H = 52;     // tek satır toplam yükseklik (px, çerçeve dahil)
+    const SINGLE_H = 36;     // tek satır toplam yükseklik (px, çerçeve dahil)
     const MAX_TEXT_H = 110;  // yazı alanı en fazla bu kadar (4 satır), sonra içeride kayar
     const MAX_IMAGES = 20;
     const FONT = `'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
