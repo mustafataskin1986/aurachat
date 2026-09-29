@@ -8,7 +8,7 @@ export function setupComposer() {
 
     const LINE = 24;         // 20px * 1.2 satır yüksekliği (px)
     const SINGLE_H = 36;     // tek satır toplam yükseklik (px, çerçeve dahil)
-    const MAX_TEXT_H = 110;  // yazı alanı en fazla bu kadar (4 satır), sonra içeride kayar
+    const MAX_TEXT_H = 98;   // yazı alanı en fazla bu kadar (tam 4 satır), sonra içeride kayar
     const MAX_IMAGES = 20;
     const FONT = `'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     const TEXT_CSS = `font-family:${FONT} !important;font-size:16px !important;line-height:${LINE}px !important;letter-spacing:0.02em !important;white-space:pre-wrap;overflow-wrap:anywhere;`;
@@ -146,7 +146,11 @@ export function setupComposer() {
 
 .aura-composer.aura-multi > #message-input,
 .aura-composer.aura-multi > .aura-mirror {
-    padding: 10px 5px 2px 5px !important;
+    padding: 0 5px 2px 5px !important;
+}
+
+#chat-area .aura-composer.aura-composer.aura-multi {
+    padding-top: 15px !important;
 }
 
 .aura-composer > .aura-actions {
