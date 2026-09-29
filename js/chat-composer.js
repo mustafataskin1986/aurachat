@@ -307,24 +307,24 @@ export function setupComposer() {
         row.classList.toggle('aura-multi', multi);
         clearBtn.style.display = multi ? 'flex' : 'none';
 
-                if (!multi) {
-            // Tek satırda boşken ve harf yazıldığında yüksekliği sabitle (kaymayı engeller)
-            ta.style.height = `${SINGLE_H}px`;
-            mirror.style.height = `${SINGLE_H}px`;
+        mirror.textContent = ta.value + '\u200b';
+        mirror.style.height = 'auto';
+
+        const naturalH = ta.value.length > 0 ? mirror.scrollHeight : SINGLE_H - 10;
+        const textH = Math.min(Math.max(naturalH, SINGLE_H - 10), MAX_TEXT_H);
+        
+        if (ta.value.length === 0) {
+            ta.style.height = '';
+            mirror.style.height = '';
         } else {
-            // Çok satıra geçildiğinde yüksekliği içeriğe göre esnet
-            mirror.textContent = ta.value + '\u200b';
-            mirror.style.height = 'auto';
-            const naturalH = mirror.scrollHeight;
-            const textH = Math.min(Math.max(naturalH, SINGLE_H), MAX_TEXT_H);
             ta.style.height = textH + 'px';
             mirror.style.height = textH + 'px';
         }
 
-        if (ta.selectionStart >= ta.value.length - 1) {
+        if (naturalH > textH + 1 && ta.selectionStart >= ta.value.length - 1) {
             ta.scrollTop = ta.scrollHeight;
         }
-
+    }
 
     Object.defineProperty(ta, 'value', {
         configurable: true,
