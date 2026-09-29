@@ -3707,15 +3707,20 @@ function bindAudioPlayer(msgDiv, msgId, msg) {
     const keyboardOpen = () => (vv ? (maxH - vv.height) > 120 : true);
 
     // Mesaja basılı tutulurken odak kaybolmaya çalışırsa hemen geri ver (klavye kapanıp açılmasın)
+    let refocusing = false;
     messageInput.addEventListener('blur', () => {
+        if (refocusing) return;
         if ((window.__auraKeepFocusUntil || 0) > Date.now()) {
-            setTimeout(() => messageInput.focus(), 0);
+            refocusing = true;
+            messageInput.focus({ preventScroll: true });
+            setTimeout(() => { refocusing = false; }, 400);
         }
     });
 
     if (vv) {
         vv.addEventListener('resize', () => {
             if (vv.height > maxH) maxH = vv.height;
+         if ((window.__auraKeepFocusUntil || 0) > Date.now()) return;
             if (!keyboardOpen() && document.activeElement === messageInput) messageInput.blur();
         });
     }
