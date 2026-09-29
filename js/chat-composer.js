@@ -1,20 +1,5 @@
 // ==========================================
 // CHAT COMPOSER (form.js'in sohbet uyarlaması)
-//
-// Tek satırda:      [+]  [ yazı ]  [gönder / mikrofon]     (hepsi tek yuvarlak kutunun içinde)
-// İkinci satırda:   yazı boydan boya yayılır, + ve gönder/mikrofon kutunun altındaki
-//                   ayrı bir satıra iner (form.js'teki 3 katmanlı düzen)
-// Üstte:            seçilen resimlerin önizleme şeridi (kırmızı × ile silinir)
-//
-// - Enter (sağ alt tuş) telefonda alt satıra geçer, mesaj göndermez.
-// - Yükseklik ölçümü YOK: görünmez "ayna" kutu yazıyı taşır, tarayıcı satırı hesaplar.
-// - Kaç satır olduğunu (tek satır mı çok satır mı) ayrı bir görünmez "prob" kutu belirler.
-// - #message-input <input> ise otomatik <textarea>'ya çevrilir (aynı id, aynı class).
-// - Yazı: DM Sans 16px (Kozmik'teki #soru_girdisi_xyz fontu).
-// - Klavyenin sağ alt tuşu alt satıra geçer, harfleri otomatik büyütmez.
-// - Çerçeve rengi ve imleç: gönder butonunun rengi (--aura-btn), aktifken 2 kat kalın.
-//
-// chat-core.js kullanır:  const composer = setupComposer();  composer.input  (textarea)
 // ==========================================
 
 export function setupComposer() {
@@ -51,17 +36,12 @@ export function setupComposer() {
     const send = document.getElementById('send-btn');
     row.classList.add('aura-composer');
 
-    // "+" ve gönder/mikrofon butonlarını tek bir kutuda birleştiriyoruz -
-    // ikisi birlikte tek blok halinde sağa yaslanıyor, + her zaman
-    // gönderin solunda duruyor, ayrı ayrı margin matematiği gerekmiyor.
     const actionsWrapper = document.createElement('div');
     actionsWrapper.className = 'aura-actions';
     row.appendChild(actionsWrapper);
     if (attach && row === attach.parentElement) actionsWrapper.appendChild(attach);
     if (send && actionsWrapper !== send.parentElement) actionsWrapper.appendChild(send);
     
-    // Gönder butonuna basınca odak kutudan kaçmasın, klavye açık kalsın.
-    // Klavye kapalıyken basılırsa açılmaz, sadece açıkken açık tutulur.
     if (send) {
         let keepKeyboard = false;
         send.addEventListener('pointerdown', () => { keepKeyboard = document.activeElement === ta; });
@@ -79,7 +59,7 @@ export function setupComposer() {
 #chat-area .aura-composer.aura-composer {
     display: grid !important;
     grid-template-columns: minmax(0,1fr);
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto minmax(0,1fr) auto !important;
     align-items: stretch;
     position: relative;
     margin: 0 !important;
@@ -91,6 +71,11 @@ export function setupComposer() {
     overflow: hidden;
     min-height: ${SINGLE_H}px;
     max-height: ${MAX_TEXT_H + 70}px;
+}
+
+/* Resim şeridi varken kutunun boyunu esnet ki resim büzülüp yazının altında kalmasın */
+#chat-area .aura-composer.has-tray {
+    max-height: ${MAX_TEXT_H + 160}px !important;
 }
 
 #chat-area .aura-composer.aura-composer:focus-within {
@@ -128,7 +113,7 @@ export function setupComposer() {
 #chat-area .aura-composer > #message-input:focus,
 #chat-area .aura-composer > #message-input:hover,
 #chat-area .aura-composer > #message-input:active {
-    background: var(--aura-composer-bg,#202c33) !important;
+    background: transparent !important;
     transition: background-color .2s;
     border: 0 !important;
     border-radius: 5px !important;
@@ -153,7 +138,6 @@ export function setupComposer() {
     ${TEXT_CSS}
 }
 
-/* Çok satır: yazı boydan boya, + ve gönder alt satıra iner */
 .aura-composer.aura-multi > #message-input,
 .aura-composer.aura-multi > .aura-mirror {
     padding: 10px 5px 2px 5px !important;
@@ -272,7 +256,6 @@ export function setupComposer() {
 }`;
     document.head.appendChild(style);
 
-    // ---------- Ayna kutu, prob kutu, önizleme şeridi, temizle (×) butonu ----------
     const mirror = document.createElement('div');
     mirror.className = 'aura-mirror';
     ta.insertAdjacentElement('afterend', mirror);
@@ -299,18 +282,15 @@ export function setupComposer() {
     });
     row.appendChild(clearBtn);
 
-    // ---------- Senkron ----------
     function sync() {
         if (!ta.isConnected) return;
 
-     // + ve gönder/mikrofon artık tek bir kutuda (aura-actions) birlikte -
-        // o kutunun gerçek genişliğini okuyup boşluğa yansıtıyoruz.
         const actions = row.querySelector('.aura-actions');
         const pl = 16;
         const pr = actions ? actions.offsetWidth + 24 : 62;
         row.style.setProperty('--aura-pl', pl + 'px');
         row.style.setProperty('--aura-pr', pr + 'px');
-        // Tek satır genişliğinde kaç satır çıkıyor? (mod ne olursa olsun aynı ölçü)
+
         const inner = row.clientWidth;
         let multi = false;
         if (inner > 0 && ta.value.length > 0) {
@@ -322,22 +302,18 @@ export function setupComposer() {
         clearBtn.style.display = multi ? 'flex' : 'none';
 
         mirror.textContent = ta.value + '\u200b';
-        mirror.style.height = 'auto';  // önce sıfırla, yoksa eski (büyük) boy takılı kalır
+        mirror.style.height = 'auto';
 
-        // Yüksekliği kendimiz ölçüp veriyoruz - grid'in "auto" tahminine güvenmiyoruz,
-        // bazı telefonlarda içerik az olsa bile direkt en büyük boya zıplıyordu.
         const naturalH = mirror.scrollHeight;
         const textH = Math.min(Math.max(naturalH, SINGLE_H - 10), MAX_TEXT_H);
         ta.style.height = textH + 'px';
         mirror.style.height = textH + 'px';
 
-        // En üst sınıra gelince imleç en alt satırda görünsün
         if (naturalH > textH + 1 && ta.selectionStart >= ta.value.length - 1) {
             ta.scrollTop = ta.scrollHeight;
         }
     }
 
-    // "messageInput.value = ''" (mesaj gidince) yazılınca da kutu tek satıra dönsün
     Object.defineProperty(ta, 'value', {
         configurable: true,
         get() { return valueDesc.get.call(this); },
@@ -346,9 +322,6 @@ export function setupComposer() {
     ta.addEventListener('input', sync);
     window.addEventListener('resize', sync);
 
-    // ---------- Enter (klavyenin sağ alt tuşu) ----------
-    // Telefonda: alt satıra geçer, mesaj göndermez. Bilgisayarda (fare varsa) chat-core'a bırakılır.
-    // Bu dinleyiciler chat-core'unkilerden önce kaydolur, o yüzden eski "Enter = gönder" kodu araya giremez.
     const isDesktop = () => window.matchMedia('(pointer: fine)').matches;
     function insertNewline() {
         const s = ta.selectionStart;
@@ -356,7 +329,7 @@ export function setupComposer() {
         ta.setRangeText('\n', s, e, 'end');
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
-['keydown', 'keypress'].forEach((type) => {
+    ['keydown', 'keypress'].forEach((type) => {
         ta.addEventListener(type, (e) => {
             const looksLikeEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13 || e.code === 'Enter';
             if (!looksLikeEnter || isDesktop()) return;
@@ -366,18 +339,13 @@ export function setupComposer() {
         }, true);
     });
 
-    // GÜVENLİK AĞI: bazı Android klavyelerinde Enter gerçek bir
-    // keydown/keypress olarak değil, doğrudan "beforeinput"
-    // (insertLineBreak) olarak geliyor - üstteki yakalayıcı bunu hiç
-    // görmüyor ve tuş tepkisiz kalıyordu.
     ta.addEventListener('beforeinput', (e) => {
         if (e.inputType !== 'insertLineBreak' || isDesktop()) return;
         e.preventDefault();
         insertNewline();
     });
 
-    // ---------- Resim önizleme şeridi ----------
-    let pending = []; // { file, url }
+    let pending = [];
     const listeners = [];
     function notify() { listeners.forEach((fn) => { try { fn(); } catch (e) {} }); }
 
@@ -399,6 +367,7 @@ export function setupComposer() {
             tray.appendChild(wrap);
         });
         row.classList.toggle('has-tray', pending.length > 0);
+        sync(); // Şerit değiştiğinde kutu yüksekliğini hemen yeniden hesapla
     }
 
     function removeAt(i) {
