@@ -3698,7 +3698,15 @@ function bindAudioPlayer(msgDiv, msgId, msg) {
         }
     });
 }
-
+// Boşluğa ya da sağ üstteki üç noktaya dokununca klavye kapanmasın
+(function keepKeyboardOpen() {
+    const keepFocus = (e) => {
+        if (document.activeElement === messageInput) e.preventDefault();
+    };
+    messageContainer.addEventListener('mousedown', keepFocus);
+    const menuBtn = document.getElementById('chat-menu-btn');
+    if (menuBtn) menuBtn.addEventListener('mousedown', keepFocus);
+})();
 window.openLocation = function (lat, lng) {
     window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
 };
