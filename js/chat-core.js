@@ -1965,6 +1965,7 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
 
     const startPress = () => {
         longPressTriggered = false;
+        const wasTyping = document.activeElement === messageInput;
         pressTimer = setTimeout(() => {
             longPressTriggered = true;
             if (!selectionMode) {
@@ -1973,6 +1974,7 @@ function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
                 toggleMessageSelection(msgId);
             }
             if (navigator.vibrate) navigator.vibrate(30);
+            if (wasTyping) messageInput.focus();
         }, 450);
     };
 
@@ -3699,9 +3701,21 @@ function bindAudioPlayer(msgDiv, msgId, msg) {
     });
 }
 // Boşluğa ya da sağ üstteki üç noktaya dokununca klavye kapanmasın
+// (klavye geri tuşuyla kapandıysa kutunun odağı da bırakılır, boşluğa dokununca tekrar açılmaz)
 (function keepKeyboardOpen() {
+    const vv = window.visualViewport;
+    let maxH = vv ? vv.height : window.innerHeight;
+    const keyboardOpen = () => (vv ? (maxH - vv.height) > 120 : true);
+
+    if (vv) {
+        vv.addEventListener('resize', () => {
+            if (vv.height > maxH) maxH = vv.height;
+            if (!keyboardOpen() && document.activeElement === messageInput) messageInput.blur();
+        });
+    }
+
     const keepFocus = (e) => {
-        if (document.activeElement === messageInput) e.preventDefault();
+        if (document.activeElement === messageInput && keyboardOpen()) e.preventDefault();
     };
     messageContainer.addEventListener('mousedown', keepFocus);
     const menuBtn = document.getElementById('chat-menu-btn');
