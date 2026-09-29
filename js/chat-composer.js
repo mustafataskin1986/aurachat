@@ -146,7 +146,7 @@ export function setupComposer() {
 
 .aura-composer.aura-multi > #message-input,
 .aura-composer.aura-multi > .aura-mirror {
-    padding: 0 5px 2px 5px !important;
+    padding: 5px 5px 0px 5px !important;
 }
 
 
@@ -205,7 +205,7 @@ export function setupComposer() {
     display: none;
     gap: 12px;
     overflow-x: auto;
-    padding: 12px 14px 2px 14px;
+    padding: 10px;
     scrollbar-width: none;
 }
 .aura-composer > .aura-tray::-webkit-scrollbar {
