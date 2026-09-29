@@ -322,6 +322,7 @@ export function setupComposer() {
         clearBtn.style.display = multi ? 'flex' : 'none';
 
         mirror.textContent = ta.value + '\u200b';
+        mirror.style.height = 'auto';  // önce sıfırla, yoksa eski (büyük) boy takılı kalır
 
         // Yüksekliği kendimiz ölçüp veriyoruz - grid'in "auto" tahminine güvenmiyoruz,
         // bazı telefonlarda içerik az olsa bile direkt en büyük boya zıplıyordu.
