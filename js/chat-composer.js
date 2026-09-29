@@ -183,11 +183,11 @@ export function setupComposer() {
     grid-column: 1;
     justify-self: end;
     align-self: start;
-    margin: -3px 8px 0 0 !important;
+    margin: 5px 5px 0 0 !important;
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: #2a2b2d;
+    background: var(--aura-btn,#22c55e);
     border: 1px solid rgba(255,255,255,.12);
     color: #ffffff;
     font-size: 14px;
