@@ -149,9 +149,7 @@ export function setupComposer() {
     padding: 0 5px 2px 5px !important;
 }
 
-#chat-area .aura-composer.aura-composer.aura-multi {
-    padding-top: 15px !important;
-}
+
 
 .aura-composer > .aura-actions {
     grid-row: 2;
@@ -317,7 +315,7 @@ export function setupComposer() {
         const naturalH = ta.value.length > 0 ? mirror.scrollHeight : SINGLE_H - 10;
         const textH = Math.min(Math.max(naturalH, SINGLE_H - 10), MAX_TEXT_H);
         
-        if (ta.value.length === 0) {
+      if (ta.value.length === 0 || !multi) {
             ta.style.height = '';
             mirror.style.height = '';
         } else {
