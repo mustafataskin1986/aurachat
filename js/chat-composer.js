@@ -102,9 +102,10 @@ export function setupComposer() {
     width: 100% !important;
     min-width: 0;
     box-sizing: border-box !important;
-    min-height: 0 !important;
+    min-height: ${SINGLE_H}px !important;
+    height: ${SINGLE_H}px;
     max-height: ${MAX_TEXT_H}px !important;
-    padding: 5px var(--aura-pr,62px) 5px var(--aura-pl,52px) !important;
+    padding: 7px var(--aura-pr,62px) 5px var(--aura-pl,52px) !important;
     color: #ffffff;
     caret-color: var(--aura-btn,#22c55e);
     resize: none !important;
@@ -114,6 +115,14 @@ export function setupComposer() {
     touch-action: manipulation;
     ${TEXT_CSS}
 }
+
+/* İpucu (placeholder) ve gerçek metnin hizasını milimetrik eşitle */
+.aura-composer > #message-input::placeholder {
+    color: rgba(255, 255, 255, 0.4) !important;
+    opacity: 1 !important;
+    line-height: ${LINE}px !important;
+}
+
 
 #chat-area .aura-composer > #message-input,
 #chat-area .aura-composer > #message-input:focus,
