@@ -102,10 +102,9 @@ export function setupComposer() {
     width: 100% !important;
     min-width: 0;
     box-sizing: border-box !important;
-    min-height: ${SINGLE_H}px !important;
-    height: ${SINGLE_H}px;
+    min-height: 0 !important;
     max-height: ${MAX_TEXT_H}px !important;
-    padding: 7px var(--aura-pr,62px) 5px var(--aura-pl,52px) !important;
+    padding: 5px var(--aura-pr,62px) 5px var(--aura-pl,52px) !important;
     color: #ffffff;
     caret-color: var(--aura-btn,#22c55e);
     resize: none !important;
@@ -115,9 +114,6 @@ export function setupComposer() {
     touch-action: manipulation;
     ${TEXT_CSS}
 }
-
-
-
 
 #chat-area .aura-composer > #message-input,
 #chat-area .aura-composer > #message-input:focus,
@@ -150,8 +146,7 @@ export function setupComposer() {
 
 .aura-composer.aura-multi > #message-input,
 .aura-composer.aura-multi > .aura-mirror {
-align-self: start !important;
-    padding: 0px 15px 0px 15px !important;
+    padding: 10px 5px 2px 5px !important;
 }
 
 .aura-composer > .aura-actions {
