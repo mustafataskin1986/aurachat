@@ -23,7 +23,7 @@ export function setupComposer() {
 
     const LINE = 24;         // 20px * 1.2 satır yüksekliği (px)
     const SINGLE_H = 52;     // tek satır toplam yükseklik (px, çerçeve dahil)
-    const MAX_TEXT_H = 170;  // yazı alanı en fazla bu kadar (6 satır), sonra içeride kayar
+    const MAX_TEXT_H = 110;  // yazı alanı en fazla bu kadar (4 satır), sonra içeride kayar
     const MAX_IMAGES = 20;
     const FONT = `'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     const TEXT_CSS = `font-family:${FONT} !important;font-size:16px !important;line-height:${LINE}px !important;letter-spacing:0.02em !important;white-space:pre-wrap;overflow-wrap:anywhere;`;
@@ -76,37 +76,201 @@ export function setupComposer() {
     const style = document.createElement('style');
     style.id = 'aura-composer-css';
     style.textContent = `
-#chat-area .aura-composer.aura-composer{display:grid !important;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,${MAX_TEXT_H}px) auto;align-items:stretch;position:relative;margin:0 !important;padding:5px !important;background:var(--aura-composer-bg,#202c33) !important;border:1px solid var(--aura-btn,#22c55e) !important;border-radius:10px !important;overflow:hidden;min-height:${SINGLE_H}px}
+#chat-area .aura-composer.aura-composer {
+    display: grid !important;
+    grid-template-columns: minmax(0,1fr);
+    grid-template-rows: auto auto auto;
+    align-items: stretch;
+    position: relative;
+    margin: 0 !important;
+    padding: 5px !important;
+    background: var(--aura-composer-bg,#202c33) !important;
+    transition: background-color .2s;
+    border: 1px solid var(--aura-btn,#22c55e) !important;
+    border-radius: 10px !important;
+    overflow: hidden;
+    min-height: ${SINGLE_H}px;
+    max-height: ${MAX_TEXT_H + 70}px;
+}
 
-#chat-area .aura-composer.aura-composer:focus-within{box-shadow:inset 0 0 0 1px var(--aura-btn,#22c55e) !important}
-#chat-area .aura-composer.aura-composer[style*="display: none"]{display:none !important}
-.aura-composer > *{margin:0 !important}
+#chat-area .aura-composer.aura-composer:focus-within {
+    box-shadow: inset 0 0 0 1px var(--aura-btn,#22c55e) !important;
+}
+#chat-area .aura-composer.aura-composer[style*="display: none"] {
+    display: none !important;
+}
+.aura-composer > * {
+    margin: 0 !important;
+}
 
-.aura-composer > #message-input{grid-row:2;grid-column:1;align-self:center;display:block;width:100% !important;min-width:0;box-sizing:border-box !important;height:auto !important;min-height:0 !important;max-height:${MAX_TEXT_H}px !important;padding:5px var(--aura-pr,62px) 5px var(--aura-pl,52px) !important;color:#ffffff;caret-color:var(--aura-btn,#22c55e);resize:none !important;overflow-x:hidden;overflow-y:auto;scrollbar-width:none;touch-action:manipulation;${TEXT_CSS}}
+.aura-composer > #message-input {
+    grid-row: 2;
+    grid-column: 1;
+    align-self: center;
+    display: block;
+    width: 100% !important;
+    min-width: 0;
+    box-sizing: border-box !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: ${MAX_TEXT_H}px !important;
+    padding: 5px var(--aura-pr,62px) 5px var(--aura-pl,52px) !important;
+    color: #ffffff;
+    caret-color: var(--aura-btn,#22c55e);
+    resize: none !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+    touch-action: manipulation;
+    ${TEXT_CSS}
+}
 
-#chat-area .aura-composer > #message-input,#chat-area .aura-composer > #message-input:focus,#chat-area .aura-composer > #message-input:hover,#chat-area .aura-composer > #message-input:active{background:var(--aura-composer-bg,#202c33) !important;transition:background-color .2s;border:0 !important;border-radius:5px !important;outline:0 !important;box-shadow:none !important}
+#chat-area .aura-composer > #message-input,
+#chat-area .aura-composer > #message-input:focus,
+#chat-area .aura-composer > #message-input:hover,
+#chat-area .aura-composer > #message-input:active {
+    background: var(--aura-composer-bg,#202c33) !important;
+    transition: background-color .2s;
+    border: 0 !important;
+    border-radius: 5px !important;
+    outline: 0 !important;
+    box-shadow: none !important;
+}
 
-.aura-composer > #message-input::-webkit-scrollbar{display:none}
-.aura-composer > .aura-mirror{grid-row:2;grid-column:1;visibility:hidden;pointer-events:none;box-sizing:border-box;min-height:${SINGLE_H - 2}px;max-height:${MAX_TEXT_H}px;overflow:hidden;padding:5px var(--aura-pr,62px) 5px var(--aura-pl,52px);${TEXT_CSS}}
+.aura-composer > #message-input::-webkit-scrollbar {
+    display: none;
+}
+
+.aura-composer > .aura-mirror {
+    grid-row: 2;
+    grid-column: 1;
+    visibility: hidden;
+    pointer-events: none;
+    box-sizing: border-box;
+    min-height: ${SINGLE_H - 2}px;
+    max-height: ${MAX_TEXT_H}px;
+    overflow: hidden;
+    padding: 5px var(--aura-pr,62px) 5px var(--aura-pl,52px);
+    ${TEXT_CSS}
+}
 
 /* Çok satır: yazı boydan boya, + ve gönder alt satıra iner */
-.aura-composer.aura-multi > #message-input,.aura-composer.aura-multi > .aura-mirror{padding:10px 5px 2px 5px !important}
+.aura-composer.aura-multi > #message-input,
+.aura-composer.aura-multi > .aura-mirror {
+    padding: 10px 5px 2px 5px !important;
+}
 
-.aura-composer > .aura-actions{grid-row:2;grid-column:1;align-self:end;justify-self:end;z-index:2;display:flex;align-items:center;gap:8px;margin:0 8px 4px 0 !important}
-.aura-composer.aura-multi > .aura-actions{grid-row:3;align-self:center;margin:0 8px 6px 0 !important}
+.aura-composer > .aura-actions {
+    grid-row: 2;
+    grid-column: 1;
+    align-self: end;
+    justify-self: end;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 8px 4px 0 !important;
+}
+.aura-composer.aura-multi > .aura-actions {
+    grid-row: 3;
+    align-self: center;
+    margin: 0 8px 6px 0 !important;
+}
 
-.aura-composer > :not(.aura-actions):not(#message-input):not(.aura-mirror):not(.aura-tray):not(.aura-clear){grid-row:2;grid-column:1;align-self:center;z-index:1;background:transparent !important;margin-right:56px !important}
+.aura-composer > :not(.aura-actions):not(#message-input):not(.aura-mirror):not(.aura-tray):not(.aura-clear) {
+    grid-row: 2;
+    grid-column: 1;
+    align-self: center;
+    z-index: 1;
+    background: transparent !important;
+    margin-right: 56px !important;
+}
 
-.aura-composer > .aura-clear{display:none;grid-row:2;grid-column:1;justify-self:end;align-self:start;margin:7px 8px 0 0 !important;width:22px;height:22px;border-radius:50%;background:#2a2b2d;border:1px solid rgba(255,255,255,.12);color:#ffffff;font-size:14px;font-weight:bold;line-height:1;align-items:center;justify-content:center;z-index:3;padding:0}
+.aura-composer > .aura-clear {
+    display: none;
+    grid-row: 2;
+    grid-column: 1;
+    justify-self: end;
+    align-self: start;
+    margin: 7px 8px 0 0 !important;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #2a2b2d;
+    border: 1px solid rgba(255,255,255,.12);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: bold;
+    line-height: 1;
+    align-items: center;
+    justify-content: center;
+    z-index: 3;
+    padding: 0;
+}
 
-.aura-composer > .aura-tray{grid-row:1;grid-column:1;display:none;gap:12px;overflow-x:auto;padding:12px 14px 2px 14px;scrollbar-width:none}
-.aura-composer > .aura-tray::-webkit-scrollbar{display:none}
-.aura-composer.has-tray > .aura-tray{display:flex}
-.aura-thumb{position:relative;flex:none;width:65px;height:65px}
-.aura-thumb img{width:100%;height:100%;display:block;object-fit:cover;border-radius:12px;border:1px solid rgba(255,255,255,.15);box-shadow:0 2px 8px rgba(0,0,0,.3)}
-.aura-thumb button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--aura-btn,#22c55e);color:#ffffff;border:0;font-size:12px;font-weight:bold;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.6);z-index:2}
+.aura-composer > .aura-tray {
+    grid-row: 1;
+    grid-column: 1;
+    display: none;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 12px 14px 2px 14px;
+    scrollbar-width: none;
+}
+.aura-composer > .aura-tray::-webkit-scrollbar {
+    display: none;
+}
+.aura-composer.has-tray > .aura-tray {
+    display: flex;
+}
+.aura-thumb {
+    position: relative;
+    flex: none;
+    width: 65px;
+    height: 65px;
+}
+.aura-thumb img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.15);
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.aura-thumb button {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--aura-btn,#22c55e);
+    color: #ffffff;
+    border: 0;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 1;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,.6);
+    z-index: 2;
+}
 
-.aura-probe{position:fixed;left:-9999px;top:0;visibility:hidden;pointer-events:none;box-sizing:content-box;padding:0;border:0;overflow:hidden;${TEXT_CSS}}`;
+.aura-probe {
+    position: fixed;
+    left: -9999px;
+    top: 0;
+    visibility: hidden;
+    pointer-events: none;
+    box-sizing: content-box;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    ${TEXT_CSS}
+}`;
     document.head.appendChild(style);
 
     // ---------- Ayna kutu, prob kutu, önizleme şeridi, temizle (×) butonu ----------
