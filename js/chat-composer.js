@@ -299,7 +299,7 @@ export function setupComposer() {
         row.style.setProperty('--aura-pl', pl + 'px');
         row.style.setProperty('--aura-pr', pr + 'px');
 
-        const inner = row.clientWidth;
+        const inner = row.clientWidth - 12;
         let multi = false;
         if (inner > 0 && ta.value.length > 0) {
             probe.style.width = Math.max(40, inner - pl - pr) + 'px';
