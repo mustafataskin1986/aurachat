@@ -319,6 +319,9 @@ document.addEventListener('visibilitychange', () => {
 
 window.addEventListener('pagehide', () => {
     if (presenceTimer) writePresence(false);
+    if (currentUser && currentChatId && currentChatId !== 'global') {
+        setDoc(doc(db, "chats", currentChatId), { [`typing_${currentUser.uid}`]: false }, { merge: true }).catch(() => {});
+    }
 });
 
 function formatLastSeen(ms) {
