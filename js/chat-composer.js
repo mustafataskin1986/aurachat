@@ -65,15 +65,21 @@ export function setupComposer() {
     margin: 0 !important;
     padding: 5px !important;
     background: var(--aura-composer-bg,#202c33) !important;
-    transition: background-color .2s;
-    border: 1px solid var(--aura-btn,#22c55e) !important;
+    transition: background-color .2s, border-color .2s;
+    border: 1px solid rgba(255,255,255,0.12) !important; /* Varsayılan mat gri çerçeve */
     border-radius: 10px !important;
     overflow: hidden;
     min-height: ${SINGLE_H}px;
     max-height: ${MAX_TEXT_H + 70}px;
 }
 
-/* Resim şeridi varken kutunun boyunu esnet ki resim büzülüp yazının altında kalmasın */
+/* Sadece aktifken, odaklanıldığında veya resim/yazı varken yeşil çerçeve yap */
+#chat-area .aura-composer.aura-composer:focus-within,
+#chat-area .aura-composer.has-tray,
+#chat-area .aura-composer.aura-multi {
+    border-color: var(--aura-btn,#22c55e) !important;
+}
+
 #chat-area .aura-composer.has-tray {
     max-height: ${MAX_TEXT_H + 160}px !important;
 }
@@ -304,10 +310,16 @@ export function setupComposer() {
         mirror.textContent = ta.value + '\u200b';
         mirror.style.height = 'auto';
 
-        const naturalH = mirror.scrollHeight;
+        const naturalH = ta.value.length > 0 ? mirror.scrollHeight : SINGLE_H - 10;
         const textH = Math.min(Math.max(naturalH, SINGLE_H - 10), MAX_TEXT_H);
-        ta.style.height = textH + 'px';
-        mirror.style.height = textH + 'px';
+        
+        if (ta.value.length === 0) {
+            ta.style.height = '';
+            mirror.style.height = '';
+        } else {
+            ta.style.height = textH + 'px';
+            mirror.style.height = textH + 'px';
+        }
 
         if (naturalH > textH + 1 && ta.selectionStart >= ta.value.length - 1) {
             ta.scrollTop = ta.scrollHeight;
@@ -367,7 +379,7 @@ export function setupComposer() {
             tray.appendChild(wrap);
         });
         row.classList.toggle('has-tray', pending.length > 0);
-        sync(); // Şerit değiştiğinde kutu yüksekliğini hemen yeniden hesapla
+        sync();
     }
 
     function removeAt(i) {
