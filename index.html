@@ -621,6 +621,12 @@
       <script>
         function syncViewport() {
             if (!window.visualViewport) return;
+            const ignoreLeft = (window.__auraIgnoreResizeUntil || 0) - Date.now();
+            if (ignoreLeft > 0) {
+                clearTimeout(window.__auraSyncLater);
+                window.__auraSyncLater = setTimeout(syncViewport, ignoreLeft + 50);
+                return;
+            }
             document.body.style.height = window.visualViewport.height + 'px';
             window.scrollTo(0, 0);
             
