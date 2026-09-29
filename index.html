@@ -110,6 +110,35 @@
                 right: -24px;
             }
         }
+        /* Alıntıya tıklayınca gidilen mesaj: boydan boya şerit, sonra yavaşça silinir */
+        #message-container .msg-flash {
+            position: relative;
+            isolation: isolate;
+        }
+        #message-container .msg-flash::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            bottom: -8px;
+            left: -16px;
+            right: -16px;
+            background-color: var(--aura-btn, #22c55e);
+            opacity: 0;
+            z-index: -1;
+            pointer-events: none;
+            animation: msgFlashFade 1.8s ease-out forwards;
+        }
+        @keyframes msgFlashFade {
+            0% { opacity: 0.32; }
+            55% { opacity: 0.32; }
+            100% { opacity: 0; }
+        }
+        @media (min-width: 768px) {
+            #message-container .msg-flash::before {
+                left: -24px;
+                right: -24px;
+            }
+        }
     </style>
 </head>
 <body class="bg-[#050b14] w-screen font-sans flex items-center justify-center p-0 lg:p-4">
