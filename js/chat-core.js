@@ -2227,7 +2227,10 @@ function closeAttachMenuFromBack(instant) {
 window.__auraMaxVV = window.visualViewport ? window.visualViewport.height : window.innerHeight;
 if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
-        if (window.visualViewport.height > window.__auraMaxVV) window.__auraMaxVV = window.visualViewport.height;
+      if (window.visualViewport.height > window.__auraMaxVV) window.__auraMaxVV = window.visualViewport.height;
+        // Klavye yüksekliğini hafızaya al (klavye kapalıyken popup'ın boyu için)
+        const kbNow = window.__auraMaxVV - window.visualViewport.height;
+        if (kbNow > 100) window.__auraKbH = Math.round(kbNow);
     });
 }
 
@@ -2261,7 +2264,10 @@ function openAttachMenu() {
     const topBar = document.getElementById('chat-top-bar');
     if (topBar) menu.style.backgroundColor = getComputedStyle(topBar).backgroundColor;
 
-attachMenuTargetHeight = kbHeight > 100 ? kbHeight : 210;
+if (kbHeight > 100) window.__auraPopupH = kbHeight;
+    attachMenuTargetHeight = kbHeight > 100
+        ? kbHeight
+        : (window.__auraPopupH || window.__auraKbH || Math.round(fullH * 0.3));
     const slideUp = !(kbHeight > 100);
     menu.style.height = attachMenuTargetHeight + 'px';
 
