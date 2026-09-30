@@ -2235,7 +2235,8 @@ if (window.visualViewport) {
 }
 
 function openAttachMenu() {
-    if (attachMenuOpen) return;
+  if (attachMenuOpen) return;
+    const wasNearBottom = isNearBottom();
     const menu = ensureAttachMenu();
     clearTimeout(attachMenuCloseTimer);
     messageInput.parentElement.classList.add('menu-open');
@@ -2289,14 +2290,14 @@ if (kbHeight > 100) window.__auraPopupH = kbHeight;
         void menu.offsetHeight;
         menu.style.transition = 'height 0.22s ease-out';
         menu.style.height = attachMenuTargetHeight + 'px';
-        setTimeout(() => { menu.style.transition = ''; scrollToBottom(); }, 240);
+        setTimeout(() => { menu.style.transition = ''; if (wasNearBottom) scrollToBottom(); }, 240);
     } else {
         // Klavye açık: mesaj kutusu sabit, menü klavyenin yerine anında geçer
         menu.style.transition = '';
     }
     attachMenuOpen = true;
     pushBackState(closeAttachMenuFromBack);
-    scrollToBottom();
+    if (wasNearBottom) scrollToBottom();
 }
 
 function closeAttachMenu(instant) {
