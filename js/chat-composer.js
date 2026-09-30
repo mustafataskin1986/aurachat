@@ -76,6 +76,7 @@ export function setupComposer() {
 /* Sadece aktifken, odaklanıldığında veya resim/yazı varken yeşil çerçeve yap */
 #chat-area .aura-composer.aura-composer:focus-within,
 #chat-area .aura-composer.has-tray,
+#chat-area .aura-composer.menu-open,
 #chat-area .aura-composer.aura-multi {
     border-color: var(--aura-btn,#22c55e) !important;
 }
@@ -84,9 +85,11 @@ export function setupComposer() {
     max-height: ${MAX_TEXT_H + 160}px !important;
 }
 
-#chat-area .aura-composer.aura-composer:focus-within {
+#chat-area .aura-composer.aura-composer:focus-within,
+#chat-area .aura-composer.aura-composer.menu-open {
     box-shadow: inset 0 0 0 1px var(--aura-btn,#22c55e) !important;
 }
+
 #chat-area .aura-composer.aura-composer[style*="display: none"] {
     display: none !important;
 }
