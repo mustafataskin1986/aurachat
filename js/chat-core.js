@@ -2243,26 +2243,18 @@ attachMenuTargetHeight = kbHeight > 100 ? kbHeight : 210;
     // gizliyoruz - popup ile aynı sütunda normal akışta oldukları için
     // aralarında boşluk oluşması imkansız hale geliyor. Sürüklerken
     // ikisinin yüksekliğini ters orantılı, birebir aynı anda değiştireceğiz.
-    const wrap = ensureComposerWrap();
-    attachComposerHeight = wrap.offsetHeight;
     menu.style.transform = '';
     menu.classList.remove('hidden');
     if (slideUp) {
-        // Klavye kapalı: menü aşağıdan iterek açılır, mesaj kutusu aynı hızda iner
+        // Klavye kapalı: menü aşağıdan büyür, mesaj kutusu ve sohbet yukarı itilir
         menu.style.transition = 'none';
         menu.style.height = '0px';
-        wrap.style.transition = 'none';
-        wrap.style.height = attachComposerHeight + 'px';
         void menu.offsetHeight;
         menu.style.transition = 'height 0.22s ease-out';
-        wrap.style.transition = 'height 0.22s ease-out';
         menu.style.height = attachMenuTargetHeight + 'px';
-        wrap.style.height = '0px';
-        setTimeout(() => { menu.style.transition = ''; wrap.style.transition = ''; }, 240);
+        setTimeout(() => { menu.style.transition = ''; scrollToBottom(); }, 240);
     } else {
-        // Klavye açık: klavyenin yerine anında açılır
-        wrap.style.transition = 'none';
-        wrap.style.height = '0px';
+        // Klavye açık: mesaj kutusu sabit, menü klavyenin yerine anında geçer
         menu.style.transition = '';
     }
     attachMenuOpen = true;
