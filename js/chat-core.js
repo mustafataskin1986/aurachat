@@ -2111,26 +2111,26 @@ function ensureAttachMenu() {
     // seviyesinde engelliyordu (görsel olarak 45vh'nin altına asla
     // inmiyordu) - tüm önceki senkron sorunlarının asıl kaynağı buydu.
     el.className = 'hidden flex-shrink-0 pt-3 pb-6 rounded-t-[20px]';
-    el.innerHTML = `
+el.innerHTML = `
         <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5"></div>
-        <div class="flex justify-around px-4 pb-1">
-            <button type="button" data-attach="gallery" class="flex flex-col items-center gap-2 active:scale-95 transition">
-                <span class="w-14 h-14 rounded-full bg-white/10 active:bg-white/20 flex items-center justify-center transition">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#eee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+        <div class="grid grid-cols-4 gap-x-3 px-3 pb-1">
+            <button type="button" data-attach="gallery" class="w-full flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="w-full h-14 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#3b9eff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
                 </span>
-                <span class="text-gray-300 text-[12.5px] font-medium">Galeri</span>
+                <span class="text-gray-300 text-[14px]">Galeri</span>
             </button>
-            <button type="button" data-attach="camera" class="flex flex-col items-center gap-2 active:scale-95 transition">
-                <span class="w-14 h-14 rounded-full bg-white/10 active:bg-white/20 flex items-center justify-center transition">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#eee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            <button type="button" data-attach="camera" class="w-full flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="w-full h-14 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#ff2d75" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
                 </span>
-                <span class="text-gray-300 text-[12.5px] font-medium">Kamera</span>
+                <span class="text-gray-300 text-[14px]">Kamera</span>
             </button>
-            <button type="button" data-attach="location" class="flex flex-col items-center gap-2 active:scale-95 transition">
-                <span class="w-14 h-14 rounded-full bg-white/10 active:bg-white/20 flex items-center justify-center transition">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#eee" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
+            <button type="button" data-attach="location" class="w-full flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="w-full h-14 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#12c26b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
                 </span>
-                <span class="text-gray-300 text-[12.5px] font-medium">Konum</span>
+                <span class="text-gray-300 text-[14px]">Konum</span>
             </button>
         </div>
     `;
@@ -2235,7 +2235,8 @@ function openAttachMenu() {
     const topBar = document.getElementById('chat-top-bar');
     if (topBar) menu.style.backgroundColor = getComputedStyle(topBar).backgroundColor;
 
-attachMenuTargetHeight = kbHeight > 100 ? kbHeight : (menu.scrollHeight || 300);
+attachMenuTargetHeight = kbHeight > 100 ? kbHeight : 210;
+    const slideUp = !(kbHeight > 100);
     menu.style.height = attachMenuTargetHeight + 'px';
 
     // Input çubuğunu, taşıyarak değil GERÇEK YÜKSEKLİĞİNİ sıfırlayarak
@@ -2244,12 +2245,26 @@ attachMenuTargetHeight = kbHeight > 100 ? kbHeight : (menu.scrollHeight || 300);
     // ikisinin yüksekliğini ters orantılı, birebir aynı anda değiştireceğiz.
     const wrap = ensureComposerWrap();
     attachComposerHeight = wrap.offsetHeight;
-    wrap.style.transition = 'none';
-    wrap.style.height = '0px';
-
-    menu.style.transition = '';
     menu.style.transform = '';
     menu.classList.remove('hidden');
+    if (slideUp) {
+        // Klavye kapalı: menü aşağıdan iterek açılır, mesaj kutusu aynı hızda iner
+        menu.style.transition = 'none';
+        menu.style.height = '0px';
+        wrap.style.transition = 'none';
+        wrap.style.height = attachComposerHeight + 'px';
+        void menu.offsetHeight;
+        menu.style.transition = 'height 0.22s ease-out';
+        wrap.style.transition = 'height 0.22s ease-out';
+        menu.style.height = attachMenuTargetHeight + 'px';
+        wrap.style.height = '0px';
+        setTimeout(() => { menu.style.transition = ''; wrap.style.transition = ''; }, 240);
+    } else {
+        // Klavye açık: klavyenin yerine anında açılır
+        wrap.style.transition = 'none';
+        wrap.style.height = '0px';
+        menu.style.transition = '';
+    }
     attachMenuOpen = true;
     pushBackState(closeAttachMenuFromBack);
     scrollToBottom();
