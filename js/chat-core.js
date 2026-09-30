@@ -3746,6 +3746,11 @@ function bindAudioPlayer(msgDiv, msgId, msg) {
     const menuBtn = document.getElementById('chat-menu-btn');
     if (menuBtn) menuBtn.addEventListener('mousedown', keepFocus);
 })();
+// İşaretleme editörü geri tuşunu bizim sistemle paylaşsın, kapanınca klavye geri gelsin
+window.isrtPushBack = pushBackState;
+window.isrtPopBack = popBackState;
+window.isrtOnClose = () => setTimeout(() => messageInput.focus(), 200);
+
 window.openLocation = function (lat, lng) {
     window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
 };
