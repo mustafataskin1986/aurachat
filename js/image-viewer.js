@@ -337,7 +337,7 @@
             barsBeforeDrag = barsVisible;
             setBars(false);
           }
-          tx = dx;
+          tx = 0;
           ty = dy;
           apply();
           setBg(1 - Math.min(1, Math.abs(dy) / (window.innerHeight * 0.6)));
