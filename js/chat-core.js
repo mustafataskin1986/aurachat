@@ -97,6 +97,15 @@ let sendPendingImages = async () => {};
 let selectionMode = false;
 const selectedMessageIds = new Set();
 const messageElementsById = new Map();
+const expandedMsgIds = new Set(); // "Devamını okuyun" ile açılmış mesajlar
+
+// Her göndericiye sabit, okunaklı bir renk (kimlikten hesaplanır)
+function senderColor(msg) {
+    const key = String(msg.senderUid || msg.senderName || '?');
+    let h = 0;
+    for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+    return `hsl(${(h % 12) * 30 + 8}, 68%, 66%)`;
+}
 let recentOpenScrollLock = false;
 let unreadDivider = null; // { chatId, msgId, count }
 
@@ -1048,6 +1057,7 @@ export async function selectChat(otherUser) {
     }
     exitSelectionMode();
     cancelReply();
+    expandedMsgIds.clear();
     currentIsGroup = false;
     toggleCallButtonsForGroup(false);
 composer.clearImages();
@@ -1153,6 +1163,7 @@ function doCloseChatView() {
     composer.clearImages();
     closeAttachMenu();
     cancelReply();
+    expandedMsgIds.clear();
     unreadDivider = null;
     updateMyActiveChatId(null);
     currentChatId = null;
@@ -1825,7 +1836,16 @@ if (isAlbum) {
 } else if (msg.type === 'audio') {
         bodyHtml = buildAudioBubbleHtml(msgId, msg);
 } else {
-        bodyHtml = `<p class="break-words whitespace-pre-wrap">${escapeHtml(msg.text)}</p>`;
+        const fullText = msg.text || '';
+        const textLines = fullText.split('\n');
+        const tooLong = fullText.length > 700 || textLines.length > 14;
+        if (tooLong && !expandedMsgIds.has(msgId)) {
+            let shown = textLines.slice(0, 14).join('\n');
+            if (shown.length > 700) shown = shown.slice(0, 700);
+            bodyHtml = `<p class="break-words whitespace-pre-wrap">${escapeHtml(shown.trimEnd())}…</p><button type="button" data-read-more="${msgId}" class="block text-[13px] font-medium mt-1" style="color:var(--aura-btn,#22c55e)">Devamını okuyun</button>`;
+        } else {
+            bodyHtml = `<p class="break-words whitespace-pre-wrap">${escapeHtml(fullText)}</p>`;
+        }
     }
 
   const forwardedLabel = msg.forwarded
@@ -1876,7 +1896,7 @@ if (isAlbum) {
         msgDiv.className = "flex justify-start rounded-lg transition-colors";
         msgDiv.innerHTML = `
             <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
-              ${(currentChatId === 'global' || currentIsGroup) ? `<span class="text-[11px] font-bold text-amber-400 block mb-0.5 ${isImage ? 'px-2 pt-1' : ''}">${escapeHtml(msg.senderName)}</span>` : ''}
+              ${(currentChatId === 'global' || currentIsGroup) ? `<span class="text-[11px] font-bold block mb-0.5 ${isImage ? 'px-2 pt-1' : ''}" style="color:${senderColor(msg)}">${escapeHtml(msg.senderName)}</span>` : ''}
                 ${forwardedLabel}
                 ${replyQuoteHtml}
                 ${bodyHtml}
@@ -1958,6 +1978,17 @@ if (isAlbum) {
     }
 
 if (msg.type === 'audio') bindAudioPlayer(msgDiv, msgId, msg);
+
+    const readMoreBtn = msgDiv.querySelector('[data-read-more]');
+    if (readMoreBtn) {
+        readMoreBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            expandedMsgIds.add(msgId);
+            const p = readMoreBtn.previousElementSibling;
+            if (p) p.textContent = msg.text || '';
+            readMoreBtn.remove();
+        });
+    }
 
 if (selectedMessageIds.has(msgId)) {
         msgDiv.classList.add('msg-selected');
