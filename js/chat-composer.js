@@ -372,6 +372,7 @@ export function setupComposer() {
             img.src = p.url;
             img.alt = '';
             img.style.cursor = 'pointer';
+            img.addEventListener('mousedown', (e) => e.preventDefault());
             img.addEventListener('click', (e) => { e.stopPropagation(); editImage(i); });
             const x = document.createElement('button');
             x.type = 'button';
@@ -397,12 +398,11 @@ export function setupComposer() {
     function editImage(i) {
         const p = pending[i];
    if (!p || typeof window.isaretlemeyiAc !== 'function') return;
-        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         const reader = new FileReader();
         reader.onload = () => {
             editingIndex = i;
             window.seciliGorseller = [reader.result];
-            setTimeout(() => window.isaretlemeyiAc('chat', 0), 250);
+            window.isaretlemeyiAc('chat', 0);
         };
         reader.readAsDataURL(p.file);
     }
