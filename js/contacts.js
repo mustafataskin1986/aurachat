@@ -23,7 +23,13 @@ import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLa
 import { selectChat, getCurrentUser, clearChatForMe, prewarmChatSession, showToast } from "./chat-core.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
-const contactList = document.getElementById('contact-list');
+let contactList = document.getElementById('contact-list');
+if (!contactList) {
+    contactList = document.createElement('div');
+    contactList.id = 'contact-list';
+    contactList.className = 'divide-y divide-gray-800/40';
+    (document.getElementById('chat-scroll-wrapper') || document.body).appendChild(contactList);
+}
 const searchContact = document.getElementById('search-contact');
 const searchIcon = document.getElementById('search-icon');
 const filterTabsContainer = document.getElementById('chat-filter-tabs');
