@@ -243,7 +243,13 @@ function updateFilterChipLabels(unreadCount, favoritesCount) {
 // KİŞİLERİ YÜKLE
 // ------------------------------------------
 export async function loadContacts() {
-    renderSkeletonList();
+    let listCacheOk = false;
+    try {
+        const lc = JSON.parse(localStorage.getItem('aurachat_list_cache') || 'null');
+        const cu = getCurrentUser();
+        listCacheOk = !!(lc && lc.html && cu && lc.uid === cu.uid && contactList.dataset.cached === '1');
+    } catch (e) {}
+    if (!listCacheOk) renderSkeletonList();
 
     const currentUser = getCurrentUser();
     if (!currentUser) return;
@@ -598,6 +604,7 @@ export async function loadContacts() {
 
         sortContactList();
         prewarmTopChats();
+        saveListCache();
     }
 
     renderAllRef = renderAll;
@@ -769,6 +776,21 @@ export async function loadContacts() {
         chatsLoaded = true;
         renderAll();
     });
+}
+
+let listCacheTimer = null;
+function saveListCache() {
+    clearTimeout(listCacheTimer);
+    listCacheTimer = setTimeout(() => {
+        try {
+            const u = getCurrentUser();
+            if (!u || !dynamicListContainer || activeFilter !== 'all') return;
+            if (searchContact && searchContact.value.trim()) return;
+            localStorage.setItem('aurachat_list_cache', JSON.stringify({ uid: u.uid, html: dynamicListContainer.innerHTML }));
+        } catch (e) {
+            try { localStorage.removeItem('aurachat_list_cache'); } catch (e2) {}
+        }
+    }, 600);
 }
 
 function sortContactList() {
@@ -1028,6 +1050,11 @@ export function initAdminPanel() {
     if (!currentUser || !appTitle) return;
 
     isAdminUser = !!(currentUser.email && ADMIN_EMAIL && currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase());
+    
+    try {
+        localStorage.setItem('aurachat_is_admin', isAdminUser ? '1' : '0');
+        document.documentElement.toggleAttribute('data-aura-admin', isAdminUser);
+    } catch (e) {}
 
     appTitle.classList.toggle('text-amber-400', isAdminUser);
     appTitle.classList.toggle('text-emerald-500', !isAdminUser);
