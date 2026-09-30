@@ -2110,7 +2110,7 @@ function ensureAttachMenu() {
     // min-h-[45vh] YOK: bu sınıf popup'ın JS'ten küçültülmesini CSS
     // seviyesinde engelliyordu (görsel olarak 45vh'nin altına asla
     // inmiyordu) - tüm önceki senkron sorunlarının asıl kaynağı buydu.
-    el.className = 'hidden flex-shrink-0 pt-3 pb-6 rounded-t-[20px]';
+ el.className = 'hidden flex-shrink-0 pt-3 pb-6';
 el.innerHTML = `
         <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5"></div>
         <div class="grid grid-cols-4 gap-x-3 px-3 pb-1">
@@ -2196,18 +2196,31 @@ el.addEventListener('touchcancel', () => {
     return el;
 }
 
-function closeAttachMenuFromBack() {
-    if (attachMenuEl) {
-        attachMenuEl.classList.add('hidden');
-        attachMenuEl.style.transition = '';
-        attachMenuEl.style.transform = '';
-        attachMenuEl.style.height = '';
-    }
-    if (composerWrap) {
-        composerWrap.style.transition = '';
-        composerWrap.style.height = '';
-    }
+let attachMenuCloseTimer = null;
+function closeAttachMenuFromBack(instant) {
     attachMenuOpen = false;
+    clearTimeout(attachMenuCloseTimer);
+    messageInput.parentElement.classList.remove('menu-open');
+    const finish = () => {
+        if (attachMenuEl) {
+            attachMenuEl.classList.add('hidden');
+            attachMenuEl.style.transition = '';
+            attachMenuEl.style.transform = '';
+            attachMenuEl.style.height = '';
+        }
+        if (composerWrap) {
+            composerWrap.style.transition = '';
+            composerWrap.style.height = '';
+        }
+    };
+    if (instant === true || !attachMenuEl || attachMenuEl.classList.contains('hidden')) {
+        finish();
+        return;
+    }
+    // Aşağı doğru küçülerek kapanır, mesaj kutusu ve sohbet de aşağı iner
+    attachMenuEl.style.transition = 'height 0.22s ease-out';
+    attachMenuEl.style.height = '0px';
+    attachMenuCloseTimer = setTimeout(finish, 240);
 }
 
 // Ekran yüksekliğinin en büyük değerini takip et (klavyesiz tam yükseklik)
@@ -2221,6 +2234,8 @@ if (window.visualViewport) {
 function openAttachMenu() {
     if (attachMenuOpen) return;
     const menu = ensureAttachMenu();
+    clearTimeout(attachMenuCloseTimer);
+    messageInput.parentElement.classList.add('menu-open');
     const hadFocus = document.activeElement === messageInput;
 
     // Klavye kapanmadan ÖNCE ne kadar yer kapladığını ölç - popup'ı tam o
@@ -2272,9 +2287,9 @@ attachMenuTargetHeight = kbHeight > 100 ? kbHeight : 210;
     scrollToBottom();
 }
 
-function closeAttachMenu() {
+function closeAttachMenu(instant) {
     if (!attachMenuOpen) return;
-    closeAttachMenuFromBack();
+    closeAttachMenuFromBack(instant);
     popBackState();
 }
 
@@ -3261,7 +3276,7 @@ if (attachBtn && imageInput) {
     attachBtn.addEventListener('click', () => {
         if (attachMenuOpen) closeAttachMenu(); else openAttachMenu();
     });
-    messageInput.addEventListener('focus', closeAttachMenu);
+    messageInput.addEventListener('focus', () => closeAttachMenu(true));
     messageContainer.addEventListener('click', closeAttachMenu);
 
     // Seçilen resimler hemen gitmez: kutunun üstünde önizleme olarak bekler, gönder tuşuyla gider
