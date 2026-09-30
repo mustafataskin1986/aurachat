@@ -691,7 +691,7 @@
             // Klavye açıkken chat alanını en alta sabitle ama kullanıcının yukarı okumasını bozma
             const messageContainer = document.getElementById('message-container');
             if (messageContainer) {
-                const isNearBottom = (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight) < 250;
+                const isNearBottom = window.__auraStick !== false;
                 if (isNearBottom) {
                     const pinStart = performance.now();
                     const pinBottom = () => {
@@ -701,6 +701,14 @@
                     pinBottom();
                 }
             }
+        }
+
+   // Kullanıcı en alta yakın mı? Klavye gelmeden önceki durum burada tutulur
+        const stickContainer = document.getElementById('message-container');
+        if (stickContainer) {
+            stickContainer.addEventListener('scroll', () => {
+                window.__auraStick = (stickContainer.scrollHeight - stickContainer.scrollTop - stickContainer.clientHeight) < 150;
+            }, { passive: true });
         }
 
         if (window.visualViewport) {
