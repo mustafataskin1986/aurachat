@@ -1,6 +1,45 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
+<style id="aura-theme-css">
+html[data-aura-theme] #message-container > div > div.bg-\[\#005c4b\]{background-color:var(--aura-out) !important}
+#message-container > div > div.bg-\[\#202c33\]{background-color:#212121 !important}
+html[data-aura-theme] #send-btn,html[data-aura-theme] #mic-btn{background-color:var(--aura-out) !important;background-image:none !important}
+#chat-area,#sidebar{transition:none !important}
+#message-input,#message-input:focus{border:1px solid var(--aura-btn,#22c55e) !important;outline:none !important;--tw-ring-shadow:0 0 #0000 !important;background-color:#000000 !important;caret-color:var(--aura-btn,#22c55e)}
+#message-input{box-shadow:none !important}
+#message-input:focus{box-shadow:inset 0 0 0 1px var(--aura-btn,#22c55e) !important}
+div:has(> #message-input){border-color:transparent !important}
+#chat-area [class*="border-b"],#chat-area [class*="border-t"]{border-top-width:0 !important;border-bottom-width:0 !important}
+#message-container{scrollbar-width:none;-ms-overflow-style:none}
+#message-container::-webkit-scrollbar{display:none;width:0;height:0}
+#back-btn,#back-btn *,#voice-call-btn,#voice-call-btn *,#video-call-btn,#video-call-btn *,#chat-menu-btn,#chat-menu-btn *,#attach-btn,#attach-btn *,#send-btn,#send-btn *,#mic-btn,#mic-btn *,#selection-cancel-btn,#selection-cancel-btn *,#selection-delete-btn,#selection-delete-btn *,#main-menu-btn,#main-menu-btn *,#sidebar > div:first-child button,#sidebar > div:first-child button *{color:#ffffff !important}
+#sidebar [class*="border-b"],#sidebar [class*="border-t"]{border-top-width:0 !important;border-bottom-width:0 !important}
+#sidebar [class*="divide-y"] > *,#chat-area [class*="divide-y"] > *{border-top-width:0 !important;border-bottom-width:0 !important}
+nav,footer{border-top-width:0 !important}
+#sidebar,#chat-area{border-width:0 !important}
+body :has(#sidebar),body :has(#chat-area){border-width:0 !important}
+html[data-aura-black] #sidebar{background-color:#000 !important}
+html[data-aura-black] #sidebar [class*="bg-[#202c33]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#111b21]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#0b141a]"]:not(input):not(textarea){background-color:#000 !important}
+html[data-aura-black] #chat-area [class*="bg-[#202c33]"]:not(input):not(textarea):not(#message-container *){background-color:#000 !important}
+html[data-aura-black] #chat-area [class*="bg-[#111b21]"]:not(input):not(textarea):not(#message-container *):not(#message-container){background-color:#000 !important}
+*{accent-color:var(--aura-btn,#22c55e)}
+::selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}
+::-moz-selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}
+.msg-selected{background-color:rgba(34,197,94,0.35) !important;background-color:color-mix(in srgb, var(--aura-btn, #22c55e) 35%, transparent) !important}
+:root{--aura-composer-bg:#202c33}
+html[data-aura-black]{--aura-composer-bg:#000}
+html[data-aura-black] #chat-scroll-wrapper div:has(> #search-contact){background-color:#202c33 !important}
+html[data-aura-black],html[data-aura-black] body{background:#000 !important}
+html[data-aura-admin] #app-title{color:#fbbf24 !important}
+</style>
+<script>
+try {
+    var auraRoot = document.documentElement;
+    if (localStorage.getItem('aurachat_black_ui') === '1') auraRoot.setAttribute('data-aura-black', '1');
+    if (localStorage.getItem('aurachat_is_admin') === '1') auraRoot.setAttribute('data-aura-admin', '1');
+} catch (e) {}
+</script>
 <script>
 ((function () {
     var shown = 0;
@@ -55,8 +94,7 @@
     });
 })();
 </script>
-<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-<script>eruda.init();</script>
+<script src="https://cdn.jsdelivr.net/npm/eruda" async onload="eruda.init()"></script>
     <base href="https://aurachat-amber.vercel.app">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -343,7 +381,16 @@
                 </div>
 
                 <!-- KAYAR ORTA KISIM (Kişiler / Odalar Listesi) -->
-                <div id="contact-list" class="divide-y divide-gray-800/40"></div>
+              <script>
+                try {
+                    var auraListCache = JSON.parse(localStorage.getItem('aurachat_list_cache') || 'null');
+                    if (auraListCache && auraListCache.html) {
+                        var auraListEl = document.getElementById('contact-list');
+                        auraListEl.innerHTML = auraListCache.html;
+                        auraListEl.dataset.cached = '1';
+                    }
+                } catch (e) {}
+                </script>
             </div>
 
             <!-- SABİT ALT BAR -->
