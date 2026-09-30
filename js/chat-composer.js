@@ -396,12 +396,13 @@ export function setupComposer() {
     let editingIndex = -1;
     function editImage(i) {
         const p = pending[i];
-        if (!p || typeof window.isaretlemeyiAc !== 'function') return;
+   if (!p || typeof window.isaretlemeyiAc !== 'function') return;
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         const reader = new FileReader();
         reader.onload = () => {
             editingIndex = i;
             window.seciliGorseller = [reader.result];
-            window.isaretlemeyiAc('chat', 0);
+            setTimeout(() => window.isaretlemeyiAc('chat', 0), 250);
         };
         reader.readAsDataURL(p.file);
     }
