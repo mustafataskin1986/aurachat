@@ -12,26 +12,13 @@ import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
 import { loadContacts, initAdminPanel } from "./contacts.js";
 
-// CAPACITOR SPLASH SCREEN IMPORTO
-import { SplashScreen } from 'https://cdn.jsdelivr.net/npm/@capacitor/splash-screen@5.0.0/+esm'; 
-// NOT: Eğer projen npm / bundler kullanıyorsa üsttekini comment'leyip:
-// import { SplashScreen } from '@capacitor/splash-screen'; yapabilirsin.
-
 const sidebar = document.getElementById('sidebar');
 const chatArea = document.getElementById('chat-area');
 
 window.__aurachatReady = false;
 
 // Splash ekranını yumuşakça kapatan yardımcı fonksiyon
-async function hideNativeSplash() {
-    try {
-        if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-            await SplashScreen.hide({ fadeDuration: 250 });
-        }
-    } catch (e) {
-        // Web ortamındaysa veya plugin yoksa pas geç
-    }
-}
+async function hideNativeSplash() {}
 
 async function ensureUid(user) {
     if (user.uid) return user;
@@ -144,7 +131,7 @@ window.initApp = async function () {
     setCurrentUser(currentUser);
     initAdminPanel();
     startPresence();
-    await checkIncomingCallFast(currentUser.uid);
+    checkIncomingCallFast(currentUser.uid);
     await loadContacts();
 
     if (window.initPushForUser) {
