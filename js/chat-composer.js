@@ -371,6 +371,8 @@ export function setupComposer() {
             const img = document.createElement('img');
             img.src = p.url;
             img.alt = '';
+            img.style.cursor = 'pointer';
+            img.addEventListener('click', (e) => { e.stopPropagation(); editImage(i); });
             const x = document.createElement('button');
             x.type = 'button';
             x.textContent = '×';
@@ -390,6 +392,36 @@ export function setupComposer() {
         renderTray();
         notify();
     }
+
+    let editingIndex = -1;
+    function editImage(i) {
+        const p = pending[i];
+        if (!p || typeof window.isaretlemeyiAc !== 'function') return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            editingIndex = i;
+            window.seciliGorseller = [reader.result];
+            window.isaretlemeyiAc('chat', 0);
+        };
+        reader.readAsDataURL(p.file);
+    }
+
+    // Editörde "Düzenlemeyi bitir" denince dosya bunu çağırıyor
+    window.gorselOnizlemeRender = async function () {
+        const data = window.seciliGorseller && window.seciliGorseller[0];
+        const i = editingIndex;
+        editingIndex = -1;
+        if (!data || !pending[i]) return;
+        try {
+            const blob = await (await fetch(data)).blob();
+            const old = pending[i];
+            const file = new File([blob], old.file.name || 'edit.jpg', { type: 'image/jpeg' });
+            URL.revokeObjectURL(old.url);
+            pending[i] = { file: file, url: URL.createObjectURL(file) };
+            renderTray();
+            notify();
+        } catch (e) {}
+    };
 
     function addImages(files) {
         const room = MAX_IMAGES - pending.length;
