@@ -2119,7 +2119,7 @@ function ensureAttachMenu() {
     // min-h-[45vh] YOK: bu sınıf popup'ın JS'ten küçültülmesini CSS
     // seviyesinde engelliyordu (görsel olarak 45vh'nin altına asla
     // inmiyordu) - tüm önceki senkron sorunlarının asıl kaynağı buydu.
- el.className = 'hidden flex-shrink-0 pt-3 pb-6';
+ el.className = 'hidden flex-shrink-0 pt-3 pb-6 overflow-hidden';
 el.innerHTML = `
         <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5"></div>
         <div class="grid grid-cols-4 gap-x-3 px-3 pb-1">
@@ -2216,6 +2216,8 @@ function closeAttachMenuFromBack(instant) {
             attachMenuEl.style.transition = '';
             attachMenuEl.style.transform = '';
             attachMenuEl.style.height = '';
+            attachMenuEl.style.paddingTop = '';
+            attachMenuEl.style.paddingBottom = '';
         }
         if (composerWrap) {
             composerWrap.style.transition = '';
@@ -2227,8 +2229,10 @@ function closeAttachMenuFromBack(instant) {
         return;
     }
     // Aşağı doğru küçülerek kapanır, mesaj kutusu ve sohbet de aşağı iner
-    attachMenuEl.style.transition = 'height 0.22s ease-out';
+    attachMenuEl.style.transition = 'height 0.22s ease-out, padding 0.22s ease-out';
     attachMenuEl.style.height = '0px';
+    attachMenuEl.style.paddingTop = '0px';
+    attachMenuEl.style.paddingBottom = '0px';
     attachMenuCloseTimer = setTimeout(finish, 240);
 }
 
@@ -2296,10 +2300,14 @@ if (kbHeight > 100) window.__auraPopupH = kbHeight;
         // Klavye kapalı: menü aşağıdan büyür, mesaj kutusu ve sohbet yukarı itilir
         menu.style.transition = 'none';
         menu.style.height = '0px';
+        menu.style.paddingTop = '0px';
+        menu.style.paddingBottom = '0px';
         void menu.offsetHeight;
         requestAnimationFrame(() => {
-            menu.style.transition = 'height 0.22s ease-out';
+            menu.style.transition = 'height 0.22s ease-out, padding 0.22s ease-out';
             menu.style.height = attachMenuTargetHeight + 'px';
+            menu.style.paddingTop = '';
+            menu.style.paddingBottom = '';
             if (wasNearBottom) {
                 const t0 = performance.now();
                 const pin = () => {
