@@ -391,11 +391,20 @@
         img.src = dizi[index];
 
         document.getElementById('isaretlemeOverlay').classList.add('acik');
-        history.pushState({ isaretlemeAcik: true }, "");
+        if (window.isrtPushBack) {
+            window.isrtPushBack(isaretlemeyiKapat);
+            window.isrtBackPushed = true;
+        } else {
+            history.pushState({ isaretlemeAcik: true }, "");
+        }
     }
 
     window.isaretlemeyiKapatVeGeriAl = function() {
-        if (history.state && history.state.isaretlemeAcik) {
+    if (window.isrtBackPushed && window.isrtPopBack) {
+            window.isrtBackPushed = false;
+            window.isrtPopBack();
+            isaretlemeyiKapat();
+        } else if (history.state && history.state.isaretlemeAcik) {
             history.back();
         } else {
             isaretlemeyiKapat();
@@ -406,6 +415,8 @@
         const overlay = document.getElementById('isaretlemeOverlay');
         if (!overlay) return;
         overlay.classList.remove('acik');
+        window.isrtBackPushed = false;
+        if (window.isrtOnClose) window.isrtOnClose();
         document.querySelectorAll('.isrt-not-kutu').forEach(el => el.remove());
         isrtKirpIptal();
         window.isrtHedef = null;
