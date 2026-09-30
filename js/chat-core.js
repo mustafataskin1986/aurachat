@@ -3285,7 +3285,28 @@ if (attachBtn && imageInput) {
     attachBtn.addEventListener('click', () => {
         if (attachMenuOpen) closeAttachMenu(); else openAttachMenu();
     });
-    messageInput.addEventListener('focus', () => closeAttachMenu(true));
+    // Input'a dokununca popup, klavye gerçekten açılana kadar yerinde kalır; klavye gelince anında kalkar
+    messageInput.addEventListener('focus', () => {
+        if (!attachMenuOpen) return;
+        const vv = window.visualViewport;
+        if (!vv) { closeAttachMenu(true); return; }
+        let done = false;
+        let fallbackTimer = null;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            vv.removeEventListener('resize', onResize);
+            clearTimeout(fallbackTimer);
+            closeAttachMenu(true);
+        };
+        const onResize = () => {
+            const kb = window.__auraMaxVV - vv.height;
+            const need = window.__auraKbH ? window.__auraKbH - 30 : 100;
+            if (kb > need) finish();
+        };
+        vv.addEventListener('resize', onResize);
+        fallbackTimer = setTimeout(finish, 700);
+    });
     messageContainer.addEventListener('click', closeAttachMenu);
 
     // Seçilen resimler hemen gitmez: kutunun üstünde önizleme olarak bekler, gönder tuşuyla gider
