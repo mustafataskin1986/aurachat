@@ -3814,9 +3814,7 @@ function bindAudioPlayer(msgDiv, msgId, msg) {
     document.addEventListener('visibilitychange', () => {
         window.__auraIgnoreResizeUntil = Date.now() + 2000;
     });
-    window.addEventListener('focus', () => {
-        window.__auraIgnoreResizeUntil = Date.now() + 2000;
-    });
+    
 
     // Mesaja basılı tutulurken odak kaybolmaya çalışırsa hemen geri ver (klavye kapanıp açılmasın)
     let refocusing = false;
