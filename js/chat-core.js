@@ -2288,9 +2288,19 @@ if (kbHeight > 100) window.__auraPopupH = kbHeight;
         menu.style.transition = 'none';
         menu.style.height = '0px';
         void menu.offsetHeight;
-        menu.style.transition = 'height 0.22s ease-out';
-        menu.style.height = attachMenuTargetHeight + 'px';
-        setTimeout(() => { menu.style.transition = ''; if (wasNearBottom) scrollToBottom(); }, 240);
+        requestAnimationFrame(() => {
+            menu.style.transition = 'height 0.22s ease-out';
+            menu.style.height = attachMenuTargetHeight + 'px';
+            if (wasNearBottom) {
+                const t0 = performance.now();
+                const pin = () => {
+                    messageContainer.scrollTop = messageContainer.scrollHeight;
+                    if (performance.now() - t0 < 260) requestAnimationFrame(pin);
+                };
+                requestAnimationFrame(pin);
+            }
+        });
+        setTimeout(() => { menu.style.transition = ''; }, 260);
     } else {
         // Klavye açık: mesaj kutusu sabit, menü klavyenin yerine anında geçer
         menu.style.transition = '';
@@ -3286,6 +3296,7 @@ function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
 
 if (attachBtn && imageInput) {
     imageInput.multiple = true;
+ ensureAttachMenu(); // menüyü önceden hazırla, ilk açılış takılmasın
     // Düğmeye basınca mesaj kutusu odağı (klavye) kaybetmesin
     attachBtn.addEventListener('mousedown', (e) => e.preventDefault());
     attachBtn.addEventListener('click', () => {
