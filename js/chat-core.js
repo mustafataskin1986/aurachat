@@ -2210,6 +2210,14 @@ function closeAttachMenuFromBack() {
     attachMenuOpen = false;
 }
 
+// Ekran yüksekliğinin en büyük değerini takip et (klavyesiz tam yükseklik)
+window.__auraMaxVV = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+        if (window.visualViewport.height > window.__auraMaxVV) window.__auraMaxVV = window.visualViewport.height;
+    });
+}
+
 function openAttachMenu() {
     if (attachMenuOpen) return;
     const menu = ensureAttachMenu();
@@ -2217,15 +2225,17 @@ function openAttachMenu() {
 
     // Klavye kapanmadan ÖNCE ne kadar yer kapladığını ölç - popup'ı tam o
     // boşluk kadar açacağız.
+    const fullH = Math.max(window.__auraFullViewportHeight || 0, window.__auraMaxVV || 0, window.innerHeight);
     let kbHeight = 0;
-    if (hadFocus && window.visualViewport && window.__auraFullViewportHeight) {
-        kbHeight = window.__auraFullViewportHeight - window.visualViewport.height;
+    if (hadFocus && window.visualViewport && (fullH - window.visualViewport.height) > 100) {
+        // Popup, mesaj kutusunun şu anki tabanından ekranın altına kadar olan boşluğu doldurur
+        const rowBottom = messageInput.parentElement.getBoundingClientRect().bottom;
+        kbHeight = Math.round(fullH - rowBottom);
     }
 
     messageInput.blur();
 
     if (hadFocus) {
-        const fullH = window.__auraFullViewportHeight || window.innerHeight;
         document.body.style.height = fullH + 'px';
         document.body.style.top = '0px';
     }
