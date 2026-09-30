@@ -402,7 +402,28 @@ export function setupComposer() {
         reader.onload = () => {
             editingIndex = i;
             window.seciliGorseller = [reader.result];
-            window.isaretlemeyiAc('chat', 0);
+            if (document.activeElement !== ta) {
+                window.isaretlemeyiAc('chat', 0);
+                return;
+            }
+            // Klavye açık: kapat, ekran boyutu oturunca editörü aç (resim doğru boyutta çizilsin)
+            const vv = window.visualViewport;
+            let opened = false;
+            let settleTimer = null;
+            const openNow = () => {
+                if (opened) return;
+                opened = true;
+                clearTimeout(settleTimer);
+                if (vv) vv.removeEventListener('resize', onResize);
+                window.isaretlemeyiAc('chat', 0);
+            };
+            const onResize = () => {
+                clearTimeout(settleTimer);
+                settleTimer = setTimeout(openNow, 80);
+            };
+            if (vv) vv.addEventListener('resize', onResize);
+            ta.blur();
+            setTimeout(openNow, 400);
         };
         reader.readAsDataURL(p.file);
     }
