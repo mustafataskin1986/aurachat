@@ -1842,7 +1842,7 @@ if (isAlbum) {
         if (tooLong && !expandedMsgIds.has(msgId)) {
             let shown = textLines.slice(0, 14).join('\n');
             if (shown.length > 700) shown = shown.slice(0, 700);
-            bodyHtml = `<p class="break-words whitespace-pre-wrap">${escapeHtml(shown.trimEnd())}…</p><button type="button" data-read-more="${msgId}" class="block text-[13px] font-medium mt-1" style="color:var(--aura-btn,#22c55e)">Devamını okuyun</button>`;
+            bodyHtml = `<p class="break-words whitespace-pre-wrap">${escapeHtml(shown.trimEnd())}…</p><button type="button" data-read-more="${msgId}" class="inline-block text-[12.5px] font-medium mt-1.5 px-3 py-1 rounded-full text-white" style="background:rgba(0,0,0,0.28);">Devamını okuyun</button>`;
         } else {
             bodyHtml = `<p class="break-words whitespace-pre-wrap">${escapeHtml(fullText)}</p>`;
         }
