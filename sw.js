@@ -1,10 +1,17 @@
-const CACHE_NAME = 'aurachat-offline-v4';
+const CACHE_NAME = 'aurachat-offline-v5';
 const ASSETS_TO_CACHE = [
   './',
   './index.html'
 ];
 
-// 1. Kurulum (Install) Aşaması: Temel dosyaları önbelleğe al
+// true yaparsan yerel dosyalar eskisi gibi her açılışta önce ağdan gelir (test sırasında işe yarar).
+// false: önce cache'ten anında açılır, güncelleme arkadan iner ve bir SONRAKİ açılışta görünür.
+const ALWAYS_FRESH = false;
+
+// Bu sitelerdeki dosyalar cihazda tutulur (ilk çizimi bekletmesinler)
+const CDN_HOSTS = ['cdn.tailwindcss.com', 'cdnjs.cloudflare.com', 'cdn.jsdelivr.net'];
+
+// 1. Kurulum
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -14,7 +21,7 @@ self.addEventListener('install', (e) => {
   self.skipWaiting();
 });
 
-// 2. Etkinleştirme (Activate) Aşaması: Eski önbellekleri temizle
+// 2. Etkinleştirme: eski önbellekleri temizle
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -30,22 +37,42 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
-// 3. Yakalama (Fetch) Aşaması: Sadece kendi sitemizin dosyalarını cache'liyoruz.
-// Firestore, Firebase Auth, CDN'ler (Tailwind, FontAwesome) gibi dış/sık-değişen
-// istekler asla cache'e yazılmaz - depolamanın sınırsız şişmesini önler.
-self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
+// Önce cache'teki kopya hemen verilir, arkadan ağdan tazelenir
+function staleWhileRevalidate(e) {
+  const isNav = e.request.mode === 'navigate';
+  const key = isNav ? './index.html' : e.request;
+  const sameOrigin = new URL(e.request.url).origin === self.location.origin;
 
-  const url = new URL(e.request.url);
-  const isSameOrigin = url.origin === self.location.origin;
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(key);
+    const req = sameOrigin ? new Request(e.request, { cache: 'no-store' }) : e.request;
 
-  if (!isSameOrigin) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
+    const network = fetch(req).then((res) => {
+      if (res && (res.ok || res.type === 'opaque')) {
+        cache.put(key, res.clone());
+      }
+      return res;
+    }).catch(() => null);
 
+    if (cached) {
+      e.waitUntil(network);
+      return cached;
+    }
+
+    const res = await network;
+    if (res) return res;
+    if (isNav) {
+      const fallback = await cache.match('./index.html');
+      if (fallback) return fallback;
+    }
+    return Response.error();
+  })());
+}
+
+// Eski davranış: önce ağ, olmazsa cache
+function networkFirst(e) {
   const noCacheRequest = new Request(e.request, { cache: 'no-store' });
-
   e.respondWith(
     fetch(noCacheRequest)
       .then((response) => {
@@ -68,6 +95,24 @@ self.addEventListener('fetch', (e) => {
         });
       })
   );
+}
+
+// 3. Yakalama: Firestore, Firebase Auth gibi istekler asla karışmaz
+self.addEventListener('fetch', (e) => {
+  if (e.request.method !== 'GET') return;
+
+  const url = new URL(e.request.url);
+  const isSameOrigin = url.origin === self.location.origin;
+  const isCdn = CDN_HOSTS.includes(url.hostname);
+
+  if (!isSameOrigin && !isCdn) return;
+  if (isSameOrigin && url.pathname.startsWith('/api/')) return;
+
+  if (isSameOrigin && ALWAYS_FRESH) {
+    networkFirst(e);
+  } else {
+    staleWhileRevalidate(e);
+  }
 });
 
 // --- FIREBASE PUSH NOTIFICATION DİNLEYİCİSİ ---
