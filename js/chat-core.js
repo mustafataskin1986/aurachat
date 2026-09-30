@@ -1347,9 +1347,18 @@ if (selectionDeleteBtn) {
         const session = chatSessions.get(chatIdAtDeleteTime);
         if (session) {
             const removeLocally = ids.filter((x) => !everyoneDeletedIds.has(x));
-            session.olderMessagesPrepended = session.olderMessagesPrepended.filter(
-                (m) => !removeLocally.includes(m.id)
-            );
+            const markDeletedForMe = (list) => list.forEach((m) => {
+                if (!removeLocally.includes(m.id)) return;
+                const prev = Array.isArray(m.data.deletedFor) ? m.data.deletedFor : [];
+                if (!prev.includes(currentUser.uid)) m.data.deletedFor = prev.concat(currentUser.uid);
+            });
+            markDeletedForMe(session.olderMessagesPrepended);
+            markDeletedForMe(session.messages);
+            everyoneDeletedIds.forEach((x) => {
+                const e = session.messages.find((m) => m.id === x) || session.olderMessagesPrepended.find((m) => m.id === x);
+                if (e) Object.assign(e.data, { type: 'deleted', deleted: true, text: '', imageUrl: null, images: null, imagesCount: 0, lat: null, lng: null });
+            });
+            writeChatDiskCache(chatIdAtDeleteTime, session);
             session.messages = session.messages.filter((m) => !removeLocally.includes(m.id));
             everyoneDeletedIds.forEach((x) => {
                 const e = session.messages.find((m) => m.id === x) || session.olderMessagesPrepended.find((m) => m.id === x);
