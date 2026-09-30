@@ -693,7 +693,12 @@
             if (messageContainer) {
                 const isNearBottom = (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight) < 250;
                 if (isNearBottom) {
-                    messageContainer.scrollTop = messageContainer.scrollHeight;
+                    const pinStart = performance.now();
+                    const pinBottom = () => {
+                        messageContainer.scrollTop = messageContainer.scrollHeight;
+                        if (performance.now() - pinStart < 300) requestAnimationFrame(pinBottom);
+                    };
+                    pinBottom();
                 }
             }
         }
