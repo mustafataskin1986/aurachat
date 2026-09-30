@@ -2236,7 +2236,8 @@ function openAttachMenu() {
     const menu = ensureAttachMenu();
     clearTimeout(attachMenuCloseTimer);
     messageInput.parentElement.classList.add('menu-open');
-    const hadFocus = document.activeElement === messageInput;
+    const hadFocus = document.activeElement === messageInput ||
+        (!!window.visualViewport && (window.__auraMaxVV - window.visualViewport.height) > 100);
 
     // Klavye kapanmadan ÖNCE ne kadar yer kapladığını ölç - popup'ı tam o
     // boşluk kadar açacağız.
@@ -3273,6 +3274,8 @@ function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
 
 if (attachBtn && imageInput) {
     imageInput.multiple = true;
+    // Düğmeye basınca mesaj kutusu odağı (klavye) kaybetmesin
+    attachBtn.addEventListener('mousedown', (e) => e.preventDefault());
     attachBtn.addEventListener('click', () => {
         if (attachMenuOpen) closeAttachMenu(); else openAttachMenu();
     });
