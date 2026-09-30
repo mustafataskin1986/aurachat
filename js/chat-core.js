@@ -2244,6 +2244,11 @@ function openAttachMenu() {
 
     // Klavye kapanmadan ÖNCE ne kadar yer kapladığını ölç - popup'ı tam o
     // boşluk kadar açacağız.
+    if (hadFocus) {
+        // Klavye açıkken popup anında geçiyor, ekran yüksekliği yumuşatılmasın
+        document.body.style.transition = 'none';
+        setTimeout(() => { document.body.style.transition = ''; }, 900);
+    }
     const fullH = Math.max(window.__auraFullViewportHeight || 0, window.__auraMaxVV || 0, window.innerHeight);
     let kbHeight = 0;
     if (hadFocus && window.visualViewport && (fullH - window.visualViewport.height) > 100) {
@@ -3288,6 +3293,9 @@ if (attachBtn && imageInput) {
     // Input'a dokununca popup, klavye gerçekten açılana kadar yerinde kalır; klavye gelince anında kalkar
     messageInput.addEventListener('focus', () => {
         if (!attachMenuOpen) return;
+        // Popup'tan klavyeye geçerken de ekran yüksekliği yumuşatılmasın
+        document.body.style.transition = 'none';
+        setTimeout(() => { document.body.style.transition = ''; }, 900);
         const vv = window.visualViewport;
         if (!vv) { closeAttachMenu(true); return; }
         let done = false;
