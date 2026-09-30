@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
+<meta charset="UTF-8">
 <style id="aura-theme-css">
 html[data-aura-theme] #message-container > div > div.bg-\[\#005c4b\]{background-color:var(--aura-out) !important}
 #message-container > div > div.bg-\[\#202c33\]{background-color:#212121 !important}
@@ -96,7 +97,6 @@ try {
 </script>
 <script src="https://cdn.jsdelivr.net/npm/eruda" async onload="eruda.init()"></script>
     <base href="https://aurachat-amber.vercel.app">
-    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 
 <!-- Tailwind CSS - erken yüklensin diye en üstte -->
@@ -381,6 +381,7 @@ try {
                 </div>
 
                 <!-- KAYAR ORTA KISIM (Kişiler / Odalar Listesi) -->
+                <div id="contact-list" class="divide-y divide-gray-800/40"></div>
               <script>
                 try {
                     var auraListCache = JSON.parse(localStorage.getItem('aurachat_list_cache') || 'null');
