@@ -256,7 +256,6 @@ export async function loadContacts() {
         listCacheOk = !!(lc && lc.html && cu && lc.uid === cu.uid && contactList.dataset.cached === '1');
     } catch (e) {}
     if (!listCacheOk) renderSkeletonList();
-window.__auraMark && window.__auraMark('loadContacts basladi');
     const currentUser = getCurrentUser();
     if (!currentUser) return;
 
@@ -611,7 +610,6 @@ window.__auraMark && window.__auraMark('loadContacts basladi');
         sortContactList();
         prewarmTopChats();
         saveListCache();
-        window.__auraMark && window.__auraMark('gercek liste cizildi');
     }
 
     renderAllRef = renderAll;
@@ -767,7 +765,6 @@ window.__auraMark && window.__auraMark('loadContacts basladi');
             allUsersById.set(user.uid, user);
         });
         usersLoaded = true;
-        window.__auraMark && window.__auraMark('users verisi geldi (' + (snapshot.metadata.fromCache ? 'cihazdan' : 'sunucudan') + ')');
         renderAll();
     });
 
@@ -782,7 +779,6 @@ window.__auraMark && window.__auraMark('loadContacts basladi');
             }
         });
         chatsLoaded = true;
-        window.__auraMark && window.__auraMark('sohbetler geldi (' + (snapshot.metadata.fromCache ? 'cihazdan' : 'sunucudan') + ')');
         renderAll();
     });
 }
