@@ -18,7 +18,7 @@
         '#aura-splash{position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483646;background:#000;display:flex;align-items:center;justify-content:center;transition:opacity ' + FADE_MS + 'ms ease,transform ' + FADE_MS + 'ms ease}' +
         '#aura-splash.hide{opacity:0;transform:scale(1.04);pointer-events:none}' +
         '#aura-splash .glow{position:absolute;width:520px;height:520px;max-width:140vw;max-height:140vw;border-radius:50%;background:radial-gradient(circle,rgba(147,51,234,.35) 0%,rgba(219,39,119,.12) 45%,transparent 70%);animation:auraGlow 2.4s ease-in-out infinite}' +
-        '#aura-splash .box{position:relative;text-align:center;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}' +
+        '#aura-splash .box{position:absolute;left:0;right:0;top:50%;margin-top:-52px;text-align:center;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}' +
         '#aura-splash .ring{position:relative;width:104px;height:104px;margin:0 auto 22px}' +
         '#aura-splash .ring i{position:absolute;top:0;left:0;right:0;bottom:0;border-radius:50%;background:linear-gradient(-45deg,#4f46e5,#9333ea,#db2777,#06b6d4);background-size:300% 300%;animation:auraBg 6s ease infinite;opacity:.85}' +
         '#aura-splash .ring b{position:absolute;top:3px;left:3px;right:3px;bottom:3px;border-radius:50%;background:#000;display:flex;align-items:center;justify-content:center}' +
