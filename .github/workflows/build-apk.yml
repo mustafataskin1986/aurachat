@@ -592,7 +592,7 @@ jobs:
                       new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                           @Override
                           public void run() { hide(activity); }
-                      }, 8000);
+                      }, 100);
                   } catch (Throwable t) {}
               }
 
