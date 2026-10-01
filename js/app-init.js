@@ -17,8 +17,10 @@ const chatArea = document.getElementById('chat-area');
 
 window.__aurachatReady = false;
 
-// Splash ekranını yumuşakça kapatan yardımcı fonksiyon
-async function hideNativeSplash() {}
+// Splash ekranını yumuşakça kapatan yardımcı fonksiyon (js/splash.js tanımlar)
+async function hideNativeSplash() {
+    if (window.hideAuraSplash) window.hideAuraSplash();
+}
 
 async function ensureUid(user) {
     if (user.uid) return user;
@@ -119,7 +121,7 @@ async function checkIncomingCallFast(uid) {
 
 window.initApp = async function () {
     let currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
-    
+
     // Oturum kapalıysa (Giriş ekranı açılacaksa) doğrudan koyu Splash'i kaldır
     if (!currentUser) {
         await hideNativeSplash();
