@@ -56,7 +56,7 @@
         done = true;
         var wait = Math.max(0, MIN_MS - (Date.now() - start));
         setTimeout(function () {
-            try { if (window.AuraSplash) window.AuraSplash.hide(); } catch (e) {}
+            try { if (window.AuraSplash) { var h0 = document.getElementById('aura-splash'); if (h0) h0.style.display = 'none'; window.AuraSplash.hide(); } } catch (e) {}
             var s = document.getElementById('aura-splash');
             if (!s) return;
             s.classList.add('hide');
