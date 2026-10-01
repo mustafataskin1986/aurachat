@@ -545,7 +545,7 @@ jobs:
           add("AppTheme.NoActionBarLaunch", '<item name="android:windowBackground">@android:color/black</item>')
           if "Theme.SplashScreen" in s:
               add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenBackground">@android:color/black</item>')
-              add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenAnimatedIcon">@drawable/aura_transparent</item>')
+              add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenAnimatedIcon">@drawable/aura_splash_icon</item>')
           open(p, "w", encoding="utf-8").write(s)
           PY
           
@@ -695,7 +695,7 @@ jobs:
                       canvas.drawCircle(cx, cy, gr, glowP);
 
                       // Logo bloğu ekranın ortasında (çember + 22dp boşluk + yazı)
-                      float top = cy - 86.5f * d;
+                      float top = cy - 52f * d;
                       float ringCy = top + 52f * d;
 
                       ringP.setShader(new LinearGradient(cx - 52f * d, ringCy - 52f * d, cx + 52f * d, ringCy + 52f * d,
@@ -804,6 +804,74 @@ jobs:
           open(RES + "/mipmap-anydpi-v26/ic_launcher.xml", "w").write(adaptive)
           open(RES + "/mipmap-anydpi-v26/ic_launcher_round.xml", "w").write(adaptive)
           print("Ikonlar static/icons'tan uretildi, arka plan:", bg_hex)
+          PY
+
+      - name: Sistem Açılış Logosu Üret
+        run: |
+          pip install pillow --quiet
+          python3 - << 'PY'
+          import os
+          from PIL import Image, ImageDraw
+
+          S = 4
+          PX = 864
+          N = PX * S
+          d = 3 * S
+          cx = cy = N // 2
+
+          def grad(n, stops):
+              img = Image.new("RGBA", (n, n))
+              px = img.load()
+              k = len(stops) - 1
+              for y in range(n):
+                  for x in range(n):
+                      t = (x + y) / (2.0 * (n - 1))
+                      i = min(int(t * k), k - 1)
+                      f = t * k - i
+                      a, b = stops[i], stops[i + 1]
+                      px[x, y] = tuple(int(a[j] + (b[j] - a[j]) * f) for j in range(3)) + (255,)
+              return img
+
+          canvas = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+
+          # Dış çember (gradient, %85 opaklık)
+          rs = int(104 * d)
+          ring = grad(256, [(219, 39, 119), (147, 51, 234), (79, 70, 229)]).resize((rs, rs), Image.LANCZOS)
+          rmask = Image.new("L", (rs, rs), 0)
+          ImageDraw.Draw(rmask).ellipse((0, 0, rs - 1, rs - 1), fill=217)
+          canvas.paste(ring, (cx - rs // 2, cy - rs // 2), rmask)
+
+          # İç siyah daire
+          r = int(49 * d)
+          ImageDraw.Draw(canvas).ellipse((cx - r, cy - r, cx + r, cy + r), fill=(0, 0, 0, 255))
+
+          # Değnek ikonu
+          u = 42.0 * d / 24.0
+          left = cx - 21 * d
+          top = cy - 21 * d
+          segs = [(15, 4, 15, 2), (15, 16, 15, 14), (8, 9, 10, 9), (20, 9, 22, 9),
+                  (17.8, 11.8, 19, 13), (17.8, 6.2, 19, 5), (12.2, 6.2, 11, 5),
+                  (3, 21, 12, 12), (12.2, 11.8, 11, 13)]
+          wmask = Image.new("L", (N, N), 0)
+          wd = ImageDraw.Draw(wmask)
+          lw = 1.8 * u
+          for (x1, y1, x2, y2) in segs:
+              p1 = (left + x1 * u, top + y1 * u)
+              p2 = (left + x2 * u, top + y2 * u)
+              wd.line([p1, p2], fill=255, width=int(lw))
+              for (px_, py_) in (p1, p2):
+                  wd.ellipse((px_ - lw / 2, py_ - lw / 2, px_ + lw / 2, py_ + lw / 2), fill=255)
+          isz = int(42 * d)
+          ig = grad(256, [(192, 132, 252), (244, 114, 182), (56, 189, 248)]).resize((isz, isz), Image.LANCZOS)
+          gfull = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+          gfull.paste(ig, (int(left), int(top)))
+          canvas.paste(gfull, (0, 0), wmask)
+
+          out = canvas.resize((PX, PX), Image.LANCZOS)
+          p = "android/app/src/main/res/drawable-xxhdpi"
+          os.makedirs(p, exist_ok=True)
+          out.save(p + "/aura_splash_icon.png")
+          print("aura_splash_icon.png uretildi")
           PY
 
       - name: APK Derle (Gradle)
