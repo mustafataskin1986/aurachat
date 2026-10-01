@@ -97,97 +97,16 @@ try {
     });
 })();
 </script>
-<script>
-(function () {
-    var off = 0, hasNative = false, marks = [], seen = {}, hidden = false;
-    try {
-        if (window.AuraBoot && window.AuraBoot.ageMs) {
-            var a = Number(window.AuraBoot.ageMs());
-            if (a >= 0) { off = a - performance.now(); hasNative = true; }
-        }
-    } catch (e) {}
-    function at(t) { return Math.round(t + off); }
-    function mark(name, t) {
-        if (seen[name]) return;
-        seen[name] = 1;
-        marks.push([t === undefined ? performance.now() : t, name]);
-        draw();
-    }
-    window.__auraMark = function (n) { mark(n); };
-    function slowest() {
-        try {
-            return performance.getEntriesByType('resource')
-                .filter(function (r) { return /\.(js|css)(\?|$)/.test(r.name) || /tailwind|font-awesome|eruda/.test(r.name); })
-                .sort(function (a, b) { return b.responseEnd - a.responseEnd; })
-                .slice(0, 4)
-                .map(function (r) { return at(r.responseEnd) + '  ' + r.name.split('/').pop().split('?')[0].slice(0, 24); });
-        } catch (e) { return []; }
-    }
-    function draw() {
-        if (hidden) return;
-        try {
-            var el = document.getElementById('aura-boot-box');
-            if (!el) {
-                el = document.createElement('div');
-                el.id = 'aura-boot-box';
-                el.style.cssText = 'position:fixed;left:6px;bottom:70px;z-index:2147483646;background:rgba(0,0,0,.85);color:#7CFC9A;font:11px/1.35 monospace;padding:6px 8px;border-radius:8px;white-space:pre;max-width:94%;';
-                el.addEventListener('click', function () { hidden = true; el.remove(); });
-                document.documentElement.appendChild(el);
-            }
-            var lines = [hasNative ? 'ms (uygulama açılışından) - dokun: kapat' : 'ms (sayfa başlangıcından) - dokun: kapat'];
-            lines.push(at(0) + '  sayfa gezinmesi basladi');
-            marks.slice().sort(function (x, y) { return x[0] - y[0]; }).forEach(function (m) {
-                lines.push(at(m[0]) + '  ' + m[1]);
-            });
-            var s = slowest();
-            if (s.length) { lines.push('-- en gec biten dosyalar --'); lines = lines.concat(s); }
-            el.textContent = lines.join('\n');
-        } catch (e) {}
-    }
-    try {
-        new PerformanceObserver(function (l) {
-            l.getEntries().forEach(function (e) {
-                mark(e.name === 'first-paint' ? 'ilk boya' : 'ilk icerik boyasi', e.startTime);
-            });
-        }).observe({ type: 'paint', buffered: true });
-    } catch (e) {}
-    document.addEventListener('DOMContentLoaded', function () {
-        mark('DOMContentLoaded');
-        try {
-            var n = performance.getEntriesByType('navigation')[0];
-            if (n) mark('HTML ilk bayt geldi', n.responseStart);
-        } catch (e) {}
-    });
-    window.addEventListener('load', function () {
-        mark('load');
-        setTimeout(draw, 1500);
-    });
-})();
-</script>
 <script src="https://cdn.jsdelivr.net/npm/eruda" async onload="eruda.init()"></script>
     <base href="https://aurachat-amber.vercel.app">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 
 <!-- Tailwind CSS - erken yüklensin diye en üstte -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>window.__auraMark && window.__auraMark('tailwind script bitti');</script>
-    <script>
-    (function () {
-        var t = setInterval(function () {
-            var e = document.getElementById('app-title');
-            if (e && getComputedStyle(e).fontSize === '20px') {
-                clearInterval(t);
-                window.__auraMark && window.__auraMark('tailwind stilleri hazir');
-            }
-        }, 10);
-        setTimeout(function () { clearInterval(t); }, 8000);
-    })();
-    </script>
     <title>AuraChat</title>
     <link rel="manifest" href="/manifest.json">
     <!-- FontAwesome İkonları -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script>window.__auraMark && window.__auraMark('fontawesome css bitti');</script>
     <style>
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0b141a; }
@@ -472,7 +391,6 @@ try {
                         var auraListEl = document.getElementById('contact-list');
                         auraListEl.innerHTML = auraListCache.html;
                         auraListEl.dataset.cached = '1';
-                        window.__auraMark && window.__auraMark('cache liste eklendi');
                     }
                 } catch (e) {}
                 </script>
