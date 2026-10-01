@@ -646,6 +646,7 @@ jobs:
                       iconP.setStrokeJoin(Paint.Join.ROUND);
                       iconP.setStrokeWidth(1.8f);
                       textP.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+                      textP.setFakeBoldText(true);
                       textP.setTextSize(40f * d);
                       wand.moveTo(15f, 4f);     wand.lineTo(15f, 2f);
                       wand.moveTo(15f, 16f);    wand.lineTo(15f, 14f);
@@ -685,6 +686,12 @@ jobs:
                   protected void onDraw(Canvas canvas) {
                       float w = getWidth(), h = getHeight();
                       float cx = w / 2f, cy = h / 2f;
+                      try {
+                          int[] loc = new int[2];
+                          getLocationOnScreen(loc);
+                          int rootH = getRootView().getHeight();
+                          if (rootH > 0) cy = rootH / 2f - loc[1];
+                      } catch (Throwable t) {}
 
                       // Arka parıltı
                       float a = 0.6f + 0.4f * pulse;
@@ -839,7 +846,8 @@ jobs:
           ring = grad(256, [(219, 39, 119), (147, 51, 234), (79, 70, 229)]).resize((rs, rs), Image.LANCZOS)
           rmask = Image.new("L", (rs, rs), 0)
           ImageDraw.Draw(rmask).ellipse((0, 0, rs - 1, rs - 1), fill=217)
-          canvas.paste(ring, (cx - rs // 2, cy - rs // 2), rmask)
+          ring.putalpha(rmask)
+          canvas.alpha_composite(ring, (cx - rs // 2, cy - rs // 2))
 
           # İç siyah daire
           r = int(49 * d)
