@@ -7,9 +7,9 @@
     if (window.__auraSplashInit) return;
     window.__auraSplashInit = true;
 
-    var MIN_MS = 250;    // en az bu kadar görünsün
-    var MAX_MS = 6000;   // güvenlik: ne olursa olsun bu sürede kapan
-    var FADE_MS = 300;
+    var MIN_MS = 1000;    // en az bu kadar görünsün
+    var MAX_MS = 2000;   // güvenlik: ne olursa olsun bu sürede kapan
+    var FADE_MS = 500;
     var start = Date.now();
     var done = false;
 
