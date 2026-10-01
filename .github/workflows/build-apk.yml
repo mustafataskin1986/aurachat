@@ -304,6 +304,7 @@ jobs:
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+                  AuraSplash.show(this, this.bridge.getWebView());
                   WebSettings settings = this.bridge.getWebView().getSettings();
                 settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
@@ -548,6 +549,263 @@ jobs:
           open(p, "w", encoding="utf-8").write(s)
           PY
           
+      - name: AuraSplash.java - Uygulama açılır açılmaz native splash
+        run: |
+          MAIN_ACTIVITY=$(find android -name "MainActivity.java" | head -n 1)
+          if [ -n "$MAIN_ACTIVITY" ]; then
+            SPLASH_FILE="$(dirname "$MAIN_ACTIVITY")/AuraSplash.java"
+            cat > "$SPLASH_FILE" << 'EOF'
+          package com.aurachat.app;
+
+          import android.animation.ValueAnimator;
+          import android.app.Activity;
+          import android.content.Context;
+          import android.graphics.Canvas;
+          import android.graphics.Color;
+          import android.graphics.LinearGradient;
+          import android.graphics.Paint;
+          import android.graphics.Path;
+          import android.graphics.RadialGradient;
+          import android.graphics.Shader;
+          import android.graphics.Typeface;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebView;
+
+          // Uygulama açılır açılmaz (sayfa internetten inmeden) çizilen splash.
+          // JS tarafı (js/splash.js) window.AuraSplash.hide() çağırınca yumuşakça kapanır.
+          public class AuraSplash {
+              private static View overlay = null;
+              private static boolean hidden = false;
+
+              public static void show(final Activity activity, WebView webView) {
+                  try {
+                      hidden = false;
+                      overlay = new SplashView(activity);
+                      activity.addContentView(overlay, new ViewGroup.LayoutParams(
+                              ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                      if (webView != null) webView.addJavascriptInterface(new Bridge(activity), "AuraSplash");
+                      // Güvenlik: sayfa hiç yüklenmezse bile splash sonsuza kadar kalmasın
+                      new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                          @Override
+                          public void run() { hide(activity); }
+                      }, 8000);
+                  } catch (Throwable t) {}
+              }
+
+              public static void hide(final Activity activity) {
+                  activity.runOnUiThread(new Runnable() {
+                      @Override
+                      public void run() {
+                          if (hidden || overlay == null) return;
+                          hidden = true;
+                          final View v = overlay;
+                          overlay = null;
+                          v.animate().alpha(0f).setDuration(300).withEndAction(new Runnable() {
+                              @Override
+                              public void run() {
+                                  try {
+                                      ViewGroup p = (ViewGroup) v.getParent();
+                                      if (p != null) p.removeView(v);
+                                  } catch (Throwable t) {}
+                              }
+                          }).start();
+                      }
+                  });
+              }
+
+              public static class Bridge {
+                  private final Activity activity;
+                  public Bridge(Activity activity) { this.activity = activity; }
+                  @JavascriptInterface
+                  public void hide() { AuraSplash.hide(activity); }
+              }
+
+              static class SplashView extends View {
+                  private final float d;
+                  private final Paint glowP = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  private final Paint ringP = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  private final Paint innerP = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  private final Paint iconP = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  private final Paint textP = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  private final Path wand = new Path();
+                  private float pulse = 0f;
+                  private ValueAnimator anim;
+
+                  SplashView(Context c) {
+                      super(c);
+                      d = c.getResources().getDisplayMetrics().density;
+                      setBackgroundColor(Color.BLACK);
+                      setClickable(true);
+                      innerP.setColor(Color.BLACK);
+                      iconP.setStyle(Paint.Style.STROKE);
+                      iconP.setStrokeCap(Paint.Cap.ROUND);
+                      iconP.setStrokeJoin(Paint.Join.ROUND);
+                      iconP.setStrokeWidth(1.8f);
+                      textP.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+                      textP.setTextSize(40f * d);
+                      wand.moveTo(15f, 4f);     wand.lineTo(15f, 2f);
+                      wand.moveTo(15f, 16f);    wand.lineTo(15f, 14f);
+                      wand.moveTo(8f, 9f);      wand.lineTo(10f, 9f);
+                      wand.moveTo(20f, 9f);     wand.lineTo(22f, 9f);
+                      wand.moveTo(17.8f, 11.8f); wand.lineTo(19f, 13f);
+                      wand.moveTo(17.8f, 6.2f);  wand.lineTo(19f, 5f);
+                      wand.moveTo(12.2f, 6.2f);  wand.lineTo(11f, 5f);
+                      wand.moveTo(3f, 21f);     wand.lineTo(12f, 12f);
+                      wand.moveTo(12.2f, 11.8f); wand.lineTo(11f, 13f);
+                  }
+
+                  @Override
+                  protected void onAttachedToWindow() {
+                      super.onAttachedToWindow();
+                      anim = ValueAnimator.ofFloat(0f, 1f);
+                      anim.setDuration(1200);
+                      anim.setRepeatCount(ValueAnimator.INFINITE);
+                      anim.setRepeatMode(ValueAnimator.REVERSE);
+                      anim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                          @Override
+                          public void onAnimationUpdate(ValueAnimator a) {
+                              pulse = (Float) a.getAnimatedValue();
+                              invalidate();
+                          }
+                      });
+                      anim.start();
+                  }
+
+                  @Override
+                  protected void onDetachedFromWindow() {
+                      super.onDetachedFromWindow();
+                      if (anim != null) anim.cancel();
+                  }
+
+                  @Override
+                  protected void onDraw(Canvas canvas) {
+                      float w = getWidth(), h = getHeight();
+                      float cx = w / 2f, cy = h / 2f;
+
+                      // Arka parıltı
+                      float a = 0.6f + 0.4f * pulse;
+                      float gr = 368f * d * (1f + 0.08f * pulse);
+                      glowP.setShader(new RadialGradient(cx, cy, gr,
+                              new int[]{ Color.argb((int) (89 * a), 147, 51, 234), Color.argb((int) (31 * a), 219, 39, 119), Color.TRANSPARENT },
+                              new float[]{ 0f, 0.45f, 0.7f }, Shader.TileMode.CLAMP));
+                      canvas.drawCircle(cx, cy, gr, glowP);
+
+                      // Logo bloğu ekranın ortasında (çember + 22dp boşluk + yazı)
+                      float top = cy - 86.5f * d;
+                      float ringCy = top + 52f * d;
+
+                      ringP.setShader(new LinearGradient(cx - 52f * d, ringCy - 52f * d, cx + 52f * d, ringCy + 52f * d,
+                              new int[]{ 0xFFDB2777, 0xFF9333EA, 0xFF4F46E5 }, null, Shader.TileMode.CLAMP));
+                      ringP.setAlpha(217);
+                      canvas.drawCircle(cx, ringCy, 52f * d, ringP);
+                      canvas.drawCircle(cx, ringCy, 49f * d, innerP);
+
+                      // Sihirli değnek ikonu
+                      canvas.save();
+                      canvas.translate(cx - 21f * d, ringCy - 21f * d);
+                      float s = 42f * d / 24f;
+                      canvas.scale(s, s);
+                      iconP.setShader(new LinearGradient(0f, 0f, 24f, 24f,
+                              new int[]{ 0xFFC084FC, 0xFFF472B6, 0xFF38BDF8 }, null, Shader.TileMode.CLAMP));
+                      canvas.drawPath(wand, iconP);
+                      canvas.restore();
+
+                      // AuraChat yazısı
+                      float textTop = top + 126f * d;
+                      Paint.FontMetrics fm = textP.getFontMetrics();
+                      float baseline = textTop + 23.5f * d - (fm.ascent + fm.descent) / 2f;
+                      float wA = textP.measureText("Aura");
+                      float wC = textP.measureText("Chat");
+                      float x0 = cx - (wA + wC) / 2f;
+                      textP.setShader(null);
+                      textP.setColor(0xFFF3F4F6);
+                      canvas.drawText("Aura", x0, baseline, textP);
+                      textP.setShader(new LinearGradient(x0 + wA, 0f, x0 + wA + wC, 0f,
+                              new int[]{ 0xFFC084FC, 0xFFF472B6, 0xFF38BDF8 }, null, Shader.TileMode.CLAMP));
+                      canvas.drawText("Chat", x0 + wA, baseline, textP);
+                      textP.setShader(null);
+                  }
+              }
+          }
+          EOF
+            echo "AuraSplash.java yazıldı."
+          else
+            echo "UYARI: MainActivity.java bulunamadı, AuraSplash yazılamadı!"
+          fi
+
+      - name: Uygulama İkonunu PWA İkonlarından Üret
+        run: |
+          pip install pillow --quiet
+          python3 - << 'PY'
+          import os, glob
+          from PIL import Image, ImageDraw
+
+          RES = "android/app/src/main/res"
+          ICON = "static/icons/icon-512.png"
+          MASK = "static/icons/icon-maskable-512.png"
+
+          if not (os.path.exists(ICON) and os.path.exists(MASK)):
+              print("UYARI: static/icons icinde ikonlar bulunamadi, Capacitor ikonu kaliyor")
+              raise SystemExit(0)
+
+          icon = Image.open(ICON).convert("RGBA")
+          mask = Image.open(MASK).convert("RGBA")
+
+          # Adaptive ikonun arka plan rengi: maskable ikonun köşe pikseli
+          bg = mask.getpixel((4, 4))
+          if bg[3] < 255:
+              bg = (0, 0, 0, 255)
+          bg_hex = "#%02x%02x%02x" % (bg[0], bg[1], bg[2])
+
+          legacy = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
+          fg = {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}
+
+          def round_icon(img, size):
+              im = img.resize((size, size), Image.LANCZOS)
+              m = Image.new("L", (size * 4, size * 4), 0)
+              ImageDraw.Draw(m).ellipse((0, 0, size * 4 - 1, size * 4 - 1), fill=255)
+              m = m.resize((size, size), Image.LANCZOS)
+              out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+              out.paste(im, (0, 0), m)
+              return out
+
+          # Şablondaki eski webp ikonlar PNG ile çakışmasın
+          for f in glob.glob(RES + "/mipmap-*/ic_launcher*.webp"):
+              os.remove(f)
+
+          for dens, size in legacy.items():
+              p = "%s/mipmap-%s" % (RES, dens)
+              os.makedirs(p, exist_ok=True)
+              icon.resize((size, size), Image.LANCZOS).save(p + "/ic_launcher.png")
+              round_icon(icon, size).save(p + "/ic_launcher_round.png")
+
+          for dens, size in fg.items():
+              p = "%s/mipmap-%s" % (RES, dens)
+              os.makedirs(p, exist_ok=True)
+              canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+              inner = int(round(size * 0.8333))
+              canvas.paste(mask.resize((inner, inner), Image.LANCZOS), ((size - inner) // 2, (size - inner) // 2))
+              canvas.save(p + "/aura_icon_fg.png")
+
+          os.makedirs(RES + "/values", exist_ok=True)
+          open(RES + "/values/aura_icon_colors.xml", "w").write(
+              '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="aura_icon_bg">%s</color>\n</resources>\n' % bg_hex)
+
+          adaptive = ('<?xml version="1.0" encoding="utf-8"?>\n'
+                      '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                      '    <background android:drawable="@color/aura_icon_bg"/>\n'
+                      '    <foreground android:drawable="@mipmap/aura_icon_fg"/>\n'
+                      '</adaptive-icon>\n')
+          os.makedirs(RES + "/mipmap-anydpi-v26", exist_ok=True)
+          open(RES + "/mipmap-anydpi-v26/ic_launcher.xml", "w").write(adaptive)
+          open(RES + "/mipmap-anydpi-v26/ic_launcher_round.xml", "w").write(adaptive)
+          print("Ikonlar static/icons'tan uretildi, arka plan:", bg_hex)
+          PY
+
       - name: APK Derle (Gradle)
         run: |
           cd android
