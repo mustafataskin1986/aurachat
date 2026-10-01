@@ -170,10 +170,24 @@ try {
 
 <!-- Tailwind CSS - erken yüklensin diye en üstte -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>window.__auraMark && window.__auraMark('tailwind script bitti');</script>
+    <script>
+    (function () {
+        var t = setInterval(function () {
+            var e = document.getElementById('app-title');
+            if (e && getComputedStyle(e).fontSize === '20px') {
+                clearInterval(t);
+                window.__auraMark && window.__auraMark('tailwind stilleri hazir');
+            }
+        }, 10);
+        setTimeout(function () { clearInterval(t); }, 8000);
+    })();
+    </script>
     <title>AuraChat</title>
     <link rel="manifest" href="/manifest.json">
     <!-- FontAwesome İkonları -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>window.__auraMark && window.__auraMark('fontawesome css bitti');</script>
     <style>
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0b141a; }
@@ -458,6 +472,7 @@ try {
                         var auraListEl = document.getElementById('contact-list');
                         auraListEl.innerHTML = auraListCache.html;
                         auraListEl.dataset.cached = '1';
+                        window.__auraMark && window.__auraMark('cache liste eklendi');
                     }
                 } catch (e) {}
                 </script>
