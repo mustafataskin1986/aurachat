@@ -16,7 +16,6 @@ const sidebar = document.getElementById('sidebar');
 const chatArea = document.getElementById('chat-area');
 
 window.__aurachatReady = false;
-window.__auraMark && window.__auraMark('app-init modulleri yuklendi');
 
 // Splash ekranını yumuşakça kapatan yardımcı fonksiyon
 async function hideNativeSplash() {}
@@ -119,7 +118,6 @@ async function checkIncomingCallFast(uid) {
 }
 
 window.initApp = async function () {
-window.__auraMark && window.__auraMark('initApp basladi');
     let currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
     
     // Oturum kapalıysa (Giriş ekranı açılacaksa) doğrudan koyu Splash'i kaldır
@@ -135,7 +133,6 @@ window.__auraMark && window.__auraMark('initApp basladi');
     startPresence();
     checkIncomingCallFast(currentUser.uid);
     await loadContacts();
-window.__auraMark && window.__auraMark('loadContacts bitti');
     if (window.initPushForUser) {
         window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
     }
