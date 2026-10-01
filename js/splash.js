@@ -7,13 +7,14 @@
     if (window.__auraSplashInit) return;
     window.__auraSplashInit = true;
 
-    var MIN_MS = 700;    // en az bu kadar görünsün
+    var MIN_MS = 250;    // en az bu kadar görünsün
     var MAX_MS = 6000;   // güvenlik: ne olursa olsun bu sürede kapan
-    var FADE_MS = 450;
+    var FADE_MS = 300;
     var start = Date.now();
     var done = false;
 
     var css =
+        '#aura-splash,#aura-splash *{outline:none!important;border:0!important;box-shadow:none!important;-webkit-tap-highlight-color:transparent!important;-webkit-user-select:none;user-select:none;touch-action:none}' +
         '#aura-splash{position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483646;background:#000;display:flex;align-items:center;justify-content:center;transition:opacity ' + FADE_MS + 'ms ease,transform ' + FADE_MS + 'ms ease}' +
         '#aura-splash.hide{opacity:0;transform:scale(1.04);pointer-events:none}' +
         '#aura-splash .glow{position:absolute;width:520px;height:520px;max-width:140vw;max-height:140vw;border-radius:50%;background:radial-gradient(circle,rgba(147,51,234,.35) 0%,rgba(219,39,119,.12) 45%,transparent 70%);animation:auraGlow 2.4s ease-in-out infinite}' +
