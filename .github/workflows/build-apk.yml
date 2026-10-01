@@ -135,6 +135,13 @@ jobs:
           public class MainActivity extends BridgeActivity {
               // Uygulama ekranda mı? (AuraMessagingService, uygulama açıkken arama bildirimi göstermesin diye bakar)
               static volatile boolean inForeground = false;
+              public class BootBridge {
+                  @JavascriptInterface
+                  public long ageMs() {
+                      if (Build.VERSION.SDK_INT < 24) return -1;
+                      return android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime();
+                  }
+              }
 
               // JS, uygulamanın kendi "Gelen arama" ekranı açılınca telefonun arama bildirimini kapatır
               public class CallBridge {
@@ -311,6 +318,7 @@ jobs:
                   handleShareIntent(getIntent());
                   handleCallIntent(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new CallBridge(), "AuraCall");
+                  this.bridge.getWebView().addJavascriptInterface(new BootBridge(), "AuraBoot");
                   // Galeriye kaydedilen resimleri yeniden kurulumdan sonra da okuyabilmek için medya izni iste
                   String mediaPerm = Build.VERSION.SDK_INT >= 33
                       ? Manifest.permission.READ_MEDIA_IMAGES
