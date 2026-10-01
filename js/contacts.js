@@ -767,7 +767,7 @@ window.__auraMark && window.__auraMark('loadContacts basladi');
             allUsersById.set(user.uid, user);
         });
         usersLoaded = true;
-        window.__auraMark && window.__auraMark('users verisi geldi');
+        window.__auraMark && window.__auraMark('users verisi geldi (' + (snapshot.metadata.fromCache ? 'cihazdan' : 'sunucudan') + ')');
         renderAll();
     });
 
@@ -782,7 +782,7 @@ window.__auraMark && window.__auraMark('loadContacts basladi');
             }
         });
         chatsLoaded = true;
-        window.__auraMark && window.__auraMark('sohbetler geldi');
+        window.__auraMark && window.__auraMark('sohbetler geldi (' + (snapshot.metadata.fromCache ? 'cihazdan' : 'sunucudan') + ')');
         renderAll();
     });
 }
