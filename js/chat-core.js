@@ -193,8 +193,8 @@ export function getCurrentUser() {
 // atınca/kapatınca online:false yazılır. Uygulama zorla kapanırsa
 // online:true takılı kalır, o yüzden 2 dk'dan eski lastSeen çevrimdışı sayılır.
 // ------------------------------------------
-const PRESENCE_HEARTBEAT_MS = 30000;
-const PRESENCE_STALE_MS = 75000;
+const PRESENCE_HEARTBEAT_MS = 10000;
+const PRESENCE_STALE_MS = 25000;
 let presenceTimer = null;
 let unsubscribePresence = null;
 let otherPresence = null; // { online, lastSeenMs } - açık sohbetteki karşı taraf
@@ -702,29 +702,6 @@ export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
         return;
     }
     try {
-        const userDoc = await getDoc(doc(db, "users", receiverUid));
-        if (!userDoc.exists()) {
-            console.warn(`⚠️ sendPushToUser: '${receiverUid}' ID'li kullanıcı dokümanı bulunamadı.`);
-            return;
-        }
-
-        const userData = userDoc.data();
-
-     // Alıcı bu sohbeti GERÇEKTEN açık tutuyorsa bildirim atma. activeChatId
-        // uygulama aniden kapanınca Firestore'da takılı kalabiliyor, o yüzden
-        // alıcının presence kaydı da taze ve çevrimiçi olmalı.
-        if (userData?.activeChatId && extraData && extraData.chatId && userData.activeChatId === extraData.chatId) {
-            let receiverReallyHere = false;
-            try {
-                const presSnap = await getDoc(doc(db, "presence", receiverUid));
-                if (presSnap.exists()) {
-                    const p = presSnap.data();
-                    const ageMs = p.lastSeen ? Date.now() - p.lastSeen.toMillis() : Infinity;
-                    receiverReallyHere = !!p.online && ageMs < PRESENCE_STALE_MS;
-                }
-            } catch (e) {}
-            if (receiverReallyHere) return;
-        }
 
         // Sunucu kimliğimi (giriş jetonu) doğrular, alıcının bildirim jetonunu kendisi okur
         const idToken = await getAuth().currentUser.getIdToken();
@@ -2221,15 +2198,6 @@ el.addEventListener('touchcancel', () => {
             composerWrap.style.transition = 'height 0.15s ease-out';
             composerWrap.style.height = '0px';
         }
-    });
-
-    el.addEventListener('touchcancel', () => {
-        attachDragStartY = null;
-        el.style.transition = 'transform 0.15s ease-out';
-        el.style.transform = '';
-        const composerRow = messageInput.parentElement;
-        composerRow.style.transition = 'transform 0.15s ease-out';
-        composerRow.style.transform = `translateY(${attachComposerHeight}px)`;
     });
 
     attachMenuEl = el;
@@ -4057,7 +4025,8 @@ export async function leaveGroup(groupId) {
 
     const session = chatSessions.get(groupId);
     if (session) {
-        if (session.unsubscribeMessages) session.unsubscribeMessages();
+   if (session.unsubscribeMessages) session.unsubscribeMessages();
+        if (session.unsubscribeChatDoc) session.unsubscribeChatDoc();
         if (session.unsubscribeGroupDoc) session.unsubscribeGroupDoc();
         chatSessions.delete(groupId);
     }
