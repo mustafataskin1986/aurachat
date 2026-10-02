@@ -121,6 +121,24 @@ async function checkIncomingCallFast(uid) {
     } catch (e) {}
 }
 
+// Bildirimle soğuk açılış bilgisini native köprüden al. Sayfa ilk yüklenirken köprü henüz yoksa burada yakalanır.
+function readLaunchChatFromNative() {
+    if (window.pendingOpenChat) return;
+    try {
+        if (window.AuraLaunch && window.AuraLaunch.consume) {
+            const raw = window.AuraLaunch.consume();
+            if (raw) {
+                const lt = JSON.parse(raw);
+                if (lt && lt.uid) {
+                    window.pendingOpenChat = lt;
+                    window.__auraLaunchUid = lt.uid;
+                    window.__auraLaunchAt = Date.now();
+                }
+            }
+        }
+    } catch (e) {}
+}
+
 window.initApp = async function () {
     let currentUser = JSON.parse(localStorage.getItem('aurachat_user'));
 
@@ -141,7 +159,8 @@ window.initApp = async function () {
         window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
     }
 
-   if (window.pendingOpenChat) {
+readLaunchChatFromNative();
+    if (window.pendingOpenChat) {
         const pendingTarget = window.pendingOpenChat;
         window.pendingOpenChat = null;
         // Splash kapanmadan sohbet açılsın: liste hiç görünmesin
