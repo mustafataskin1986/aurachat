@@ -16,7 +16,7 @@
     }
 
     var MIN_MS = window.AuraSplash ? 0 : 1000;    // APK'da native zaten gösteriyor, ekstra bekleme yok
-    var MAX_MS = 2000;   // güvenlik: ne olursa olsun bu sürede kapan
+    var MAX_MS = 6000;   // güvenlik: ne olursa olsun bu sürede kapan
     var FADE_MS = 500;
     var start = Date.now();
     var done = false;
