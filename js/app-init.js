@@ -134,7 +134,7 @@ window.initApp = async function () {
     initAdminPanel();
     startPresence();
     checkIncomingCallFast(currentUser.uid);
-    await loadContacts();
+    try { await loadContacts(); } catch (e) {}
     if (window.initPushForUser) {
         window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
     }
