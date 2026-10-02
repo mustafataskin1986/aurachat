@@ -545,7 +545,7 @@ jobs:
           add("AppTheme.NoActionBarLaunch", '<item name="android:windowBackground">@android:color/black</item>')
           if "Theme.SplashScreen" in s:
               add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenBackground">@android:color/black</item>')
-              add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenAnimatedIcon">@drawable/aura_splash_icon</item>')
+              add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenAnimatedIcon">@drawable/aura_transparent</item>')
           open(p, "w", encoding="utf-8").write(s)
           PY
           
@@ -592,7 +592,7 @@ jobs:
                       new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                           @Override
                           public void run() { hide(activity); }
-                      }, 100);
+                      }, 8000);
                   } catch (Throwable t) {}
               }
 
