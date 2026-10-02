@@ -3,6 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <script src="/js/splash.js"></script>
+<script>
+(function () {
+    var done = false;
+    function handleTap(n) {
+        var d = n && n.notification ? n.notification.data : null;
+        if (!d || !d.otherUid) return;
+        var target = { uid: d.otherUid, name: d.otherName || 'Sohbet', avatar: d.otherAvatar || '' };
+        if (window.__aurachatReady && window.openChatFromNotification) window.openChatFromNotification(target);
+        else window.pendingOpenChat = target;
+    }
+    function tryRegister() {
+        if (done) return true;
+        var C = window.Capacitor;
+        var PN = C && C.Plugins ? C.Plugins.PushNotifications : null;
+        if (!PN) return false;
+        done = true;
+        PN.addListener('pushNotificationActionPerformed', handleTap);
+        return true;
+    }
+    if (!tryRegister()) {
+        var tries = 0;
+        var t = setInterval(function () { tries++; if (tryRegister() || tries > 40) clearInterval(t); }, 50);
+    }
+})();
+</script>
 <style id="aura-theme-css">
 html[data-aura-theme] #message-container > div > div.bg-\[\#005c4b\]{background-color:var(--aura-out) !important}
 #message-container > div > div.bg-\[\#202c33\]{background-color:#212121 !important}
@@ -686,25 +711,7 @@ try {
                     }
                 });
 
-                PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-                    const data = notification.notification ? notification.notification.data : null;
-                    if (data && data.otherUid) {
-                        const target = {
-                            uid: data.otherUid,
-                            name: data.otherName || 'Sohbet',
-                            avatar: data.otherAvatar || ''
-                        };
-                        // Uygulama zaten çalışıyorsa (sıcak açılış) direkt sohbete geç.
-                        // Henüz açılış sürecindeyse (soğuk açılış), app-init.js'in
-                        // listeyi göstermeye karar vermeden önce kontrol edeceği
-                        // bayrağa yaz - "önce liste sonra sohbet" sıçramasını önler.
-                        if (window.__aurachatReady && window.openChatFromNotification) {
-                            window.openChatFromNotification(target);
-                        } else {
-                            window.pendingOpenChat = target;
-                        }
-                    }
-                });
+                
 
             } catch (error) {
                 console.error('Capacitor Push yapılandırılırken hata:', error);
