@@ -4,10 +4,18 @@
 // Kapatmak için: window.hideAuraSplash()  (app-init.js çağırır)
 // ==========================================
 (function () {
-    if (window.__auraSplashInit) return;
+ if (window.__auraSplashInit) return;
     window.__auraSplashInit = true;
 
-    var MIN_MS = 1000;    // en az bu kadar görünsün
+    // APK içindeysek native splash zaten var: JS splash çizme, sadece hide'ı native'e ilet
+    if (window.AuraSplash) {
+        window.hideAuraSplash = function () {
+            try { window.AuraSplash.hide(); } catch (e) {}
+        };
+        return;
+    }
+
+    var MIN_MS = window.AuraSplash ? 0 : 1000;    // APK'da native zaten gösteriyor, ekstra bekleme yok
     var MAX_MS = 2000;   // güvenlik: ne olursa olsun bu sürede kapan
     var FADE_MS = 500;
     var start = Date.now();
