@@ -673,8 +673,7 @@ if (session.isGroup) {
     session.messages.forEach(({ id, data: msg }) => {
         const isMine = !!(currentUser.uid && msg.senderUid === currentUser.uid);
         if (!isMine && msg.read === false) {
-            updateDoc(doc(db, "chats", session.chatId, "messages", id), { read: true });
-            markedAny = true;
+            updateDoc(doc(db, "chats", session.chatId, "messages", id), { read: true }).catch(() => {});
         }
     });
 
