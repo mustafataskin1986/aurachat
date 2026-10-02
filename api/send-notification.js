@@ -116,6 +116,7 @@ export default async function handler(req, res) {
       ? {
           data: safeData,
           android: isCall ? { priority: 'high', ttl: 45000 } : { priority: 'high' },
+          webpush: { headers: { Urgency: 'high', TTL: '300' } },
           token: token,
         }
       : {
