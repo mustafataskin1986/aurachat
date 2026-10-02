@@ -6,7 +6,7 @@
 
 import { db } from "./firebase-init.js";
 import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { setCurrentUser, selectChat, startPresence } from "./chat-core.js";
+import { setCurrentUser, selectChat, startPresence, getCurrentChatId } from "./chat-core.js";
 import { watchCallForChat } from "./video-call.js";
 import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
@@ -168,7 +168,7 @@ readLaunchChatFromNative();
             window.openChatFromNotification(pendingTarget),
             new Promise((resolve) => setTimeout(resolve, 1500))
         ]);
-    } else {
+ } else if (!getCurrentChatId()) {
         sidebar.classList.remove('-translate-x-full');
         chatArea.classList.add('translate-x-full');
     }
