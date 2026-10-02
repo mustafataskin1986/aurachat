@@ -290,6 +290,24 @@ function stopWatchingPresence() {
     otherPresence = null;
 }
 
+// Açık sohbette kendi okunmamış sayacımı sıfırda tut: gönderen sayacı, ben mesajı okundu yaptıktan SONRA artırabiliyor
+let unsubscribeMyUnread = null;
+
+function stopWatchingMyUnread() {
+    if (unsubscribeMyUnread) { unsubscribeMyUnread(); unsubscribeMyUnread = null; }
+}
+
+function watchMyUnread(chatId) {
+    stopWatchingMyUnread();
+    if (!currentUser || !chatId || chatId === 'global') return;
+    unsubscribeMyUnread = onSnapshot(doc(db, "users", currentUser.uid, "chats", chatId), (snap) => {
+        if (currentChatId !== chatId || document.visibilityState !== 'visible') return;
+        if (snap.exists() && Number(snap.data().unreadCount || 0) > 0) {
+            updateDoc(snap.ref, { unreadCount: 0 }).catch(() => {});
+        }
+    }, () => {});
+}
+
 function watchOtherPresence(chatId, otherUid) {
     stopWatchingPresence();
     if (!otherUid) return;
@@ -1099,6 +1117,7 @@ composer.clearImages();
     currentOtherAvatar = otherAvatar;
     updateMyActiveChatId(chatId);
     watchOtherPresence(chatId, otherUid);
+    watchMyUnread(chatId);
     renderChatStatus();
 
     if (window.innerWidth < 1024) {
@@ -1148,6 +1167,7 @@ function doCloseChatView() {
     currentOtherUid = null;
     currentOtherAvatar = '';
     stopWatchingPresence();
+    stopWatchingMyUnread();
     messageContainer.innerHTML = '';
     messageElementsById.clear();
     exitSelectionMode();
