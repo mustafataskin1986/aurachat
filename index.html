@@ -9,6 +9,8 @@
     function handleTap(n) {
         var d = n && n.notification ? n.notification.data : null;
         if (!d || !d.otherUid) return;
+        // Soğuk açılışta bilgi zaten AuraLaunch'tan alındı, aynı sohbeti ikinci kez açma
+        if (window.__auraLaunchUid && window.__auraLaunchUid === d.otherUid && Date.now() - window.__auraLaunchAt < 10000) { window.__auraLaunchUid = null; return; }
         var target = { uid: d.otherUid, name: d.otherName || 'Sohbet', avatar: d.otherAvatar || '' };
         if (window.__aurachatReady && window.openChatFromNotification) window.openChatFromNotification(target);
         else window.pendingOpenChat = target;
@@ -22,6 +24,19 @@
         PN.addListener('pushNotificationActionPerformed', handleTap);
         return true;
     }
+try {
+        if (window.AuraLaunch && window.AuraLaunch.consume) {
+            var raw = window.AuraLaunch.consume();
+            if (raw) {
+                var lt = JSON.parse(raw);
+                if (lt && lt.uid) {
+                    window.pendingOpenChat = lt;
+                    window.__auraLaunchUid = lt.uid;
+                    window.__auraLaunchAt = Date.now();
+                }
+            }
+        }
+    } catch (e) {}
     if (!tryRegister()) {
         var tries = 0;
         var t = setInterval(function () { tries++; if (tryRegister() || tries > 40) clearInterval(t); }, 50);
