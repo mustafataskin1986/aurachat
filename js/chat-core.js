@@ -92,6 +92,7 @@ let currentOtherUid = null;
 let currentOtherAvatar = '';
 let currentIsGroup = false;
 let typingTimeout = null;
+let lastTypingWriteAt = 0;
 let sendPendingImages = async () => {};
 
 let selectionMode = false;
@@ -3240,9 +3241,12 @@ messageInput.addEventListener('keydown', (e) => {
 messageInput.addEventListener('input', () => {
 if (!currentChatId || currentChatId === 'global' || !currentUser) return;
 
-    setDoc(doc(db, "chats", currentChatId), {
-        [`typing_${currentUser.uid}`]: true
-    }, { merge: true });
+    if (Date.now() - lastTypingWriteAt > 1500) {
+        lastTypingWriteAt = Date.now();
+        setDoc(doc(db, "chats", currentChatId), {
+            [`typing_${currentUser.uid}`]: true
+        }, { merge: true });
+    }
 
     if (typingTimeout) clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => {
