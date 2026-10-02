@@ -45,10 +45,12 @@ async function ensureUid(user) {
 window.openChatFromNotification = async function (otherUser) {
     if (!otherUser || !otherUser.uid) return;
 
+    const um0 = window.__aurachatUsers;
+    const isKnownPerson = !!(um0 && Array.from(um0.values()).some((u) => u.uid === otherUser.uid));
     try {
-        const groupSnap = await getDoc(doc(db, "groups", otherUser.uid));
-        if (groupSnap.exists()) {
-            selectChat({ isGroup: true, groupId: groupSnap.id, name: groupSnap.data().name || 'Grup' });
+        const groupSnap = isKnownPerson ? null : await getDoc(doc(db, "groups", otherUser.uid));
+        if (groupSnap && groupSnap.exists()) {
+            await selectChat({ isGroup: true, groupId: groupSnap.id, name: groupSnap.data().name || 'Grup' });
             return;
         }
     } catch (e) {}
@@ -68,7 +70,7 @@ window.openChatFromNotification = async function (otherUser) {
         }
     } catch (e) {}
 
-    selectChat(target);
+    await selectChat(target);
 };
 
 // PWA - uygulama zaten açıkken sw.js'ten gelen "bildirime tıklandı" mesajı
@@ -139,9 +141,14 @@ window.initApp = async function () {
         window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
     }
 
-    if (window.pendingOpenChat) {
-        window.openChatFromNotification(window.pendingOpenChat);
+   if (window.pendingOpenChat) {
+        const pendingTarget = window.pendingOpenChat;
         window.pendingOpenChat = null;
+        // Splash kapanmadan sohbet açılsın: liste hiç görünmesin
+        await Promise.race([
+            window.openChatFromNotification(pendingTarget),
+            new Promise((resolve) => setTimeout(resolve, 1500))
+        ]);
     } else {
         sidebar.classList.remove('-translate-x-full');
         chatArea.classList.add('translate-x-full');
