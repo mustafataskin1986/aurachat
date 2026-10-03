@@ -6,7 +6,7 @@
 
 import { db } from "./firebase-init.js";
 import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { setCurrentUser, selectChat, startPresence, getCurrentChatId } from "./chat-core.js";
+import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showToast } from "./chat-core.js";
 import { watchCallForChat } from "./video-call.js";
 import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
@@ -165,6 +165,13 @@ window.initApp = async function () {
     }
 
 readLaunchChatFromNative();
+    // GEÇİCİ TEŞHİS: bildirimden açılışta köprü bilgisi geldi mi? (sorun çözülünce silinecek)
+    try {
+        if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+            const dbgHasBridge = !!(window.AuraLaunch && window.AuraLaunch.consume);
+            showToast('Köprü: ' + (dbgHasBridge ? 'var' : 'YOK') + ' | Bildirim bilgisi: ' + (window.pendingOpenChat ? 'VAR' : 'yok'), 7000);
+        }
+    } catch (e) {}
     if (window.pendingOpenChat) {
         const pendingTarget = window.pendingOpenChat;
         window.pendingOpenChat = null;
