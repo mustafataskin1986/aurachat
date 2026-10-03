@@ -192,6 +192,23 @@ jobs:
               private volatile boolean shareBusy = false;
               private volatile String launchChatJson = "";
 
+            // JS, sohbet temasının rengini bildirir; seçim tutamakları bu renge boyanır
+              public class ThemeBridge {
+                  @JavascriptInterface
+                  public void setAccent(final String hex) {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  String h = hex == null ? "" : hex.replace("#", "").toLowerCase();
+                                  int id = getResources().getIdentifier("AuraAccent_" + h, "style", getPackageName());
+                                  if (id != 0) getTheme().applyStyle(id, true);
+                              } catch (Throwable t) {}
+                          }
+                      });
+                  }
+              }
+
               // Uygulama bildirime tıklanarak soğuk açıldıysa sohbet bilgisini JS'e HEMEN verir (bir kez)
               public class LaunchBridge {
                   @JavascriptInterface
@@ -374,6 +391,7 @@ jobs:
                   captureLaunchChat(getIntent());
                   addPendingCount(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new LaunchBridge(), "AuraLaunch");
+                  this.bridge.getWebView().addJavascriptInterface(new ThemeBridge(), "AuraTheme");
                   
                   // Galeriye kaydedilen resimleri yeniden kurulumdan sonra da okuyabilmek için medya izni iste
                   String mediaPerm = Build.VERSION.SDK_INT >= 33
@@ -644,6 +662,21 @@ jobs:
           open(p, "w", encoding="utf-8").write(s)
           PY
           
+      - name: Seçim Tutamaçları Renk Paleti (sohbet temasına göre)
+        run: |
+          python3 - << 'PY'
+          colors = ["22c55e", "059669", "005c4b", "1f6f5c", "1d5fa8", "1f7a4d", "118a9a", "b5483a", "6d3fc0", "c2347f", "a3283d", "8a5a3a", "4b6a8a"]
+          out = ['<?xml version="1.0" encoding="utf-8"?>', '<resources>']
+          for c in colors:
+              out.append('    <style name="AuraAccent_%s">' % c)
+              for n in ("colorAccent", "colorControlActivated", "android:colorAccent", "android:colorControlActivated"):
+                  out.append('        <item name="%s">#%s</item>' % (n, c))
+              out.append('    </style>')
+          out.append('</resources>')
+          open("android/app/src/main/res/values/aura_accent.xml", "w", encoding="utf-8").write("\n".join(out) + "\n")
+          print("AuraAccent paleti yazildi")
+          PY
+
       - name: AuraSplash.java - Uygulama açılır açılmaz native splash
         run: |
           MAIN_ACTIVITY=$(find android -name "MainActivity.java" | head -n 1)
