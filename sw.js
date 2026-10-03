@@ -151,7 +151,8 @@ self.addEventListener('notificationclick', (event) => {
                 const params = new URLSearchParams({
                     openChat: data.otherUid,
                     otherName: data.otherName || '',
-                    otherAvatar: data.otherAvatar || ''
+                    otherAvatar: data.otherAvatar || '',
+                    chatId: data.chatId || ''
                 });
                 return clients.openWindow(`./?${params.toString()}`);
             } else if (clients.openWindow) {
