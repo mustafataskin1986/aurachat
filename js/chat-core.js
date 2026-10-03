@@ -1180,6 +1180,27 @@ if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.
     }
 }
  
+// Bildirimden açılışta: yeni mesaj sunucudan gelene kadar bildirimin içindeki metni geçici balon olarak göster.
+// Gerçek mesaj gelince liste yeniden çizildiği için balon kendiliğinden gerçeğiyle değişir (çift görünmez).
+export function showTempIncomingBubble(chatId, msgId, text, timeMs) {
+    if (!chatId || !msgId || !text || currentChatId !== chatId || currentIsGroup) return;
+    if (messageElementsById.has(msgId)) return;
+    const session = chatSessions.get(chatId);
+    if (session && (session.messages.some((m) => m.id === msgId) || session.olderMessagesPrepended.some((m) => m.id === msgId))) return;
+    try {
+        const fake = {
+            type: 'text',
+            text: text,
+            senderUid: currentOtherUid || 'other',
+            senderName: currentChatName || '',
+            createdAt: Timestamp.fromMillis(timeMs || Date.now()),
+            read: false
+        };
+        messageContainer.appendChild(buildMessageElement(fake, false, msgId));
+        scrollToBottom();
+    } catch (e) {}
+}
+
 function doCloseChatView() {
     // Sohbet kapanırken "yazıyor..." durumunu Firebase'de temizle
     if (currentUser && currentChatId && currentChatId !== 'global') {
@@ -3252,7 +3273,8 @@ async function sendMessage() {
             sendPushToUser(currentOtherUid, `${currentUser.name}`, text, {
                 chatId: currentChatId,
                 otherUid: currentUser.uid,
-                otherName: currentUser.name
+                otherName: currentUser.name,
+                msgType: 'text'
             });
         }
 
