@@ -45,6 +45,11 @@ async function ensureUid(user) {
 window.openChatFromNotification = async function (otherUser) {
     if (!otherUser || !otherUser.uid) return;
 
+    if (window.__aurachatGroupIds && window.__aurachatGroupIds.has(otherUser.uid)) {
+        await selectChat({ isGroup: true, groupId: otherUser.uid, name: otherUser.name || 'Grup' });
+        return;
+    }
+
     const um0 = window.__aurachatUsers;
     const isKnownPerson = !!(um0 && Array.from(um0.values()).some((u) => u.uid === otherUser.uid));
     try {
