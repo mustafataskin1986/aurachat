@@ -109,6 +109,7 @@ function senderColor(msg) {
 }
 let recentOpenScrollLock = false;
 let unreadDivider = null; // { chatId, msgId, count }
+let tempIncoming = null; // bildirimden çizilen geçici balon: { chatId, msgId, at }
 
 // Son eklenen mesajın kimliğini tutar: bildirime mesaja özel tag vermek için
 let lastAddedMsg = null;
@@ -295,6 +296,21 @@ let unsubscribeMyUnread = null;
 
 function stopWatchingMyUnread() {
     if (unsubscribeMyUnread) { unsubscribeMyUnread(); unsubscribeMyUnread = null; }
+}
+
+// Sohbet açılınca o sohbetin bildirim çubuğundaki mesaj bildirimlerini temizle (WhatsApp gibi)
+function clearDeliveredNotificationsForChat(chatId, chatName) {
+    try {
+        const PN = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+        if (!PN || !PN.getDeliveredNotifications || !PN.removeDeliveredNotifications) return;
+        PN.getDeliveredNotifications().then((res) => {
+            const list = ((res && res.notifications) || []).filter((n) => {
+                const d = n.data || {};
+                return String(n.tag || '').indexOf('msg-') === 0 && (d.chatId === chatId || n.title === chatName);
+            });
+            if (list.length) PN.removeDeliveredNotifications({ notifications: list }).catch(() => {});
+        }).catch(() => {});
+    } catch (e) {}
 }
 
 function watchMyUnread(chatId) {
@@ -518,7 +534,7 @@ async function buildChatSession(chatId, otherUid) {
         scrollToUnreadOrBottom();
     }
 
-    if (chatId !== 'global' && currentUser && session.clearedAt === null) {
+ if (chatId !== 'global' && currentUser && session.clearedAt === null && !(diskCache && diskCache.messages.length)) {
         try {
             let mySummarySnap;
             try {
@@ -536,6 +552,13 @@ async function buildChatSession(chatId, otherUid) {
     }
 
     if (!chatSessions.has(chatId)) return session;
+
+    // Diskte mesaj varsa "sohbet silindi mi" kontrolü arkada yapılır, sohbetin açılmasını bekletmez
+    if (chatId !== 'global' && currentUser && session.clearedAt === null && diskCache && diskCache.messages.length) {
+        getDoc(doc(db, "users", currentUser.uid, "chats", chatId)).then((s) => {
+            if (s.exists() && s.data().clearedAt) session.clearedAt = s.data().clearedAt;
+        }).catch(() => {});
+    }
 
     const isIncremental = session.messages.length > 0;
     const lastCachedAt = isIncremental ? session.messages[session.messages.length - 1].data.createdAt : null;
@@ -595,10 +618,20 @@ async function buildChatSession(chatId, otherUid) {
 
     if (currentChatId === chatId) {
             // Sohbet yeni açıldıysa ve ilk veride okunmamış mesaj geldiyse çizgiyi şimdi kur
-            if (recentOpenScrollLock && (!unreadDivider || unreadDivider.chatId !== chatId)) {
+         const openedRecently = Date.now() - (session.openedAt || 0) < 6000;
+            let dividerRebuilt = false;
+          if (tempIncoming && tempIncoming.chatId === chatId) {
+                // Bildirimden geçici balon çizildiyse: gerçek mesaj gelene kadar bekle, sonra çizgiyi gerçek sayıyla yeniden kur
+                const tempArrived = session.messages.some((m) => m.id === tempIncoming.msgId);
+               if (!tempArrived && Date.now() - tempIncoming.at < 4000) return;
                 unreadDivider = findUnreadDivider(session);
+                tempIncoming = null;
+                dividerRebuilt = true;
+            } else if ((recentOpenScrollLock || openedRecently) && (!unreadDivider || unreadDivider.chatId !== chatId)) {
+                unreadDivider = findUnreadDivider(session);
+                dividerRebuilt = !!unreadDivider;
             }
-            const keepPosition = !!(unreadDivider && unreadDivider.chatId === chatId) && !isNearBottom();
+            const keepPosition = !dividerRebuilt && !!(unreadDivider && unreadDivider.chatId === chatId) && !isNearBottom();
             const prevScrollTop = messageContainer.scrollTop;
 
             renderSession(session);
@@ -606,7 +639,7 @@ async function buildChatSession(chatId, otherUid) {
 
             if (keepPosition) {
                 messageContainer.scrollTop = prevScrollTop;
-            } else if (unreadDivider && unreadDivider.chatId === chatId && recentOpenScrollLock) {
+          } else if (dividerRebuilt || (unreadDivider && unreadDivider.chatId === chatId && recentOpenScrollLock)) {
                 scrollToUnreadOrBottom();
             } else {
                 scrollToBottom();
@@ -721,6 +754,7 @@ if (session.isGroup) {
         const isMine = !!(currentUser.uid && msg.senderUid === currentUser.uid);
         if (!isMine && msg.read === false) {
             updateDoc(doc(db, "chats", session.chatId, "messages", id), { read: true }).catch(() => {});
+            markedAny = true;
         }
     });
 
@@ -1147,6 +1181,7 @@ composer.clearImages();
     updateMyActiveChatId(chatId);
     watchOtherPresence(chatId, otherUid);
     watchMyUnread(chatId);
+    clearDeliveredNotificationsForChat(chatId, chatName);
     renderChatStatus();
 
     if (window.innerWidth < 1024) {
@@ -1169,6 +1204,7 @@ if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.
     scrollToUnreadOrBottom();
 
     recentOpenScrollLock = true;
+    session.openedAt = Date.now();
     setTimeout(() => { recentOpenScrollLock = false; }, 1500);
 
   if (!currentIsGroup) {
@@ -1182,7 +1218,7 @@ if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.
  
 // Bildirimden açılışta: yeni mesaj sunucudan gelene kadar bildirimin içindeki metni geçici balon olarak göster.
 // Gerçek mesaj gelince liste yeniden çizildiği için balon kendiliğinden gerçeğiyle değişir (çift görünmez).
-export function showTempIncomingBubble(chatId, msgId, text, timeMs) {
+export function showTempIncomingBubble(chatId, msgId, text, timeMs, withDivider) {
     if (!chatId || !msgId || !text || currentChatId !== chatId || currentIsGroup) return;
     if (messageElementsById.has(msgId)) return;
     const session = chatSessions.get(chatId);
@@ -1197,7 +1233,8 @@ export function showTempIncomingBubble(chatId, msgId, text, timeMs) {
             read: false
         };
         // Okunmamış çizgisi de geçici balonla birlikte hemen çıksın (gerçek mesaj gelince aynı yerde kalır)
-        if (!unreadDivider || unreadDivider.chatId !== chatId) {
+       tempIncoming = { chatId: chatId, msgId: msgId, at: Date.now() };
+        if (withDivider && (!unreadDivider || unreadDivider.chatId !== chatId)) {
             unreadDivider = { chatId: chatId, msgId: msgId, count: 1 };
             messageContainer.appendChild(buildUnreadDividerElement(1));
         }
@@ -1216,6 +1253,7 @@ function doCloseChatView() {
     cancelReply();
     expandedMsgIds.clear();
     unreadDivider = null;
+    tempIncoming = null;
     updateMyActiveChatId(null);
     currentChatId = null;
     currentChatName = '';
