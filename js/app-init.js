@@ -138,6 +138,8 @@ function readLaunchChatFromNative() {
                     window.pendingOpenChat = lt;
                     window.__auraLaunchUid = lt.uid;
                     window.__auraLaunchAt = Date.now();
+                    document.documentElement.setAttribute('data-aura-launch', '1');
+                    setTimeout(() => document.documentElement.removeAttribute('data-aura-launch'), 8000);
                 }
             }
         }
@@ -165,20 +167,15 @@ window.initApp = async function () {
     }
 
 readLaunchChatFromNative();
-    // GEÇİCİ TEŞHİS: bildirimden açılışta köprü bilgisi geldi mi? (sorun çözülünce silinecek)
-    try {
-        if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
-            const dbgHasBridge = !!(window.AuraLaunch && window.AuraLaunch.consume);
-            showToast('Köprü: ' + (dbgHasBridge ? 'var' : 'YOK') + ' | Bildirim bilgisi: ' + (window.pendingOpenChat ? 'VAR' : 'yok'), 7000);
-        }
-    } catch (e) {}
     if (window.pendingOpenChat) {
         const pendingTarget = window.pendingOpenChat;
         window.pendingOpenChat = null;
         // Splash kapanmadan sohbet açılsın: liste hiç görünmesin
         await Promise.race([
-            window.openChatFromNotification(pendingTarget),
-            new Promise((resolve) => setTimeout(resolve, 1500))
+            window.openChatFromNotification(pendingTarget).catch(() => {}),
+            new Promise((resolve) => setTimeout(resolve, 4000))
+        ]);
+        document.documentElement.removeAttribute('data-aura-launch');
         ]);
  } else if (!getCurrentChatId()) {
         sidebar.classList.remove('-translate-x-full');
