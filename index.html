@@ -33,6 +33,8 @@ try {
                     window.pendingOpenChat = lt;
                     window.__auraLaunchUid = lt.uid;
                     window.__auraLaunchAt = Date.now();
+                    document.documentElement.setAttribute('data-aura-launch', '1');
+                    setTimeout(function () { document.documentElement.removeAttribute('data-aura-launch'); }, 8000);
                 }
             }
         }
@@ -74,6 +76,7 @@ html[data-aura-black]{--aura-composer-bg:#000}
 html[data-aura-black] #chat-scroll-wrapper div:has(> #search-contact){background-color:#202c33 !important}
 html[data-aura-black],html[data-aura-black] body{background:#000 !important}
 html[data-aura-admin] #app-title{color:#fbbf24 !important}
+html[data-aura-launch] #sidebar{visibility:hidden !important}
 #chat-scroll-wrapper{scrollbar-width:none;-ms-overflow-style:none}
 #chat-scroll-wrapper::-webkit-scrollbar{display:none;width:0;height:0}
 #chat-area{isolation:isolate}
