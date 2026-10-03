@@ -13,12 +13,53 @@
 const backStack = [];
 let ignoreNextPopstate = false;
 
+// Chrome'un "geçmiş manipülasyonu koruması": kullanıcı sayfaya hiç dokunmadan
+// (örn. bildirimden açılış) sahte geçmiş kaydı eklenirse, PWA'da sistem geri tuşu
+// o kaydı ATLAYIP uygulamadan çıkıyor. O yüzden PWA'da ilk dokunuşa kadar kayıt
+// eklemeyi erteliyoruz. APK'da geri tuşu JS ile history.back() çağırdığı için
+// bu koruma etkilemiyor, orada kaydı hemen ekliyoruz.
+const isNativeApp = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+let pendingHistoryPushes = 0;
+let gestureListenersOn = false;
+const GESTURE_EVENTS = ['pointerup', 'touchend', 'click', 'keydown'];
+
+function userHasInteracted() {
+    if (isNativeApp) return true;
+    const ua = navigator.userActivation;
+    return !ua || ua.hasBeenActive;
+}
+
+function flushPendingPushes() {
+    while (pendingHistoryPushes > 0) {
+        pendingHistoryPushes--;
+        history.pushState({ auraBack: backStack.length }, '');
+    }
+}
+
+function onFirstGesture() {
+    GESTURE_EVENTS.forEach((t) => window.removeEventListener(t, onFirstGesture, true));
+    gestureListenersOn = false;
+    flushPendingPushes();
+}
+
+function waitForGesture() {
+    if (gestureListenersOn) return;
+    gestureListenersOn = true;
+    GESTURE_EVENTS.forEach((t) => window.addEventListener(t, onFirstGesture, true));
+}
+
 // Bir görünüm/panel açıldığında çağrılır.
 // closeFn: geri tuşuna basılınca çalışacak, SADECE arayüzü kapatan
 // fonksiyon (history'ye dokunmamalı).
 export function pushBackState(closeFn) {
     backStack.push(closeFn);
-    history.pushState({ auraBack: backStack.length }, '');
+    if (userHasInteracted()) {
+        if (pendingHistoryPushes > 0) flushPendingPushes(); // sıra bozulmasın
+        history.pushState({ auraBack: backStack.length }, '');
+    } else {
+        pendingHistoryPushes++;
+        waitForGesture();
+    }
 }
 
 // Görünüm kullanıcı arayüzünden (X butonu, dışına tıklama, uygulama
@@ -27,6 +68,11 @@ export function pushBackState(closeFn) {
 export function popBackState() {
     if (backStack.length === 0) return;
     backStack.pop();
+    if (pendingHistoryPushes > 0) {
+        // Bu kayıt için henüz gerçek geçmiş girişi eklenmemişti
+        pendingHistoryPushes--;
+        return;
+    }
     ignoreNextPopstate = true;
     history.back();
 }
