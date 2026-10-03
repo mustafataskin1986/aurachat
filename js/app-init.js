@@ -6,7 +6,7 @@
 
 import { db } from "./firebase-init.js";
 import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showToast } from "./chat-core.js";
+import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showToast, showTempIncomingBubble } from "./chat-core.js";
 import { watchCallForChat } from "./video-call.js";
 import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
@@ -76,6 +76,15 @@ window.openChatFromNotification = async function (otherUser) {
     } catch (e) {}
 
     await selectChat(target);
+
+    // Yeni mesaj sunucudan gelene kadar bildirimdeki metni geçici balon olarak göster (sadece düz metin, kesilmemiş, 1'e 1 sohbet)
+    try {
+        const nBody = String(otherUser.body || '');
+        const nTag = String(otherUser.tag || '');
+        if (otherUser.msgType === 'text' && nBody && nBody.length < 400 && nTag.indexOf('msg-') === 0 && otherUser.chatId && otherUser.chatId !== otherUser.uid) {
+            showTempIncomingBubble(otherUser.chatId, nTag.slice(4), nBody, Date.now());
+        }
+    } catch (e) {}
 };
 
 // PWA - uygulama zaten açıkken sw.js'ten gelen "bildirime tıklandı" mesajı
