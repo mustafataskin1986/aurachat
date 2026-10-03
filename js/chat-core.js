@@ -533,9 +533,9 @@ async function buildChatSession(chatId, otherUid) {
         renderSession(session);
         scrollToUnreadOrBottom();
     }
-
 // Diskteki mesajlar çizildi (ya da disk boş): açılış ekranı sohbeti gösterebilir, ağı beklemesin
     if (currentChatId === chatId && window.__auraOnFirstPaint) window.__auraOnFirstPaint();
+ if (chatId !== 'global' && currentUser && session.clearedAt === null && !(diskCache && diskCache.messages.length)) {
         try {
             let mySummarySnap;
             try {
