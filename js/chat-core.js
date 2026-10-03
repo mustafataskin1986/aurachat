@@ -55,7 +55,7 @@
 import { db } from "./firebase-init.js";
 import {
     collection, addDoc as rawAddDoc, onSnapshot, query, orderBy, limitToLast, limit, startAfter, where, getDocs,
-    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, getDoc, increment, Timestamp
+    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, getDoc, getDocFromCache, increment, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
@@ -448,7 +448,23 @@ function evictLruSession(protectedChatId) {
     }
 }
 
-async function ensureChatSession(chatId, otherUid) {
+// Aynı sohbet için kurulum sürerken ikinci çağrı yarım oturumu değil, bitmiş oturumu alsın
+const sessionBuilds = new Map();
+
+function ensureChatSession(chatId, otherUid) {
+    const existing = chatSessions.get(chatId);
+    if (existing) {
+        existing.lastUsed = ++sessionTick;
+        if (isGroupChat(chatId)) existing.isGroup = true;
+        const pending = sessionBuilds.get(chatId);
+        return pending ? pending : Promise.resolve(existing);
+    }
+    const p = buildChatSession(chatId, otherUid).finally(() => sessionBuilds.delete(chatId));
+    sessionBuilds.set(chatId, p);
+    return p;
+}
+
+async function buildChatSession(chatId, otherUid) {
     const isGroup = isGroupChat(chatId);
     if (isGroup) otherUid = null;
     const existing = chatSessions.get(chatId);
@@ -495,9 +511,22 @@ async function ensureChatSession(chatId, otherUid) {
 
     if (!chatSessions.has(chatId)) return session;
 
+   // Disk önbelleğindeki mesajları ağ cevabını beklemeden hemen göster (sohbet boş görünmesin)
+    if (diskCache && diskCache.messages.length && currentChatId === chatId) {
+        unreadDivider = findUnreadDivider(session);
+        renderSession(session);
+        scrollToUnreadOrBottom();
+    }
+
     if (chatId !== 'global' && currentUser && session.clearedAt === null) {
         try {
-            const mySummarySnap = await getDoc(doc(db, "users", currentUser.uid, "chats", chatId));
+            let mySummarySnap;
+            try {
+                // Önce yerel önbellekten oku (ağ beklemeden), yoksa sunucudan
+                mySummarySnap = await getDocFromCache(doc(db, "users", currentUser.uid, "chats", chatId));
+            } catch (cacheErr) {
+                mySummarySnap = await getDoc(doc(db, "users", currentUser.uid, "chats", chatId));
+            }
             if (mySummarySnap.exists() && mySummarySnap.data().clearedAt) {
                 session.clearedAt = mySummarySnap.data().clearedAt;
             }
