@@ -6,7 +6,7 @@ const ASSETS_TO_CACHE = [
 
 // true yaparsan yerel dosyalar eskisi gibi her açılışta önce ağdan gelir (test sırasında işe yarar).
 // false: önce cache'ten anında açılır, güncelleme arkadan iner ve bir SONRAKİ açılışta görünür.
-const ALWAYS_FRESH = true;
+const ALWAYS_FRESH = false;
 
 // Bu sitelerdeki dosyalar cihazda tutulur (ilk çizimi bekletmesinler)
 const CDN_HOSTS = ['cdn.tailwindcss.com', 'cdnjs.cloudflare.com', 'cdn.jsdelivr.net'];
