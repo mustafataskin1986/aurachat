@@ -87,8 +87,8 @@ window.openChatFromNotification = async function (otherUser) {
     try {
         const nBody = String(otherUser.body || '');
         const nTag = String(otherUser.tag || '');
-       if (otherUser.msgType === 'text' && nBody && nBody.length < 400 && nTag.indexOf('msg-') === 0 && otherUser.chatId && otherUser.chatId !== otherUser.uid && Number(otherUser.pending || 99) <= 1) {
-            showTempIncomingBubble(otherUser.chatId, nTag.slice(4), nBody, Date.now());
+     if (otherUser.msgType === 'text' && nBody && nBody.length < 400 && nTag.indexOf('msg-') === 0 && otherUser.chatId && otherUser.chatId !== otherUser.uid) {
+            showTempIncomingBubble(otherUser.chatId, nTag.slice(4), nBody, Date.now(), Number(otherUser.pending || 99) <= 1);
         }
     } catch (e) {}
 };
