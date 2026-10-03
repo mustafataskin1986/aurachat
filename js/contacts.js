@@ -509,6 +509,8 @@ export async function loadContacts() {
     let usersLoaded = false;
     let chatsLoaded = false;
     let listMounted = false;
+    let resolveFirstData = null;
+    const firstDataReady = new Promise((resolve) => { resolveFirstData = resolve; });
 
     function mergeLiveUser(chatData) {
         const liveUser = allUsersById.get(chatData.otherUid);
@@ -528,7 +530,8 @@ export async function loadContacts() {
     }
 
     function renderAll() {
-        if (!usersLoaded || !chatsLoaded) return;
+    if (!usersLoaded || !chatsLoaded) return;
+        if (resolveFirstData) { resolveFirstData(); resolveFirstData = null; }
 
         if (!listMounted) {
             contactList.innerHTML = '';
@@ -781,6 +784,9 @@ export async function loadContacts() {
         chatsLoaded = true;
         renderAll();
     });
+
+    // İlk kullanıcı + sohbet verisi gelene kadar (en fazla 2.5 sn) bekle: bildirimden açılışta kişi/grup bilgisi hazır olsun
+    await Promise.race([firstDataReady, new Promise((resolve) => setTimeout(resolve, 2500))]);
 }
 
 let listCacheTimer = null;
