@@ -226,6 +226,29 @@ jobs:
                   } catch (Throwable t) {}
               }
 
+            // Bildirimle açılışta, aynı kişiden bildirim çubuğunda bekleyen mesaj sayısını launch bilgisine ekler
+              private void addPendingCount(Intent intent) {
+                  try {
+                      if (launchChatJson == null || launchChatJson.isEmpty() || intent == null) return;
+                      String title = intent.getStringExtra("title");
+                      int count = 1;
+                      if (title != null && Build.VERSION.SDK_INT >= 23) {
+                          NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                          if (nm != null) {
+                              for (StatusBarNotification sbn : nm.getActiveNotifications()) {
+                                  Notification n = sbn.getNotification();
+                                  if (n == null || n.extras == null) continue;
+                                  CharSequence t = n.extras.getCharSequence(Notification.EXTRA_TITLE);
+                                  if (t != null && title.contentEquals(t)) count++;
+                              }
+                          }
+                      }
+                      org.json.JSONObject o = new org.json.JSONObject(launchChatJson);
+                      o.put("pending", count);
+                      launchChatJson = o.toString();
+                  } catch (Throwable t) {}
+              }
+
               // JS buradan bekleyen paylaşımı alır: "" = yok, "busy" = hazırlanıyor, aksi halde resim listesi (JSON)
               public class ShareBridge {
                   @JavascriptInterface
@@ -349,6 +372,7 @@ jobs:
                   handleCallIntent(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new CallBridge(), "AuraCall");
                   captureLaunchChat(getIntent());
+                  addPendingCount(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new LaunchBridge(), "AuraLaunch");
                   
                   // Galeriye kaydedilen resimleri yeniden kurulumdan sonra da okuyabilmek için medya izni iste
