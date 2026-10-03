@@ -31,6 +31,20 @@ async function sharesChat(senderUid, receiverUid, chatId) {
   return members.includes(senderUid) && members.includes(receiverUid);
 }
 
+// Web push başlıkları kabul edilmezse onlarsız bir kez daha dener
+async function sendWithFallback(message) {
+  try {
+    return await admin.messaging().send(message);
+  } catch (err) {
+    const code = (err && err.code) || '';
+    if (message.webpush && code === 'messaging/invalid-argument') {
+      const { webpush, ...plain } = message;
+      return await admin.messaging().send(plain);
+    }
+    throw err;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Yalnızca POST kabul edilir.' });
@@ -100,7 +114,8 @@ export default async function handler(req, res) {
 
     const safeTitle = String(title).slice(0, MAX_TITLE);
     const safeBody = String(body).slice(0, MAX_BODY);
-    const isWebPlatform = String(u.platform || '').toLowerCase().includes('pwa') || String(u.platform || '').toLowerCase().includes('web');
+    const platformStr = String(u.platform || '').toLowerCase();
+    const isWebPlatform = platformStr.includes('pwa') || platformStr.includes('web');
 
     const safeData = { title: safeTitle, body: safeBody };
     if (data && typeof data === 'object') {
@@ -132,10 +147,26 @@ export default async function handler(req, res) {
           token: token,
         };
 
-    const response = await admin.messaging().send(message);
+    const response = await sendWithFallback(message);
     return res.status(200).json({ success: true, response });
   } catch (error) {
-    console.error("Bildirim gönderme hatası:", error);
-    return res.status(500).json({ error: 'Bildirim gönderilemedi.' });
+    const code = (error && error.code) || 'unknown';
+    console.error("Bildirim gönderme hatası:", code, error && error.message);
+
+    // Eski ya da geçersiz jeton: sil, istemci bir sonraki açılışta yenisini kaydeder
+    if (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-registration-token') {
+      try {
+        await admin.firestore().doc(`users/${receiverUid}`).update({
+          fcmToken: admin.firestore.FieldValue.delete()
+        });
+      } catch (e) {}
+      return res.status(200).json({ success: false, reason: 'stale-token' });
+    }
+
+    return res.status(500).json({
+      error: 'Bildirim gönderilemedi.',
+      code: code,
+      detail: String((error && error.message) || '').slice(0, 200)
+    });
   }
 }
