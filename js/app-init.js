@@ -6,7 +6,7 @@
 
 import { db } from "./firebase-init.js";
 import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showToast, showTempIncomingBubble } from "./chat-core.js";
+import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showTempIncomingBubble } from "./chat-core.js";
 import { watchCallForChat } from "./video-call.js";
 import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
@@ -45,13 +45,19 @@ async function ensureUid(user) {
 window.openChatFromNotification = async function (otherUser) {
     if (!otherUser || !otherUser.uid) return;
 
-    if (window.__aurachatGroupIds && window.__aurachatGroupIds.has(otherUser.uid)) {
+    // Grup mu kişi mi, ağ sorgusu OLMADAN bildirimdeki chatId'den anlaşılır:
+    // grupta chatId = grup kimliği (= otherUid), 1'e 1 sohbette chatId ayrı bir değerdir.
+    const hasChatId = !!otherUser.chatId;
+    const isGroupByChatId = hasChatId && otherUser.chatId === otherUser.uid;
+    const isPersonByChatId = hasChatId && otherUser.chatId !== otherUser.uid;
+
+    if (isGroupByChatId || (window.__aurachatGroupIds && window.__aurachatGroupIds.has(otherUser.uid))) {
         await selectChat({ isGroup: true, groupId: otherUser.uid, name: otherUser.name || 'Grup' });
         return;
     }
 
     const um0 = window.__aurachatUsers;
-    const isKnownPerson = !!(um0 && Array.from(um0.values()).some((u) => u.uid === otherUser.uid));
+    const isKnownPerson = isPersonByChatId || !!(um0 && Array.from(um0.values()).some((u) => u.uid === otherUser.uid));
     try {
         const groupSnap = isKnownPerson ? null : await getDoc(doc(db, "groups", otherUser.uid));
         if (groupSnap && groupSnap.exists()) {
@@ -87,6 +93,22 @@ window.openChatFromNotification = async function (otherUser) {
     } catch (e) {}
 };
 
+// Kişi listesi yüklendikten sonra, açık sohbetin başlık avatarını güncelle
+// (bildirimden açılışta avatar bilgisi gelmediği için ilk anda baş harfler görünür)
+function refreshOpenChatAvatar(uid, chatId) {
+    try {
+        if (!uid || !chatId || getCurrentChatId() !== chatId) return;
+        const users = window.__aurachatUsers;
+        const u = users && Array.from(users.values()).find((x) => x.uid === uid);
+        const el = document.getElementById('active-chat-avatar');
+        if (u && u.avatar && el) {
+            el.style.backgroundColor = '';
+            el.className = 'w-10 h-10 rounded-full overflow-hidden shadow flex-shrink-0';
+            el.innerHTML = `<img src="${u.avatar}" class="w-full h-full object-cover">`;
+        }
+    } catch (e) {}
+}
+
 // PWA - uygulama zaten açıkken sw.js'ten gelen "bildirime tıklandı" mesajı
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (event) => {
@@ -112,7 +134,8 @@ if (pendingOpenChatUid) {
     window.pendingOpenChat = {
         uid: pendingOpenChatUid,
         name: urlParams.get('otherName') || 'Sohbet',
-        avatar: urlParams.get('otherAvatar') || ''
+        avatar: urlParams.get('otherAvatar') || '',
+        chatId: urlParams.get('chatId') || ''
     };
 }
 
@@ -170,29 +193,45 @@ window.initApp = async function () {
     initAdminPanel();
     startPresence();
     checkIncomingCallFast(currentUser.uid);
-    try { await loadContacts(); } catch (e) {}
-    if (window.initPushForUser) {
-        window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
-    }
 
-readLaunchChatFromNative();
+    readLaunchChatFromNative();
+
+    // Bildirimle açıldıysa: önce sohbeti göster (kişi listesini beklemeden), splash hemen kalksın.
+    // Liste, rehber ve bildirim izni sohbet göründükten sonra arka planda yüklenir.
     if (window.pendingOpenChat) {
         const pendingTarget = window.pendingOpenChat;
         window.pendingOpenChat = null;
-        // Splash kapanmadan sohbet açılsın: liste hiç görünmesin
+
         await Promise.race([
             window.openChatFromNotification(pendingTarget).catch(() => {}),
             new Promise((resolve) => setTimeout(resolve, 4000))
         ]);
         document.documentElement.removeAttribute('data-aura-launch');
- } else if (!getCurrentChatId()) {
+        window.__aurachatReady = true;
+        await hideNativeSplash();
+
+        try { await loadContacts(); } catch (e) {}
+        refreshOpenChatAvatar(pendingTarget.uid, pendingTarget.chatId);
+        if (window.initPushForUser) {
+            window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
+        }
+        return;
+    }
+
+    try { await loadContacts(); } catch (e) {}
+    if (window.initPushForUser) {
+        window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
+    }
+
+    // Sohbet zaten açıksa listeye döndürme
+    if (!getCurrentChatId()) {
         sidebar.classList.remove('-translate-x-full');
         chatArea.classList.add('translate-x-full');
     }
 
     window.__aurachatReady = true;
 
-    // Arayüz tam olarak yüklendi, kişilerin çekilmesi vs. bitti! 
+    // Arayüz tam olarak yüklendi, kişilerin çekilmesi vs. bitti!
     // Splash ekranını şimdi yumuşak bir animasyonla kaldırıyoruz:
     await hideNativeSplash();
 };
