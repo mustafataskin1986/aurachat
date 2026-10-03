@@ -214,6 +214,14 @@ jobs:
                       o.put("name", (n == null || n.isEmpty()) ? "Sohbet" : n);
                       String a = intent.getStringExtra("otherAvatar");
                       o.put("avatar", a == null ? "" : a);
+                      String b = intent.getStringExtra("body");
+                      o.put("body", b == null ? "" : b);
+                      String tg = intent.getStringExtra("tag");
+                      o.put("tag", tg == null ? "" : tg);
+                      String cid = intent.getStringExtra("chatId");
+                      o.put("chatId", cid == null ? "" : cid);
+                      String mt = intent.getStringExtra("msgType");
+                      o.put("msgType", mt == null ? "" : mt);
                       launchChatJson = o.toString();
                   } catch (Throwable t) {}
               }
@@ -537,12 +545,46 @@ jobs:
             fi
           fi
 
-      - name: Seçim Tutamaçları Rengini Temaya Uydur
+      - name: Seçim Tutamaçları Rengini Yeşile Sabitle
         run: |
-          STYLES_PATH="android/app/src/main/res/values/styles.xml"
-          if [ -f "$STYLES_PATH" ] && ! grep -q "colorAccent" "$STYLES_PATH"; then
-            sed -i '0,/<\/style>/s#</style>#    <item name="colorAccent">#22c55e</item>\n    <item name="colorControlActivated">#22c55e</item>\n    <item name="colorControlNormal">#22c55e</item>\n</style>#' "$STYLES_PATH"
-          fi
+          python3 - << 'PY'
+          import re
+          RES = "android/app/src/main/res/values/"
+          GREEN = "#22c55e"
+
+          # colors.xml: varsayılan vurgu rengini yeşile çevir
+          try:
+              c = open(RES + "colors.xml", encoding="utf-8").read()
+              if 'name="colorAccent"' in c:
+                  c = re.sub(r'(<color name="colorAccent">)[^<]*(</color>)', r'\g<1>' + GREEN + r'\g<2>', c)
+              else:
+                  c = c.replace("</resources>", '    <color name="colorAccent">' + GREEN + '</color>\n</resources>')
+              open(RES + "colors.xml", "w", encoding="utf-8").write(c)
+          except FileNotFoundError:
+              open(RES + "colors.xml", "w", encoding="utf-8").write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="colorAccent">' + GREEN + '</color>\n</resources>\n')
+
+          # styles.xml: tema stillerine vurgu ve seçim/imleç renklerini ekle
+          s = open(RES + "styles.xml", encoding="utf-8").read()
+          s = re.sub(r'(<item name="colorAccent">)[^<]*(</item>)', r'\g<1>' + GREEN + r'\g<2>', s)
+
+          def add_items(style_name, items):
+              global s
+              m = re.search(r'(<style name="%s"[^>]*>)(.*?)(</style>)' % re.escape(style_name), s, re.S)
+              if not m:
+                  return
+              body = m.group(2)
+              new = ""
+              for name, val in items:
+                  if 'name="%s"' % name not in body:
+                      new += '\n        <item name="%s">%s</item>' % (name, val)
+              if new:
+                  s = s[:m.end(1)] + new + s[m.end(1):]
+
+          for style in ("AppTheme", "AppTheme.NoActionBar", "AppTheme.NoActionBarLaunch"):
+              add_items(style, [("colorAccent", GREEN), ("colorControlActivated", GREEN)])
+
+          open(RES + "styles.xml", "w", encoding="utf-8").write(s)
+          PY
       - name: Açılış Ekranını Siyah Yap
         run: |
           RES="android/app/src/main/res"
