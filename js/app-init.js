@@ -6,26 +6,16 @@
 
 import { db } from "./firebase-init.js";
 import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showTempIncomingBubble, showToast } from "./chat-core.js";
+import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showTempIncomingBubble } from "./chat-core.js";
 import { watchCallForChat } from "./video-call.js";
 import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
 import { loadContacts, initAdminPanel } from "./contacts.js";
 
-// ÖLÇÜM: sayfa açılışından bu dosyanın çalışmaya başladığı ana kadar geçen süre (ms)
-const T_MODULE = Math.round(performance.now());
-
 const sidebar = document.getElementById('sidebar');
 const chatArea = document.getElementById('chat-area');
 
 window.__aurachatReady = false;
-
-// chat-core.js, diskteki mesajları çizince (ya da disk boşsa) bunu çağırır
-let firstPaintResolve = null;
-const firstPaintPromise = new Promise((resolve) => { firstPaintResolve = resolve; });
-window.__auraOnFirstPaint = function () {
-    if (firstPaintResolve) { firstPaintResolve(); firstPaintResolve = null; }
-};
 
 // Splash ekranını yumuşakça kapatan yardımcı fonksiyon (js/splash.js tanımlar)
 async function hideNativeSplash() {
@@ -49,17 +39,6 @@ async function ensureUid(user) {
     }
 
     return user;
-}
-
-// Bildirimdeki metni, gerçek mesaj sunucudan gelene kadar geçici balon olarak göster
-function showTempFromNotification(otherUser) {
-    try {
-        const nBody = String(otherUser.body || '');
-        const nTag = String(otherUser.tag || '');
-        if (otherUser.msgType === 'text' && nBody && nBody.length < 400 && nTag.indexOf('msg-') === 0 && otherUser.chatId && otherUser.chatId !== otherUser.uid) {
-            showTempIncomingBubble(otherUser.chatId, nTag.slice(4), nBody, Date.now(), Number(otherUser.pending || 99) <= 1);
-        }
-    } catch (e) {}
 }
 
 // Bildirime tıklanınca (Capacitor native veya PWA) çağrılır
@@ -104,8 +83,14 @@ window.openChatFromNotification = async function (otherUser) {
 
     await selectChat(target);
 
-    // selectChat listeyi yeniden çizdiği için geçici balon burada yeniden eklenir
-    showTempFromNotification(otherUser);
+    // Yeni mesaj sunucudan gelene kadar bildirimdeki metni geçici balon olarak göster (sadece düz metin, kesilmemiş, 1'e 1 sohbet)
+    try {
+        const nBody = String(otherUser.body || '');
+        const nTag = String(otherUser.tag || '');
+     if (otherUser.msgType === 'text' && nBody && nBody.length < 400 && nTag.indexOf('msg-') === 0 && otherUser.chatId && otherUser.chatId !== otherUser.uid) {
+            showTempIncomingBubble(otherUser.chatId, nTag.slice(4), nBody, Date.now(), Number(otherUser.pending || 99) <= 1);
+        }
+    } catch (e) {}
 };
 
 // Kişi listesi yüklendikten sonra, açık sohbetin başlık avatarını güncelle
@@ -211,29 +196,20 @@ window.initApp = async function () {
 
     readLaunchChatFromNative();
 
-    // Bildirimle açıldıysa: sohbet diskteki mesajlarla çizilince splash kapanır (ağı beklemez).
-    // Sohbetin kalanı, liste, rehber ve bildirim izni arkada yüklenir.
+    // Bildirimle açıldıysa: önce sohbeti göster (kişi listesini beklemeden), splash hemen kalksın.
+    // Liste, rehber ve bildirim izni sohbet göründükten sonra arka planda yüklenir.
     if (window.pendingOpenChat) {
         const pendingTarget = window.pendingOpenChat;
         window.pendingOpenChat = null;
 
-        const chatPromise = window.openChatFromNotification(pendingTarget).catch(() => {});
         await Promise.race([
-            firstPaintPromise,
-            chatPromise,
+            window.openChatFromNotification(pendingTarget).catch(() => {}),
             new Promise((resolve) => setTimeout(resolve, 4000))
         ]);
-        showTempFromNotification(pendingTarget);
         document.documentElement.removeAttribute('data-aura-launch');
         window.__aurachatReady = true;
-        const tPaint = Math.round(performance.now());
         await hideNativeSplash();
-        const tHide = Math.round(performance.now());
 
-        // GEÇİCİ ÖLÇÜM satırı - sonuçları gördükten sonra silinecek
-        try { showToast('ÖLÇÜM: sayfa+modüller ' + T_MODULE + 'ms | sohbet çizildi ' + tPaint + 'ms | splash kapandı ' + tHide + 'ms', 9000); } catch (e) {}
-
-        await chatPromise;
         try { await loadContacts(); } catch (e) {}
         refreshOpenChatAvatar(pendingTarget.uid, pendingTarget.chatId);
         if (window.initPushForUser) {
