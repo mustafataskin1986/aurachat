@@ -176,7 +176,6 @@ readLaunchChatFromNative();
             new Promise((resolve) => setTimeout(resolve, 4000))
         ]);
         document.documentElement.removeAttribute('data-aura-launch');
-        ]);
  } else if (!getCurrentChatId()) {
         sidebar.classList.remove('-translate-x-full');
         chatArea.classList.add('translate-x-full');
