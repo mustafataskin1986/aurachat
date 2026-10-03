@@ -1196,8 +1196,13 @@ export function showTempIncomingBubble(chatId, msgId, text, timeMs) {
             createdAt: Timestamp.fromMillis(timeMs || Date.now()),
             read: false
         };
+        // Okunmamış çizgisi de geçici balonla birlikte hemen çıksın (gerçek mesaj gelince aynı yerde kalır)
+        if (!unreadDivider || unreadDivider.chatId !== chatId) {
+            unreadDivider = { chatId: chatId, msgId: msgId, count: 1 };
+            messageContainer.appendChild(buildUnreadDividerElement(1));
+        }
         messageContainer.appendChild(buildMessageElement(fake, false, msgId));
-        scrollToBottom();
+        scrollToUnreadOrBottom();
     } catch (e) {}
 }
 
