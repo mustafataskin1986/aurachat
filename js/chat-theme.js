@@ -129,6 +129,7 @@ function applyTheme(chatId) {
         else root.style.removeProperty('--aura-btn');
         mc.style.background = '';
         if (ca) ca.style.background = '';
+        syncAccentToNative();
         return;
     }
     root.setAttribute('data-aura-theme', t.id);
@@ -137,6 +138,22 @@ function applyTheme(chatId) {
     root.style.setProperty('--aura-btn', t.out);
     mc.style.background = 'transparent';
     if (ca) ca.style.background = t.bg;
+    syncAccentToNative();
+}
+
+// Sohbet temasının ana rengini (--aura-btn) APK'ya bildirir: seçim tutamakları bu renge boyanır
+function syncAccentToNative() {
+    try {
+        if (!window.AuraTheme || !window.AuraTheme.setAccent) return;
+        const probe = document.createElement('i');
+        probe.style.color = getComputedStyle(document.documentElement).getPropertyValue('--aura-btn').trim() || '#22c55e';
+        document.body.appendChild(probe);
+        const m = getComputedStyle(probe).color.match(/\d+/g);
+        probe.remove();
+        if (!m) return;
+        const hex = '#' + m.slice(0, 3).map((n) => ('0' + parseInt(n, 10).toString(16)).slice(-2)).join('');
+        window.AuraTheme.setAccent(hex);
+    } catch (e) {}
 }
 
 // Sohbet değişince (başlıktaki isim yenilenince) o sohbetin temasını uygula
