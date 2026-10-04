@@ -532,6 +532,9 @@ if (!window.__auraTBuild) window.__auraTBuild = Math.round(performance.now());
     if (diskCache && diskCache.messages.length && currentChatId === chatId) {
         unreadDivider = findUnreadDivider(session);
         renderSession(session);
+        if (document.documentElement.hasAttribute('data-aura-launch') && !unreadDivider && Number(window.__auraLaunchPending) > 0) {
+            messageContainer.appendChild(buildUnreadDividerElement(Number(window.__auraLaunchPending)));
+        }
         scrollToUnreadOrBottom();
         if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
     }
