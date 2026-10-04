@@ -532,7 +532,7 @@ if (!window.__auraTBuild) window.__auraTBuild = Math.round(performance.now());
     if (diskCache && diskCache.messages.length && currentChatId === chatId) {
         unreadDivider = findUnreadDivider(session);
         renderSession(session);
-        if (document.documentElement.hasAttribute('data-aura-launch') && !unreadDivider && Number(window.__auraLaunchPending) > 0) {
+        if (!appendLaunchTemps(session) && document.documentElement.hasAttribute('data-aura-launch') && !unreadDivider && Number(window.__auraLaunchPending) > 0) {
             messageContainer.appendChild(buildUnreadDividerElement(Number(window.__auraLaunchPending)));
         }
                         scrollToUnreadOrBottom();
@@ -1235,6 +1235,49 @@ if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
  
 // Bildirimden açılışta: yeni mesaj sunucudan gelene kadar bildirimin içindeki metni geçici balon olarak göster.
 // Gerçek mesaj gelince liste yeniden çizildiği için balon kendiliğinden gerçeğiyle değişir (çift görünmez).
+function appendLaunchTemps(session) {
+    try {
+        if (currentIsGroup || unreadDivider) return false;
+        if (!document.documentElement.hasAttribute('data-aura-launch')) return false;
+        const L = window.__auraLaunch;
+        if (!L) return false;
+        const seen = new Set();
+        const items = [];
+        (Array.isArray(L.msgs) ? L.msgs.slice() : []).sort((a, b) => a.t - b.t).forEach((m) => {
+            if (m.tag && !seen.has(m.tag)) {
+                seen.add(m.tag);
+                items.push({ id: String(m.tag).slice(4), text: String(m.text || ''), t: m.t });
+            }
+        });
+        if (L.tag && L.body && !seen.has(L.tag)) {
+            items.push({ id: String(L.tag).slice(4), text: String(L.body), t: Date.now() });
+        }
+        const have = new Set(session.messages.map((m) => m.id));
+        const fresh = items.filter((i) => !have.has(i.id));
+        if (!fresh.length) return false;
+        if (fresh.some((i) => !i.text || i.text.length > 400 || /^(📷|🎤|📍|🚫)/.test(i.text))) return false;
+        const fragment = document.createDocumentFragment();
+        fragment.appendChild(buildUnreadDividerElement(fresh.length));
+        fresh.forEach((i) => {
+            fragment.appendChild(buildMessageElement({
+                type: 'text',
+                text: i.text,
+                senderUid: currentOtherUid || 'other',
+                senderName: currentChatName || '',
+                createdAt: Timestamp.fromMillis(i.t || Date.now()),
+                read: false
+            }, false, i.id));
+        });
+        messageContainer.appendChild(fragment);
+        unreadDivider = { chatId: session.chatId, msgId: fresh[0].id, count: fresh.length };
+        tempIncoming = { chatId: session.chatId, msgId: fresh[fresh.length - 1].id, at: Date.now() };
+        window.__auraTempShown = true;
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 export function showTempIncomingBubble(chatId, msgId, text, timeMs, withDivider) {
     if (!chatId || !msgId || !text || currentChatId !== chatId || currentIsGroup) return;
     if (messageElementsById.size === 0) return;
