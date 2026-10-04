@@ -533,6 +533,7 @@ if (!window.__auraTBuild) window.__auraTBuild = Math.round(performance.now());
         unreadDivider = findUnreadDivider(session);
         renderSession(session);
         scrollToUnreadOrBottom();
+        if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
     }
  if (chatId !== 'global' && currentUser && session.clearedAt === null && !(diskCache && diskCache.messages.length)) {
         try {
