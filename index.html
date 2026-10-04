@@ -827,13 +827,20 @@ try {
 
 
 
-    <script>
+<script>
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('Service Worker kaydedildi 👍', reg.scope))
-                    .catch(err => console.log('Service Worker hatası ❌', err));
-            });
+            if (window.AuraSplash || window.AuraLaunch) {
+                // APK: Service Worker Capacitor köprüsünü engelliyor, kaydetme ve varsa sil
+                navigator.serviceWorker.getRegistrations()
+                    .then(rs => rs.forEach(r => r.unregister()))
+                    .catch(() => {});
+            } else {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('./sw.js')
+                        .then(reg => console.log('Service Worker kaydedildi 👍', reg.scope))
+                        .catch(err => console.log('Service Worker hatası ❌', err));
+                });
+            }
         }
     </script>
 
