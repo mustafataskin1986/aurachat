@@ -212,6 +212,7 @@ window.initApp = async function () {
     if (window.pendingOpenChat) {
         const pendingTarget = window.pendingOpenChat;
         window.pendingOpenChat = null;
+        window.__auraLaunchPending = Number(pendingTarget.pending || 0);
 
         const chatPromise = window.openChatFromNotification(pendingTarget).catch(() => {});
         await Promise.race([
