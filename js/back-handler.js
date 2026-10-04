@@ -66,8 +66,6 @@ function showDiag() {
         setTimeout(() => { try { el.remove(); } catch (e) {} }, 8000);
     } catch (e) {}
 }
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', showDiag);
-else showDiag();
 
 // ---------- PWA ----------
 let ignorePopstate = 0;
