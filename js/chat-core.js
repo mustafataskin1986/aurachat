@@ -481,6 +481,7 @@ function ensureChatSession(chatId, otherUid) {
 }
 
 async function buildChatSession(chatId, otherUid) {
+if (!window.__auraTBuild) window.__auraTBuild = Math.round(performance.now());
     const isGroup = isGroupChat(chatId);
     if (isGroup) otherUid = null;
     const existing = chatSessions.get(chatId);
@@ -648,6 +649,7 @@ if (currentChatId === chatId && !session.waitingFirst) {
     }, (error) => {
         console.error("Mesajlar yüklenirken hata:", error);
         if (firstSnapResolve) { firstSnapResolve(); firstSnapResolve = null; }
+        if (!window.__auraTSnap) window.__auraTSnap = Math.round(performance.now());
     });
 
  if (isGroup) {
@@ -684,7 +686,7 @@ if (chatId !== 'global' && document.documentElement.hasAttribute('data-aura-laun
         // Bildirimle açılış: sohbeti çizmeden önce yeni mesajların gelmesini bekle (en çok 2,5 sn)
         session.waitingFirst = true;
         try {
-            await Promise.race([firstSnap, new Promise((r) => setTimeout(r, 2500))]);
+            await Promise.race([firstSnap, new Promise((r) => setTimeout(r, 2000))]);
         } finally {
             session.waitingFirst = false;
         }
