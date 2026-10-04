@@ -534,6 +534,7 @@ async function buildChatSession(chatId, otherUid) {
         scrollToUnreadOrBottom();
     }
 // Diskteki mesajlar çizildi (ya da disk boş): açılış ekranı sohbeti gösterebilir, ağı beklemesin
+if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
     if (currentChatId === chatId && window.__auraOnFirstPaint) window.__auraOnFirstPaint();
  if (chatId !== 'global' && currentUser && session.clearedAt === null && !(diskCache && diskCache.messages.length)) {
         try {
@@ -1154,16 +1155,17 @@ composer.clearImages();
             return;
         }
         otherUid = otherUser.uid || otherUser.id;
-        otherAvatar = otherUser.avatar || '';
+        try { if (otherUser.avatar) localStorage.setItem('aura_av_' + otherUid, otherUser.avatar); } catch (e) {}
+        otherAvatar = otherUser.avatar || (function () { try { return localStorage.getItem('aura_av_' + otherUid) || ''; } catch (e) { return ''; } })();
         chatId = getChatId(currentUser.uid, otherUid);
         chatName = otherUser.name;
 
         activeChatName.textContent = chatName;
 
-        if (otherUser.avatar) {
+     if (otherUser.avatar) {
             activeChatAvatar.style.backgroundColor = '';
             activeChatAvatar.className = "w-10 h-10 rounded-full overflow-hidden shadow flex-shrink-0";
-            activeChatAvatar.innerHTML = `<img src="${otherUser.avatar}" class="w-full h-full object-cover">`;
+            activeChatAvatar.innerHTML = `<img src="${otherAvatar}" class="w-full h-full object-cover">`;
         } else {
             const initials = getInitials(otherUser.name);
             const color = getUserColor(otherUser.name);
@@ -1203,7 +1205,7 @@ if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.
     renderSession(session);
     markVisibleMessagesRead(session);
     scrollToUnreadOrBottom();
-
+if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
     recentOpenScrollLock = true;
     session.openedAt = Date.now();
     setTimeout(() => { recentOpenScrollLock = false; }, 1500);
@@ -1221,6 +1223,7 @@ if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.
 // Gerçek mesaj gelince liste yeniden çizildiği için balon kendiliğinden gerçeğiyle değişir (çift görünmez).
 export function showTempIncomingBubble(chatId, msgId, text, timeMs, withDivider) {
     if (!chatId || !msgId || !text || currentChatId !== chatId || currentIsGroup) return;
+    if (messageElementsById.size === 0) return;
     if (messageElementsById.has(msgId)) return;
     const session = chatSessions.get(chatId);
     if (session && (session.messages.some((m) => m.id === msgId) || session.olderMessagesPrepended.some((m) => m.id === msgId))) return;
