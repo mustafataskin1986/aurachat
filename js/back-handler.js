@@ -1,112 +1,114 @@
 // ==========================================
-// GERİ TUŞU (BACK BUTTON) YÖNETİMİ
-// Android'in sistem geri tuşu, açık bir panel/sohbet/modal varken
-// onu kapatması gerekirken direkt uygulamadan çıkıyordu - çünkü
-// tarayıcı geçmişinde geri gidecek bir kayıt yoktu.
+// GERİ TUŞU YÖNETİMİ
 //
-// Bu modül: bir panel/görünüm açıldığında sahte bir geçmiş kaydı
-// ekler (pushBackState). Geri tuşuna basılınca o kaydı tüketip
-// ilgili panelin "kapat" fonksiyonunu çalıştırır - uygulamadan
-// çıkmak yerine.
+// APK (Capacitor): tarayıcı geçmişi (history) HİÇ kullanılmaz. Kendi yığınımız var,
+// Android geri tuşu gelince yığının tepesindeki kapatıcı çalışır; yığın boşsa uygulama kapanır.
+//
+// PWA (tarayıcı): history.pushState kullanılır, ama ilk kullanıcı dokunuşuna kadar ertelenir.
+//
+// Dışarı açılan fonksiyonlar: pushBackState(kapatici), popBackState()
 // ==========================================
 
-const backStack = [];
-let ignoreNextPopstate = false;
+const cap = window.Capacitor;
+const isNativeApp = !!(cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform());
+const nativeApp = isNativeApp && cap.Plugins ? cap.Plugins.App : null;
+const useNativeStack = !!(nativeApp && typeof nativeApp.addListener === 'function');
 
-// Chrome'un "geçmiş manipülasyonu koruması": kullanıcı sayfaya hiç dokunmadan
-// (örn. bildirimden açılış) sahte geçmiş kaydı eklenirse, PWA'da sistem geri tuşu
-// o kaydı ATLAYIP uygulamadan çıkıyor. O yüzden PWA'da ilk dokunuşa kadar kayıt
-// eklemeyi erteliyoruz. APK'da geri tuşu JS ile history.back() çağırdığı için
-// bu koruma etkilemiyor, orada kaydı hemen ekliyoruz.
-const isNativeApp = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
-let pendingHistoryPushes = 0;
-let gestureListenersOn = false;
-const GESTURE_EVENTS = ['pointerup', 'touchend', 'click', 'keydown'];
+// Her kayıt: { fn, pushed } (pushed: PWA'da gerçekten history.pushState yapıldı mı)
+const stack = [];
+// Kapatıcı çalışırken içinden popBackState çağrılırsa bir kayıt daha silinmesin
+let handlingBack = false;
 
-function userHasInteracted() {
-    if (isNativeApp) return true;
-    const ua = navigator.userActivation;
-    return !ua || ua.hasBeenActive;
+// ---------- APK ----------
+if (useNativeStack) {
+    nativeApp.addListener('backButton', () => {
+        const entry = stack.pop();
+        if (entry) {
+            handlingBack = true;
+            try { entry.fn(); } catch (e) { console.warn('geri kapatıcı hatası:', e); }
+            handlingBack = false;
+            return;
+        }
+        // Açık bir ekran yok: uygulamadan çık
+        try { nativeApp.exitApp(); } catch (e) {}
+    });
 }
 
-function flushPendingPushes() {
-    while (pendingHistoryPushes > 0) {
-        pendingHistoryPushes--;
-        history.pushState({ auraBack: backStack.length }, '');
+// ---------- PWA ----------
+let ignorePopstate = 0;
+
+function userHasInteracted() {
+    try {
+        if (navigator.userActivation) return navigator.userActivation.hasBeenActive;
+    } catch (e) {}
+    return true;
+}
+
+function doPush(entry) {
+    try {
+        history.pushState({ auraBack: true }, '');
+        entry.pushed = true;
+    } catch (e) {
+        entry.pushed = false;
     }
 }
 
-function onFirstGesture() {
-    GESTURE_EVENTS.forEach((t) => window.removeEventListener(t, onFirstGesture, true));
-    gestureListenersOn = false;
-    flushPendingPushes();
-}
-
+let gestureWaiting = false;
 function waitForGesture() {
-    if (gestureListenersOn) return;
-    gestureListenersOn = true;
-    GESTURE_EVENTS.forEach((t) => window.addEventListener(t, onFirstGesture, true));
+    if (gestureWaiting) return;
+    gestureWaiting = true;
+    const events = ['pointerup', 'touchend', 'click', 'keydown'];
+    const onFirstGesture = () => {
+        events.forEach((ev) => window.removeEventListener(ev, onFirstGesture, true));
+        gestureWaiting = false;
+        stack.forEach((entry) => { if (!entry.pushed) doPush(entry); });
+    };
+    events.forEach((ev) => window.addEventListener(ev, onFirstGesture, true));
 }
 
-// Bir görünüm/panel açıldığında çağrılır.
-// closeFn: geri tuşuna basılınca çalışacak, SADECE arayüzü kapatan
-// fonksiyon (history'ye dokunmamalı).
+if (!useNativeStack) {
+    window.addEventListener('popstate', () => {
+        if (ignorePopstate > 0) { ignorePopstate--; return; }
+        // Gerçekten pushState yapılmış en üstteki kaydı bul ve kapat
+        for (let i = stack.length - 1; i >= 0; i--) {
+            if (stack[i].pushed) {
+                const entry = stack.splice(i, 1)[0];
+                handlingBack = true;
+                try { entry.fn(); } catch (e) { console.warn('geri kapatıcı hatası:', e); }
+                handlingBack = false;
+                return;
+            }
+        }
+        // history'de kaydı olmayan (ertelenmiş) bir ekran varsa onu kapat
+        const entry = stack.pop();
+        if (entry) {
+            handlingBack = true;
+            try { entry.fn(); } catch (e) { console.warn('geri kapatıcı hatası:', e); }
+            handlingBack = false;
+        }
+    });
+}
+
+// ---------- Ortak API ----------
 export function pushBackState(closeFn) {
-    backStack.push(closeFn);
+    const entry = { fn: typeof closeFn === 'function' ? closeFn : () => {}, pushed: false };
+    stack.push(entry);
+    if (useNativeStack) return;
     if (userHasInteracted()) {
-        if (pendingHistoryPushes > 0) flushPendingPushes(); // sıra bozulmasın
-        history.pushState({ auraBack: backStack.length }, '');
+        doPush(entry);
     } else {
-        pendingHistoryPushes++;
         waitForGesture();
     }
 }
 
-// Görünüm kullanıcı arayüzünden (X butonu, dışına tıklama, uygulama
-// içi "geri" butonu vb.) kapatıldığında çağrılır - tarayıcı
-// geçmişini de senkron tutar.
 export function popBackState() {
-    if (backStack.length === 0) return;
-    backStack.pop();
-    if (pendingHistoryPushes > 0) {
-        // Bu kayıt için henüz gerçek geçmiş girişi eklenmemişti
-        pendingHistoryPushes--;
-        return;
+    // Geri tuşuyla zaten yığından çıkarılmış ve kapatıcı çalışıyorsa tekrar silme
+    if (handlingBack) return;
+    const entry = stack.pop();
+    if (!entry) return;
+    if (useNativeStack) return;
+    if (entry.pushed) {
+        ignorePopstate++;
+        try { history.back(); } catch (e) { ignorePopstate--; }
     }
-    ignoreNextPopstate = true;
-    history.back();
-}
-
-window.addEventListener('popstate', () => {
-    if (ignoreNextPopstate) {
-        ignoreNextPopstate = false;
-        return;
-    }
-    const closeFn = backStack.pop();
-    if (closeFn) closeFn();
-});
-
-// ------------------------------------------
-// CAPACITOR NATIVE GERİ TUŞU KÖPRÜSÜ
-// TWA'da (gerçek Chrome) donanım geri tuşu otomatik olarak
-// tarayıcı geçmişine bağlıdır. Capacitor'de ise DEĞİLDİR - native
-// "App" eklentisi kendi backButton olayını fırlatır, bizim
-// history/popstate sistemimizden habersizdir. Burada o olayı
-// yakalayıp history.back()'e yönlendiriyoruz; böylece backStack'imiz
-// hem TWA'da hem Capacitor APK'sında aynı şekilde çalışır.
-// ------------------------------------------
-if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-    const CapApp = window.Capacitor.Plugins.App;
-
-    CapApp.addListener('backButton', ({ canGoBack }) => {
-        if (backStack.length > 0) {
-            // Bizim açtığımız bir panel/görünüm var - normal history.back() akışına sok,
-            // popstate listener'ımız zaten yukarıda bunu yakalayıp kapatacak.
-            history.back();
-        } else if (canGoBack) {
-            history.back();
-        } else {
-            CapApp.exitApp();
-        }
-    });
 }
