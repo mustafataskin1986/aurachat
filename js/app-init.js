@@ -103,7 +103,7 @@ window.openChatFromNotification = async function (otherUser) {
     } catch (e) {}
 
     await selectChat(target);
-
+};
 // Kişi listesi yüklendikten sonra, açık sohbetin başlık avatarını güncelle
 // (bildirimden açılışta avatar bilgisi gelmediği için ilk anda baş harfler görünür)
 function refreshOpenChatAvatar(uid, chatId) {
