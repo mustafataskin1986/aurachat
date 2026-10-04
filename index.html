@@ -16,6 +16,15 @@
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js">
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js">
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js">
+<script type="module">
+    // Firebase bağlantısını sayfa yüklenirken paralel ısıt (bildirimle açılışta ilk cevap daha erken gelsin)
+    import { db } from "/js/firebase-init.js";
+    import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    try {
+        const u = JSON.parse(localStorage.getItem('aurachat_user'));
+        if (u && u.uid) getDoc(doc(db, "users", u.uid)).catch(() => {});
+    } catch (e) {}
+</script>
 <script src="/js/splash.js"></script>
 
 <script>
