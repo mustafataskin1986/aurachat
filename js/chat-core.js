@@ -584,6 +584,8 @@ if (!window.__auraTBuild) window.__auraTBuild = Math.round(performance.now());
 let firstSnapResolve = null;
     const firstSnap = new Promise((r) => { firstSnapResolve = r; });
     session.unsubscribeMessages = onSnapshot(q, (snapshot) => {
+    if (firstSnapResolve) { firstSnapResolve(); firstSnapResolve = null; }
+        if (!window.__auraTSnap) window.__auraTSnap = Math.round(performance.now()) + (snapshot.metadata.fromCache ? ' önbellekten' : ' sunucudan');
         if (isIncremental) {
             snapshot.docChanges().forEach((change) => {
                 const entry = { id: change.doc.id, data: change.doc.data() };
@@ -649,7 +651,6 @@ if (currentChatId === chatId && !session.waitingFirst) {
     }, (error) => {
         console.error("Mesajlar yüklenirken hata:", error);
         if (firstSnapResolve) { firstSnapResolve(); firstSnapResolve = null; }
-        if (!window.__auraTSnap) window.__auraTSnap = Math.round(performance.now());
     });
 
  if (isGroup) {
