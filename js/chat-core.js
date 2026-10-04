@@ -533,9 +533,6 @@ async function buildChatSession(chatId, otherUid) {
         renderSession(session);
         scrollToUnreadOrBottom();
     }
-// Diskteki mesajlar çizildi (ya da disk boş): açılış ekranı sohbeti gösterebilir, ağı beklemesin
-if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
-    if (currentChatId === chatId && window.__auraOnFirstPaint) window.__auraOnFirstPaint();
  if (chatId !== 'global' && currentUser && session.clearedAt === null && !(diskCache && diskCache.messages.length)) {
         try {
             let mySummarySnap;
@@ -583,7 +580,8 @@ if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
                 orderBy("createdAt", "asc"),
                 limitToLast(50)
             ));
-
+let firstSnapResolve = null;
+    const firstSnap = new Promise((r) => { firstSnapResolve = r; });
     session.unsubscribeMessages = onSnapshot(q, (snapshot) => {
         if (isIncremental) {
             snapshot.docChanges().forEach((change) => {
@@ -618,7 +616,7 @@ if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
 
         writeChatDiskCache(chatId, session);
 
-    if (currentChatId === chatId) {
+if (currentChatId === chatId && !session.waitingFirst) {
             // Sohbet yeni açıldıysa ve ilk veride okunmamış mesaj geldiyse çizgiyi şimdi kur
          const openedRecently = Date.now() - (session.openedAt || 0) < 6000;
             let dividerRebuilt = false;
@@ -649,6 +647,7 @@ if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
         }
     }, (error) => {
         console.error("Mesajlar yüklenirken hata:", error);
+        if (firstSnapResolve) { firstSnapResolve(); firstSnapResolve = null; }
     });
 
  if (isGroup) {
@@ -681,7 +680,15 @@ if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
             if (currentChatId === chatId) renderChatStatus();
         });
     }
-
+if (chatId !== 'global' && document.documentElement.hasAttribute('data-aura-launch')) {
+        // Bildirimle açılış: sohbeti çizmeden önce yeni mesajların gelmesini bekle (en çok 2,5 sn)
+        session.waitingFirst = true;
+        try {
+            await Promise.race([firstSnap, new Promise((r) => setTimeout(r, 2500))]);
+        } finally {
+            session.waitingFirst = false;
+        }
+    }
     return session;
 }
 
