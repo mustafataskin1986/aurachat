@@ -131,6 +131,8 @@ jobs:
           import android.content.Context;
           import android.service.notification.StatusBarNotification;
           import android.view.WindowManager;
+          import androidx.activity.OnBackPressedCallback;
+          import android.webkit.ValueCallback;
 
           public class MainActivity extends BridgeActivity {
               // Uygulama ekranda mı? (AuraMessagingService, uygulama açıkken arama bildirimi göstermesin diye bakar)
@@ -392,7 +394,23 @@ jobs:
                   addPendingCount(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new LaunchBridge(), "AuraLaunch");
                   this.bridge.getWebView().addJavascriptInterface(new ThemeBridge(), "AuraTheme");
-                  
+                  getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+                      @Override
+                      public void handleOnBackPressed() {
+                          try {
+                              MainActivity.this.bridge.getWebView().evaluateJavascript(
+                                  "(function(){try{return window.__auraBackPress?window.__auraBackPress():false;}catch(e){return false;}})()",
+                                  new ValueCallback<String>() {
+                                      @Override
+                                      public void onReceiveValue(String v) {
+                                          if (!"true".equals(v)) moveTaskToBack(true);
+                                      }
+                                  });
+                          } catch (Throwable t) {
+                              moveTaskToBack(true);
+                          }
+                      }
+                  });
                   // Galeriye kaydedilen resimleri yeniden kurulumdan sonra da okuyabilmek için medya izni iste
                   String mediaPerm = Build.VERSION.SDK_INT >= 33
                       ? Manifest.permission.READ_MEDIA_IMAGES
