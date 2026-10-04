@@ -53,6 +53,7 @@ async function ensureUid(user) {
 
 // Bildirimdeki metni, gerçek mesaj sunucudan gelene kadar geçici balon olarak göster
 function showTempFromNotification(otherUser) {
+    if (window.__auraTempShown) return;
     try {
         const nBody = String(otherUser.body || '');
         const nTag = String(otherUser.tag || '');
@@ -213,6 +214,7 @@ window.initApp = async function () {
         const pendingTarget = window.pendingOpenChat;
         window.pendingOpenChat = null;
         window.__auraLaunchPending = Number(pendingTarget.pending || 0);
+        window.__auraLaunch = pendingTarget;
 
         const chatPromise = window.openChatFromNotification(pendingTarget).catch(() => {});
         await Promise.race([
