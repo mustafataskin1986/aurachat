@@ -251,6 +251,7 @@ jobs:
                       if (launchChatJson == null || launchChatJson.isEmpty() || intent == null) return;
                       String title = intent.getStringExtra("title");
                       int count = 1;
+                      org.json.JSONArray msgs = new org.json.JSONArray();
                       if (title != null && Build.VERSION.SDK_INT >= 23) {
                           NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                           if (nm != null) {
@@ -258,12 +259,24 @@ jobs:
                                   Notification n = sbn.getNotification();
                                   if (n == null || n.extras == null) continue;
                                   CharSequence t = n.extras.getCharSequence(Notification.EXTRA_TITLE);
-                                  if (t != null && title.contentEquals(t)) count++;
+                                  if (t != null && title.contentEquals(t)) {
+                                      count++;
+                                      CharSequence tx = n.extras.getCharSequence(Notification.EXTRA_TEXT);
+                                      String stag = sbn.getTag();
+                                      if (tx != null && stag != null && stag.startsWith("msg-")) {
+                                          org.json.JSONObject mo = new org.json.JSONObject();
+                                          mo.put("tag", stag);
+                                          mo.put("text", tx.toString());
+                                          mo.put("t", sbn.getPostTime());
+                                          msgs.put(mo);
+                                      }
+                                  }
                               }
                           }
                       }
                       org.json.JSONObject o = new org.json.JSONObject(launchChatJson);
                       o.put("pending", count);
+                      o.put("msgs", msgs);
                       launchChatJson = o.toString();
                   } catch (Throwable t) {}
               }
