@@ -231,7 +231,7 @@ window.initApp = async function () {
         const tHide = Math.round(performance.now());
 
         // GEÇİCİ ÖLÇÜM satırı - sonuçları gördükten sonra silinecek
-        try { showToast('ÖLÇÜM: sayfa+modüller ' + T_MODULE + 'ms | sohbet çizildi ' + tPaint + 'ms | splash kapandı ' + tHide + 'ms', 9000); } catch (e) {}
+        try { showToast('ÖLÇÜM: modüller ' + T_MODULE + ' | sohbet açılışı ' + (window.__auraTBuild || '-') + ' | ilk sunucu cevabı ' + (window.__auraTSnap || 'gelmedi') + ' | çizildi ' + tPaint + ' | splash kapandı ' + tHide + ' (ms)', 9000); } catch (e) {}
 
         await chatPromise;
         try { await loadContacts(); } catch (e) {}
