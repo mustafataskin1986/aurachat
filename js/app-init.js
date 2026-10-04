@@ -104,10 +104,6 @@ window.openChatFromNotification = async function (otherUser) {
 
     await selectChat(target);
 
-    // selectChat listeyi yeniden çizdiği için geçici balon burada yeniden eklenir
-    showTempFromNotification(otherUser);
-};
-
 // Kişi listesi yüklendikten sonra, açık sohbetin başlık avatarını güncelle
 // (bildirimden açılışta avatar bilgisi gelmediği için ilk anda baş harfler görünür)
 function refreshOpenChatAvatar(uid, chatId) {
@@ -223,7 +219,7 @@ window.initApp = async function () {
             chatPromise,
             new Promise((resolve) => setTimeout(resolve, 4000))
         ]);
-        showTempFromNotification(pendingTarget);
+        
         document.documentElement.removeAttribute('data-aura-launch');
         window.__aurachatReady = true;
         const tPaint = Math.round(performance.now());
@@ -231,7 +227,9 @@ window.initApp = async function () {
         const tHide = Math.round(performance.now());
 
         // GEÇİCİ ÖLÇÜM satırı - sonuçları gördükten sonra silinecek
-        try { showToast('ÖLÇÜM: modüller ' + T_MODULE + ' | sohbet açılışı ' + (window.__auraTBuild || '-') + ' | ilk sunucu cevabı ' + (window.__auraTSnap || 'gelmedi') + ' | çizildi ' + tPaint + ' | splash kapandı ' + tHide + ' (ms)', 9000); } catch (e) {}
+        setTimeout(() => {
+            try { showToast('ÖLÇÜM: modüller ' + T_MODULE + ' | sohbet açılışı ' + (window.__auraTBuild || '-') + ' | ilk sunucu cevabı ' + (window.__auraTSnap || 'hâlâ yok') + ' | çizildi ' + tPaint + ' | splash kapandı ' + tHide + ' (ms)', 9000); } catch (e) {}
+        }, 3000);
 
         await chatPromise;
         try { await loadContacts(); } catch (e) {}
