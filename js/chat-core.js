@@ -535,8 +535,7 @@ if (!window.__auraTBuild) window.__auraTBuild = Math.round(performance.now());
         if (document.documentElement.hasAttribute('data-aura-launch') && !unreadDivider && Number(window.__auraLaunchPending) > 0) {
             messageContainer.appendChild(buildUnreadDividerElement(Number(window.__auraLaunchPending)));
         }
-        scrollToUnreadOrBottom();
-        if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
+                scrollToUnreadOrBottom();
     }
  if (chatId !== 'global' && currentUser && session.clearedAt === null && !(diskCache && diskCache.messages.length)) {
         try {
