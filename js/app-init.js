@@ -229,11 +229,6 @@ window.initApp = async function () {
         await hideNativeSplash();
         const tHide = Math.round(performance.now());
 
-        // GEÇİCİ ÖLÇÜM satırı - sonuçları gördükten sonra silinecek
-        setTimeout(() => {
-            try { showToast('ÖLÇÜM: modüller ' + T_MODULE + ' | sohbet açılışı ' + (window.__auraTBuild || '-') + ' | ilk sunucu cevabı ' + (window.__auraTSnap || 'hâlâ yok') + ' | çizildi ' + tPaint + ' | splash kapandı ' + tHide + ' (ms)', 9000); } catch (e) {}
-        }, 3000);
-
         await chatPromise;
         try { await loadContacts(); } catch (e) {}
         refreshOpenChatAvatar(pendingTarget.uid, pendingTarget.chatId);
