@@ -631,7 +631,14 @@ if (currentChatId === chatId && !session.waitingFirst) {
                 // Bildirimden geçici balon çizildiyse: gerçek mesaj gelene kadar bekle, sonra çizgiyi gerçek sayıyla yeniden kur
                 const tempArrived = session.messages.some((m) => m.id === tempIncoming.msgId);
                if (!tempArrived && Date.now() - tempIncoming.at < 4000) return;
+                                const keepDividerId = (unreadDivider && unreadDivider.chatId === chatId) ? unreadDivider.msgId : null;
                 unreadDivider = findUnreadDivider(session);
+                if (keepDividerId && session.messages.some((m) => m.id === keepDividerId)) {
+                    const allForDivider = session.olderMessagesPrepended.concat(session.messages);
+                    const keepIdx = allForDivider.findIndex((m) => m.id === keepDividerId);
+                    const keepCount = allForDivider.slice(keepIdx).filter((m) => m.data.senderUid !== currentUser.uid && m.data.type !== 'system').length;
+                    if (keepCount > 0) unreadDivider = { chatId: chatId, msgId: keepDividerId, count: keepCount };
+                }
                 tempIncoming = null;
                 dividerRebuilt = true;
             } else if ((recentOpenScrollLock || openedRecently) && (!unreadDivider || unreadDivider.chatId !== chatId)) {
