@@ -60,6 +60,7 @@ import {
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { pushBackState, popBackState } from "./back-handler.js";
+import { auraDialog } from "./aura-dialog.js";
 import { watchCallForChat, startCall } from "./video-call.js";
 import { watchVoiceCallForChat, startVoiceCall } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
@@ -1429,14 +1430,14 @@ if (selectionDeleteBtn) {
 
         let deleteForEveryone = false;
 
-        if (allMine) {
-            deleteForEveryone = confirm(
-                `${ids.length} mesajı herkesten mi silmek istiyorsun?\n\nTamam = Herkesten Sil\nİptal = Sadece Kendimden Sil`
-            );
-        } else {
-            const proceed = confirm(`${ids.length} mesaj sohbetinden (sadece senden) silinsin mi?`);
-            if (!proceed) return;
-        }
+        const delChoice = await auraDialog({
+            title: ids.length > 1 ? `${ids.length} mesaj silinsin mi?` : 'Mesaj silinsin mi?',
+            buttons: allMine
+                ? [{ id: 'all', label: 'Herkesten sil' }, { id: 'me', label: 'Benden sil' }, { id: 'cancel', label: 'İptal' }]
+                : [{ id: 'me', label: 'Benden sil' }, { id: 'cancel', label: 'İptal' }]
+        });
+        if (delChoice.id === 'cancel') return;
+        deleteForEveryone = delChoice.id === 'all';
 
         const chatIdAtDeleteTime = currentChatId;
         const everyoneDeletedIds = new Set();
