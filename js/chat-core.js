@@ -60,7 +60,7 @@ import {
 import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { pushBackState, popBackState } from "./back-handler.js";
-import { auraDialog } from "./aura-dialog.js";
+import { auraDialog, auraAccent } from "./aura-dialog.js";
 import { watchCallForChat, startCall } from "./video-call.js";
 import { watchVoiceCallForChat, startVoiceCall } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
@@ -1431,6 +1431,7 @@ if (selectionDeleteBtn) {
         let deleteForEveryone = false;
 
         const delChoice = await auraDialog({
+                    accent: auraAccent(),
             title: ids.length > 1 ? `${ids.length} mesaj silinsin mi?` : 'Mesaj silinsin mi?',
             buttons: allMine
                 ? [{ id: 'all', label: 'Herkesten sil' }, { id: 'me', label: 'Benden sil' }, { id: 'cancel', label: 'İptal' }]
