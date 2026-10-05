@@ -261,6 +261,7 @@ export async function loadContacts() {
     if (!currentUser) return;
 
     let localPhoneNumbers = new Set();
+        window.__aurachatLocalPhones = localPhoneNumbers; // grupta rehberde kayıtlı olmayanların numarası için
     let localContactCount = 0;   // rehberde okunan kişi sayısı
     let localNumberCount = 0;    // okunan benzersiz numara sayısı
     let contactsPermissionGranted = false;
