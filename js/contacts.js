@@ -903,7 +903,7 @@ if (chatSelectionDeleteBtn) {
             checkbox: groupIds.length ? { label: groupIds.length === 1 ? 'Gruptan çık' : `${groupIds.length} gruptan çık` } : null,
             buttons: [{ id: 'cancel', label: 'İptal' }, { id: 'ok', label: oneGroup ? 'Grubu sil' : (count === 1 ? 'Sil' : 'Tümünü sil') }]
         });
-        if (delChoice.id !== 'ok') return;
+             if (delChoice.id !== 'ok') { exitChatSelectionMode(); return; }
         const leaveIds = delChoice.checked ? new Set(groupIds) : new Set();
 
         chatSelectionDeleteBtn.disabled = true;
