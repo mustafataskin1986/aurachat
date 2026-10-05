@@ -778,7 +778,7 @@ try {
         </script>
     
         
-
+ 
       <script>
         function syncViewport() {
             if (!window.visualViewport) return;
@@ -830,7 +830,27 @@ try {
                 }, 100);
             }
         });
-
+        // Sadece PWA: klavye hareketi bitince boyut eski kalırsa (klavye ile yazı alanı arasında siyah boşluk) kendini düzeltir
+        (function healViewport() {
+            const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+            if (isNative || !window.visualViewport) return;
+            let timer = null;
+            const start = () => {
+                clearInterval(timer);
+                let n = 0;
+                timer = setInterval(() => {
+                    n++;
+                    if (!document.querySelector('.menu-open')) {
+                        const cur = parseFloat(document.body.style.height) || 0;
+                        if (Math.abs(cur - window.visualViewport.height) > 1) syncViewport();
+                    }
+                    if (n >= 14) clearInterval(timer);
+                }, 150);
+            };
+            window.visualViewport.addEventListener('resize', start);
+            document.addEventListener('focusin', start);
+            document.addEventListener('focusout', start);
+        })();
         syncViewport();
     </script>
 
