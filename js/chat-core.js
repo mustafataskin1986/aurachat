@@ -84,6 +84,9 @@ const selectionToolbar = document.getElementById('selection-toolbar');
 const selectionCancelBtn = document.getElementById('selection-cancel-btn');
 const selectionCountEl = document.getElementById('selection-count');
 const selectionDeleteBtn = document.getElementById('selection-delete-btn');
+const selectionReplyBtn = document.getElementById('selection-reply-btn');
+const selectionCopyBtn = document.getElementById('selection-copy-btn');
+const selectionForwardBtn = document.getElementById('selection-forward-btn');
 
 // Modül durumu
 let currentUser = null;
@@ -1424,7 +1427,12 @@ function updateSelectionUI() {
     if (selectionMode) {
         selectionToolbar.classList.remove('hidden');
         selectionToolbar.classList.add('flex');
-        if (selectionCountEl) selectionCountEl.textContent = `${selectedMessageIds.size} seçildi`;
+           if (selectionCountEl) selectionCountEl.textContent = String(selectedMessageIds.size);
+        const onlyId = selectedMessageIds.size === 1 ? Array.from(selectedMessageIds)[0] : null;
+        const onlyEntry = onlyId ? findMessageEntry(onlyId) : null;
+        const onlyType = onlyEntry ? (onlyEntry.data.type || 'text') : '';
+        if (selectionReplyBtn) selectionReplyBtn.style.display = (onlyEntry && !['deleted', 'system', 'call_duration', 'missed_call', 'declined_call'].includes(onlyType)) ? '' : 'none';
+        if (selectionForwardBtn) selectionForwardBtn.style.display = (onlyEntry && (onlyType === 'text' || onlyType === 'image')) ? '' : 'none';
     } else {
         selectionToolbar.classList.add('hidden');
         selectionToolbar.classList.remove('flex');
@@ -1434,7 +1442,52 @@ function updateSelectionUI() {
 if (selectionCancelBtn) {
     selectionCancelBtn.addEventListener('click', () => exitSelectionMode());
 }
+function findMessageEntry(msgId) {
+    const session = chatSessions.get(currentChatId);
+    return session ? (session.messages.find((m) => m.id === msgId) || session.olderMessagesPrepended.find((m) => m.id === msgId)) : null;
+}
 
+if (selectionReplyBtn) {
+    selectionReplyBtn.addEventListener('click', () => {
+        const id = Array.from(selectedMessageIds)[0];
+        exitSelectionMode();
+        if (id) window.replyToMessage(id);
+    });
+}
+
+if (selectionForwardBtn) {
+    selectionForwardBtn.addEventListener('click', () => {
+        const id = Array.from(selectedMessageIds)[0];
+        exitSelectionMode();
+        if (id) window.forwardImageMessage(id);
+    });
+}
+
+if (selectionCopyBtn) {
+    selectionCopyBtn.addEventListener('click', async () => {
+        const session = chatSessions.get(currentChatId);
+        const all = session ? session.olderMessagesPrepended.concat(session.messages) : [];
+        const lines = [];
+        all.forEach(({ id, data }) => {
+            if (selectedMessageIds.has(id) && (!data.type || data.type === 'text') && data.text) lines.push(data.text);
+        });
+        if (!lines.length) { showToast('Kopyalanacak metin yok'); return; }
+        const text = lines.join('\n');
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (e) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (e2) {}
+            ta.remove();
+        }
+        showToast('Kopyalandı');
+        exitSelectionMode();
+    });
+}
 if (selectionDeleteBtn) {
     selectionDeleteBtn.addEventListener('click', async () => {
         if (selectedMessageIds.size === 0 || !currentChatId || !currentUser) return;
@@ -2673,6 +2726,27 @@ async function forwardImageTo(targetUser) {
     showToast('İletiliyor...');
 
     try {
+            if (!msg.type || msg.type === 'text') {
+            const textTargetChatId = getChatId(currentUser.uid, targetUser.uid);
+            await addDoc(collection(db, "chats", textTargetChatId, "messages"), {
+                type: 'text',
+                text: msg.text || '',
+                senderUid: currentUser.uid,
+                senderName: currentUser.name,
+                createdAt: serverTimestamp(),
+                read: false,
+                forwarded: true
+            });
+            await updateSummariesForTarget(textTargetChatId, targetUser.uid, targetUser.name, (msg.text || '').slice(0, 100));
+            sendPushToUser(targetUser.uid, `${currentUser.name}`, (msg.text || '').slice(0, 200), {
+                chatId: textTargetChatId,
+                otherUid: currentUser.uid,
+                otherName: currentUser.name,
+                msgType: 'text'
+            });
+            showToast(`${targetUser.name} kişisine iletildi`);
+            return;
+        }
         const payload = {
             type: 'image',
             text: '',
