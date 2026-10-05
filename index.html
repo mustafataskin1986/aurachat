@@ -106,6 +106,7 @@ html[data-aura-launch] #sidebar{visibility:hidden !important}
 #chat-area{isolation:isolate}
 #chat-area{background-image:none !important;background-color:#0b141a !important}
 #chat-area::before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');background-repeat:repeat;filter:invert(1) grayscale(1) brightness(.45)}
+html[data-aura-theme] #chat-area::before{display:none}
 </style>
 <script>
 try {
