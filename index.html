@@ -510,16 +510,20 @@ try {
             </div>
 
             <!-- MESAJ SEÇİM TOOLBAR'I (silme modu) -->
-            <div id="selection-toolbar" class="hidden absolute top-0 left-0 right-0 bg-[#2a3942] px-4 py-3 items-center justify-between border-b border-gray-800 flex-shrink-0 z-20">
+                  <div id="selection-toolbar" class="hidden absolute top-0 left-0 right-0 bg-black px-4 h-[65px] items-center justify-between flex-shrink-0 z-20">
                 <div class="flex items-center space-x-4">
-                    <button id="selection-cancel-btn" class="text-gray-300 hover:text-white text-lg px-1">
-                        <i class="fa-solid fa-xmark"></i>
+                    <button id="selection-cancel-btn" class="text-white text-lg px-1">
+                        <i class="fa-solid fa-arrow-left"></i>
                     </button>
-                    <span id="selection-count" class="text-white font-medium text-sm">0 seçildi</span>
+                    <span id="selection-count" class="text-white font-medium text-base">0</span>
                 </div>
-                <button id="selection-delete-btn" class="text-gray-300 hover:text-rose-400 text-lg px-1">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
+                <div class="flex items-center space-x-6 text-white text-lg">
+                    <button id="selection-reply-btn" class="px-1"><i class="fa-solid fa-reply"></i></button>
+                    <button id="selection-delete-btn" class="px-1"><i class="fa-solid fa-trash"></i></button>
+                    <button id="selection-copy-btn" class="px-1"><i class="fa-regular fa-copy"></i></button>
+                    <button id="selection-forward-btn" class="px-1"><i class="fa-solid fa-share"></i></button>
+                    <button id="selection-more-btn" class="px-1"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                </div>
             </div>
 
             <!-- Mesajların Akış Alanı -->
