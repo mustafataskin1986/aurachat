@@ -2611,7 +2611,8 @@ function handleAttachChoice(kind) {
 let forwardPickerEl = null;
 let forwardPickerOpen = false;
 let forwardSource = null; // { chatId, msgId }
-
+const forwardTargets = new Map(); // seçilen kişiler: uid -> kullanıcı
+let multiForward = false;
 function closeForwardPickerFromBack() {
     if (forwardPickerEl) {
         forwardPickerEl.classList.add('hidden');
@@ -2619,6 +2620,8 @@ function closeForwardPickerFromBack() {
     }
     forwardPickerOpen = false;
     pendingShare = null;
+    forwardTargets.clear();
+    refreshForwardBar();
 }
 
 function closeForwardPicker() {
@@ -2638,10 +2641,15 @@ function ensureForwardPicker() {
             </button>
             <h2 class="text-white font-medium text-base">Şuna ilet</h2>
         </div>
-        <div id="forward-list" class="flex-1 overflow-y-auto"></div>
+          <div id="forward-list" class="flex-1 overflow-y-auto"></div>
+        <div id="forward-send-bar" class="hidden items-center px-4 py-3 bg-[#202c33] flex-shrink-0">
+            <p id="forward-send-names" class="flex-1 min-w-0 text-gray-300 text-sm truncate"></p>
+            <button type="button" id="forward-send-btn" class="ml-3 w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
     `;
     document.body.appendChild(el);
     el.querySelector('#forward-back-btn').addEventListener('click', closeForwardPicker);
+        el.querySelector('#forward-send-btn').addEventListener('click', () => sendToTargets(Array.from(forwardTargets.values())));
     forwardPickerEl = el;
     return el;
 }
@@ -2652,6 +2660,8 @@ function openForwardPicker() {
     if (titleEl) titleEl.textContent = pendingShare ? 'Şuna gönder' : 'Şuna ilet';
     const listEl = el.querySelector('#forward-list');
     listEl.innerHTML = '';
+        forwardTargets.clear();
+    refreshForwardBar();
 
     const usersMap = window.__aurachatUsers;
     const users = usersMap
@@ -2669,8 +2679,8 @@ function openForwardPicker() {
         const avatarHtml = u.avatar
             ? `<img src="${u.avatar}" class="w-11 h-11 rounded-full object-cover shadow flex-shrink-0">`
             : `<div class="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color:${getUserColor(u.name || '?')};">${getInitials(u.name || '?')}</div>`;
-        row.innerHTML = `${avatarHtml}<span class="text-white text-sm font-medium ml-3 truncate">${escapeHtml(u.name || '')}</span>`;
-        row.addEventListener('click', () => forwardImageTo(u));
+         row.innerHTML = `${avatarHtml}<span class="text-white text-sm font-medium ml-3 truncate">${escapeHtml(u.name || '')}</span><span class="fwd-check ml-auto w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center flex-shrink-0"></span>`;
+                row.addEventListener('click', () => toggleForwardTarget(u, row));
         listEl.appendChild(row);
     });
 
@@ -2679,7 +2689,43 @@ function openForwardPicker() {
     forwardPickerOpen = true;
     pushBackState(closeForwardPickerFromBack);
 }
+function toggleForwardTarget(u, row) {
+    const on = !forwardTargets.has(u.uid);
+    if (on) forwardTargets.set(u.uid, u); else forwardTargets.delete(u.uid);
+    const chk = row.querySelector('.fwd-check');
+    if (chk) {
+        chk.classList.toggle('bg-emerald-500', on);
+        chk.classList.toggle('border-emerald-500', on);
+        chk.classList.toggle('border-gray-500', !on);
+        chk.innerHTML = on ? '<i class="fa-solid fa-check text-white text-xs"></i>' : '';
+    }
+    refreshForwardBar();
+}
 
+function refreshForwardBar() {
+    if (!forwardPickerEl) return;
+    const bar = forwardPickerEl.querySelector('#forward-send-bar');
+    if (!bar) return;
+    bar.classList.toggle('hidden', forwardTargets.size === 0);
+    bar.classList.toggle('flex', forwardTargets.size > 0);
+    forwardPickerEl.querySelector('#forward-send-names').textContent = Array.from(forwardTargets.values()).map((x) => x.name || '').join(', ');
+}
+
+async function sendToTargets(targets) {
+    if (!targets.length) return;
+    const files = pendingShare;
+    closeForwardPicker();
+    multiForward = targets.length > 1;
+    try {
+        for (const u of targets) {
+            if (files) pendingShare = files;
+            await forwardImageTo(u);
+        }
+    } finally {
+        multiForward = false;
+        pendingShare = null;
+    }
+}
 async function updateSummariesForTarget(chatId, otherUid, otherName, lastMessageText) {
     if (!currentUser || !otherUid) return;
     try {
@@ -2901,7 +2947,7 @@ async function sendSharedImagesTo(targetUser) {
             otherName: currentUser.name
         });
 
-        if (currentChatId !== targetChatId) selectChat(targetUser);
+               if (!multiForward && currentChatId !== targetChatId) selectChat(targetUser);
         if (compressed.length < files.length) {
             showToast(`Boyut sınırı yüzünden ${compressed.length}/${files.length} fotoğraf gönderildi`, 4000);
         }
