@@ -3,14 +3,26 @@
 // Tarayıcının confirm() penceresi yerine kullanılır.
 // auraDialog({ title, buttons:[{id,label}], checkbox:{label}|null })
 //   -> Promise<{ id: basılan düğmenin id'si ('cancel' = geri/boşluk), checked: kutucuk durumu }>
+// accent: düğme/kutucuk rengi (verilmezse yeşil). Sohbet içinde auraAccent() ile tema rengi verilir.
 // 3 veya daha çok düğmede düğmeler alt alta, 2 düğmede yan yana dizilir.
 // ==========================================
 import { pushBackState, popBackState } from "./back-handler.js";
+
+// Açık sohbetin tema rengi (yoksa varsayılan yeşil)
+export function auraAccent() {
+    try {
+        const v = getComputedStyle(document.documentElement).getPropertyValue('--aura-btn').trim();
+        return v || '#22c55e';
+    } catch (e) {
+        return '#22c55e';
+    }
+}
 
 export function auraDialog(opts) {
     const title = (opts && opts.title) || '';
     const buttons = (opts && opts.buttons) || [{ id: 'cancel', label: 'İptal' }];
     const checkbox = (opts && opts.checkbox) || null;
+    const accent = (opts && opts.accent) || '#22c55e';
 
     return new Promise((resolve) => {
         const black = document.documentElement.hasAttribute('data-aura-black');
@@ -32,7 +44,7 @@ export function auraDialog(opts) {
             row.style.cssText = 'display:flex;align-items:center;gap:14px;margin:0 4px 20px;color:#e9edef;font-size:16px;cursor:pointer;';
             cb = document.createElement('input');
             cb.type = 'checkbox';
-            cb.style.cssText = 'width:22px;height:22px;flex:none;accent-color:#22c55e;';
+            cb.style.cssText = 'width:22px;height:22px;flex:none;accent-color:' + accent + ';';
             const t = document.createElement('span');
             t.textContent = checkbox.label || '';
             row.appendChild(cb);
@@ -59,7 +71,7 @@ export function auraDialog(opts) {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.textContent = b.label;
-            btn.style.cssText = 'background:none;border:0;color:#22c55e;font-size:17px;padding:12px 14px;cursor:pointer;';
+            btn.style.cssText = 'background:none;border:0;color:' + accent + ';font-size:17px;padding:12px 14px;cursor:pointer;';
             btn.addEventListener('click', () => finish(b.id, false));
             btnRow.appendChild(btn);
         });
