@@ -470,7 +470,7 @@ function evictLruSession(protectedChatId) {
     let lruId = null;
     let lruVal = Infinity;
     for (const [id, s] of chatSessions) {
-        if (id === protectedChatId) continue;
+             if (id === protectedChatId || id === currentChatId) continue;
         if (s.lastUsed < lruVal) {
             lruVal = s.lastUsed;
             lruId = id;
@@ -2761,10 +2761,10 @@ async function forwardImageTo(targetUser) {
     const { chatId: srcChatId, msgId } = forwardSource;
 
     const session = chatSessions.get(srcChatId);
-    const entry = session && (
+        const entry = forwardSource.entry || (session && (
         session.messages.find((m) => m.id === msgId) ||
         session.olderMessagesPrepended.find((m) => m.id === msgId)
-    );
+    ));
     if (!entry) { showToast('Mesaj bulunamadı'); return; }
     const msg = entry.data;
 
@@ -2959,7 +2959,7 @@ async function sendSharedImagesTo(targetUser) {
 
 window.forwardImageMessage = function (msgId) {
     if (!currentChatId || !currentUser) return;
-    forwardSource = { chatId: currentChatId, msgId: msgId };
+        forwardSource = { chatId: currentChatId, msgId: msgId, entry: findMessageEntry(msgId) };
     openForwardPicker();
 };
 
