@@ -897,10 +897,11 @@ if (chatSelectionDeleteBtn) {
 
         const count = selectedChatIds.size;
         const groupIds = Array.from(selectedChatIds).filter((id) => window.__aurachatGroupIds && window.__aurachatGroupIds.has(id));
+            const oneGroup = count === 1 && groupIds.length === 1;
         const delChoice = await auraDialog({
-            title: count === 1 ? 'Sohbet silinsin mi?' : `${count} sohbet silinsin mi?`,
-            checkbox: groupIds.length ? { label: `${groupIds.length} gruptan çık` } : null,
-            buttons: [{ id: 'cancel', label: 'İptal' }, { id: 'ok', label: count === 1 ? 'Sil' : 'Tümünü sil' }]
+            title: oneGroup ? 'Bu grup silinsin mi?' : (count === 1 ? 'Sohbet silinsin mi?' : `${count} sohbet silinsin mi?`),
+            checkbox: groupIds.length ? { label: groupIds.length === 1 ? 'Gruptan çık' : `${groupIds.length} gruptan çık` } : null,
+            buttons: [{ id: 'cancel', label: 'İptal' }, { id: 'ok', label: oneGroup ? 'Grubu sil' : (count === 1 ? 'Sil' : 'Tümünü sil') }]
         });
         if (delChoice.id !== 'ok') return;
         const leaveIds = delChoice.checked ? new Set(groupIds) : new Set();
