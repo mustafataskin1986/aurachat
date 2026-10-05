@@ -137,7 +137,7 @@ function applyTheme(chatId) {
     root.style.setProperty('--aura-in', t.inc);
     root.style.setProperty('--aura-btn', t.out);
     mc.style.background = 'transparent';
-    if (ca) ca.style.background = t.bg;
+    if (ca) ca.style.setProperty('background', t.bg, 'important');
     syncAccentToNative();
 }
 
