@@ -57,7 +57,7 @@ import {
     collection, addDoc as rawAddDoc, onSnapshot, query, orderBy, limitToLast, limit, startAfter, where, getDocs,
     serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, getDoc, getDocFromCache, increment, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getChatId, getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
+import { getChatId, getUserColor, getInitials, escapeHtml, getPhoneLast10 } from "./ui-helpers.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { auraDialog, auraAccent } from "./aura-dialog.js";
@@ -102,11 +102,28 @@ const messageElementsById = new Map();
 const expandedMsgIds = new Set(); // "Devamını okuyun" ile açılmış mesajlar
 
 // Her göndericiye sabit, okunaklı bir renk (kimlikten hesaplanır)
-function senderColor(msg) {
+function senderColor(msg, light) {
     const key = String(msg.senderUid || msg.senderName || '?');
     let h = 0;
     for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-    return `hsl(${(h % 12) * 30 + 8}, 68%, 66%)`;
+    return `hsl(${(h % 12) * 30 + 8}, 68%, ${light || 66}%)`;
+}
+
+// Grupta, rehberinde kayıtlı olmayan kişinin numarası (rehber okunamadıysa boş döner)
+function unsavedSenderPhone(msg) {
+    if (!currentIsGroup || !msg.senderUid) return '';
+    const local = window.__aurachatLocalPhones;
+    if (!local || local.size === 0) return '';
+    const u = window.__aurachatUsers && window.__aurachatUsers.get(msg.senderUid);
+    if (!u || !u.phone) return '';
+    const l10 = getPhoneLast10(u.phone);
+    if (!l10 || local.has(l10)) return '';
+    return String(u.phone);
+}
+
+function senderLineHtml(msg, isImage) {
+    const phone = unsavedSenderPhone(msg);
+    return `<div class="flex items-baseline justify-between gap-3 mb-0.5 ${isImage ? 'px-2 pt-1' : ''}"><span class="text-[11px] font-bold truncate" style="color:${senderColor(msg)}">${phone ? '~ ' : ''}${escapeHtml(msg.senderName)}</span>${phone ? `<span class="text-[11px] flex-shrink-0 text-gray-400">${escapeHtml(phone)}</span>` : ''}</div>`;
 }
 let recentOpenScrollLock = false;
 let unreadDivider = null; // { chatId, msgId, count }
@@ -2016,7 +2033,7 @@ if (isAlbum) {
         : '';
 
     const isReplyable = !['deleted', 'system', 'call_duration', 'missed_call', 'declined_call'].includes(msg.type);
-    const replyQuoteHtml = buildReplyQuoteHtml(msg.replyTo);
+        const replyQuoteHtml = buildReplyQuoteHtml(msg.replyTo, isMine);
 
     const actionButtonsHtml = isImage
         ? `<button type="button" class="flex-shrink-0 self-center w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-gray-300 flex items-center justify-center ${isMine ? 'mr-2' : 'ml-2'}" onclick="forwardImageMessage('${msgId}')"><i class="fa-solid fa-share text-xs"></i></button>`
@@ -2059,7 +2076,7 @@ if (isAlbum) {
         msgDiv.className = "flex justify-start rounded-lg transition-colors";
         msgDiv.innerHTML = `
             <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
-              ${(currentChatId === 'global' || currentIsGroup) ? `<span class="text-[11px] font-bold block mb-0.5 ${isImage ? 'px-2 pt-1' : ''}" style="color:${senderColor(msg)}">${escapeHtml(msg.senderName)}</span>` : ''}
+                           ${(currentChatId === 'global' || currentIsGroup) ? senderLineHtml(msg, isImage) : ''}
                 ${forwardedLabel}
                 ${replyQuoteHtml}
                 ${bodyHtml}
@@ -2866,10 +2883,14 @@ function ensureReplyBar() {
 function startReply(msgId, msg, isMine) {
     replyingTo = {
         msgId: msgId,
-        senderName: isMine ? 'Sen' : (msg.senderName || ''),
+                senderName: isMine ? 'Sen' : (msg.senderName || ''),
+        senderUid: msg.senderUid || null,
         previewText: replyPreviewTextFor(msg)
     };
     const el = ensureReplyBar();
+    const replyColor = senderColor({ senderUid: msg.senderUid, senderName: msg.senderName }, 78);
+    el.style.borderLeftColor = replyColor;
+    el.querySelector('#reply-bar-name').style.color = replyColor;
     el.querySelector('#reply-bar-name').textContent = replyingTo.senderName;
     el.querySelector('#reply-bar-text').textContent = replyingTo.previewText;
     el.classList.remove('hidden');
@@ -2889,7 +2910,7 @@ function consumeReplyPayload() {
     if (!replyingTo) return null;
     const r = replyingTo;
     cancelReply();
-    return { msgId: r.msgId, senderName: r.senderName, previewText: r.previewText };
+        return { msgId: r.msgId, senderName: r.senderName, senderUid: r.senderUid || null, previewText: r.previewText };
 }
 
 function scrollToOriginalMessage(msgId) {
@@ -2905,10 +2926,12 @@ function scrollToOriginalMessage(msgId) {
     }, 350);
 }
 
-function buildReplyQuoteHtml(replyTo) {
+function buildReplyQuoteHtml(replyTo, isMine) {
     if (!replyTo) return '';
-    return `<div class="reply-quote bg-black/20 rounded-md px-2 py-1.5 mb-1.5 border-l-2 border-emerald-400 cursor-pointer" onclick="jumpToReply('${replyTo.msgId}', event)">
-        <p class="text-emerald-400 text-[11px] font-semibold truncate">${escapeHtml(replyTo.senderName || '')}</p>
+    const qColor = senderColor({ senderUid: replyTo.senderUid, senderName: replyTo.senderName }, 78);
+    const qBg = isMine ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.10)';
+    return `<div class="reply-quote rounded-md px-2 py-1.5 mb-1.5 cursor-pointer" style="background:${qBg};border-left:3px solid ${qColor}" onclick="jumpToReply('${replyTo.msgId}', event)">
+        <p class="text-[11px] font-semibold truncate" style="color:${qColor}">${escapeHtml(replyTo.senderName || '')}</p>
         <p class="text-gray-300 text-[11px] truncate">${escapeHtml(replyTo.previewText || '')}</p>
     </div>`;
 }
