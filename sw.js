@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aurachat-offline-v5';
+const CACHE_NAME = 'aurachat-offline-v6';
 const ASSETS_TO_CACHE = [
   './',
   './index.html'
