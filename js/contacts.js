@@ -20,7 +20,8 @@ import {
     collection, onSnapshot, query, orderBy, doc, getDocs, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
-import { selectChat, getCurrentUser, clearChatForMe, prewarmChatSession, showToast } from "./chat-core.js";
+import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, showToast } from "./chat-core.js";
+import { auraDialog } from "./aura-dialog.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
 let contactList = document.getElementById('contact-list');
@@ -895,14 +896,21 @@ if (chatSelectionDeleteBtn) {
         if (selectedChatIds.size === 0) return;
 
         const count = selectedChatIds.size;
-        const proceed = confirm(`${count} sohbet kalıcı olarak silinsin mi?\n\n(Karşı taraf etkilenmez, ama bu hesapta eski mesajlar bir daha görünmez. Yeni mesaj gelirse sohbet tekrar listeye düşer, sadece yeni mesajla.)`);
-        if (!proceed) return;
+        const groupIds = Array.from(selectedChatIds).filter((id) => window.__aurachatGroupIds && window.__aurachatGroupIds.has(id));
+        const delChoice = await auraDialog({
+            title: count === 1 ? 'Sohbet silinsin mi?' : `${count} sohbet silinsin mi?`,
+            checkbox: groupIds.length ? { label: `${groupIds.length} gruptan çık` } : null,
+            buttons: [{ id: 'cancel', label: 'İptal' }, { id: 'ok', label: count === 1 ? 'Sil' : 'Tümünü sil' }]
+        });
+        if (delChoice.id !== 'ok') return;
+        const leaveIds = delChoice.checked ? new Set(groupIds) : new Set();
 
         chatSelectionDeleteBtn.disabled = true;
 
         try {
             for (const chatId of selectedChatIds) {
-                await clearChatForMe(chatId);
+                                if (leaveIds.has(chatId)) await leaveGroup(chatId);
+                else await clearChatForMe(chatId);
                 const item = contactElementsMap.get(chatId);
                 if (item && item.element && item.element.parentNode) {
                     item.element.parentNode.removeChild(item.element);
