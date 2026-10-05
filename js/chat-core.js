@@ -1222,10 +1222,13 @@ composer.clearImages();
 if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.photo);
     updateMicToggle();
     updateBlockedUI();
-    unreadDivider = findUnreadDivider(session);
-    renderSession(session);
+        const tempStillShown = !!(tempIncoming && tempIncoming.chatId === chatId && Date.now() - tempIncoming.at < 4000 && !session.messages.some((m) => m.id === tempIncoming.msgId));
+    if (!tempStillShown) {
+        unreadDivider = findUnreadDivider(session);
+        renderSession(session);
+        scrollToUnreadOrBottom();
+    }
     markVisibleMessagesRead(session);
-    scrollToUnreadOrBottom();
 if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
     recentOpenScrollLock = true;
     session.openedAt = Date.now();
