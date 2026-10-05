@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "AuraChat Mobile App",
   "main": "index.html",
+  "scripts": {
+    "build": "tailwindcss -c tailwind.config.js -i css/tailwind-input.css -o css/tailwind.css --minify"
+  },
   "dependencies": {
     "@capacitor/core": "^5.0.0",
     "@capacitor/filesystem": "^5.0.0",
@@ -12,6 +15,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^5.0.0",
-    "@capacitor/android": "^5.0.0"
+    "@capacitor/android": "^5.0.0",
+    "tailwindcss": "^3.4.17"
   }
 }
