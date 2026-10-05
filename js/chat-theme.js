@@ -166,6 +166,12 @@ function syncAccentToNative() {
     }).observe(nameEl, { childList: true, characterData: true, subtree: true });
 })();
 
+// Bu dosya sohbet açıldıktan sonra yüklendiyse (bildirimle açılış) açık sohbetin temasını hemen uygula
+(function applyForOpenChat() {
+    const id = getCurrentChatId();
+    if (id) applyTheme(id);
+})();
+
 // ---------- Tema seçme ekranı ----------
 let panelEl = null;
 let panelOpen = false;
