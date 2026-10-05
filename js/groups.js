@@ -13,6 +13,7 @@ import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
 import { openChatThemePicker } from "./chat-theme.js";
+import { auraDialog, auraAccent } from "./aura-dialog.js";
 
 const sidebar = document.getElementById('sidebar');
 const chatAreaEl = document.getElementById('chat-area');
@@ -308,7 +309,7 @@ function ensureInfoPanel() {
     el.querySelector('#group-photo-btn').addEventListener('click', () => changeGroupPhoto());
     el.querySelector('#group-leave-btn').addEventListener('click', async () => {
         if (!infoGroupId) return;
-        if (!confirm('Gruptan ayrılmak istiyor musun?')) return;
+             if ((await auraDialog({ title: 'Gruptan ayrılmak istiyor musun?', buttons: [{ id: 'cancel', label: 'İptal' }, { id: 'ok', label: 'Ayrıl' }] })).id !== 'ok') return;
         const gid = infoGroupId;
         closeInfoPanel();
         try {
@@ -708,7 +709,7 @@ async function removeMember(uid, name) {
     const gid = infoGroupId;
     const g = infoGroupData;
     if (!me || !gid || !g || !isAdmin(g, me.uid) || uid === g.createdBy) return;
-    if (!confirm(`${name} gruptan çıkarılsın mı?`)) return;
+    if ((await auraDialog({ title: `${name} gruptan çıkarılsın mı?`, buttons: [{ id: 'cancel', label: 'İptal' }, { id: 'ok', label: 'Çıkar' }] })).id !== 'ok') return;
 
     try {
         const remaining = (Array.isArray(g.members) ? g.members : []).filter((x) => x !== uid);
@@ -918,7 +919,7 @@ async function openChatMenu() {
         }
 
         if (action === 'leave') {
-            if (!confirm('Gruptan ayrılmak istiyor musun?')) return;
+              if ((await auraDialog({ accent: auraAccent(), title: 'Gruptan ayrılmak istiyor musun?', buttons: [{ id: 'cancel', label: 'İptal' }, { id: 'ok', label: 'Ayrıl' }] })).id !== 'ok') return;
             try {
                 await leaveGroup(id);
                 showToast('Gruptan ayrıldın');
