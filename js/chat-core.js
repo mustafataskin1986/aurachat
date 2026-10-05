@@ -1437,7 +1437,7 @@ if (selectionDeleteBtn) {
                 ? [{ id: 'all', label: 'Herkesten sil' }, { id: 'me', label: 'Benden sil' }, { id: 'cancel', label: 'İptal' }]
                 : [{ id: 'me', label: 'Benden sil' }, { id: 'cancel', label: 'İptal' }]
         });
-        if (delChoice.id === 'cancel') return;
+             if (delChoice.id === 'cancel') { exitSelectionMode(); return; }
         deleteForEveryone = delChoice.id === 'all';
 
         const chatIdAtDeleteTime = currentChatId;
