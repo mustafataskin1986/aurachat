@@ -8,7 +8,8 @@
 import { db, auth } from "./firebase-init.js";
 import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { getCurrentUser, setCurrentUser } from "./chat-core.js";
+import { getCurrentUser, setCurrentUser, getPresenceHidden, setPresenceHidden } from "./chat-core.js";
+import { auraDialog } from "./aura-dialog.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
@@ -95,10 +96,49 @@ function renderAvatar(user) {
         profileAvatar.innerHTML = `<span>${initials}</span>`;
     }
 }
+// Son görülme ve çevrimiçi gizliliği (Herkes / Hiç kimse)
+let privacyValueEl = null;
 
+function updatePrivacyLabel() {
+    if (privacyValueEl) privacyValueEl.textContent = getPresenceHidden() ? 'Hiç kimse' : 'Herkes';
+}
+
+(function buildPrivacyRow() {
+    if (!profileLogoutBtn) return;
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'w-full max-w-sm mt-3 bg-[#202c33] hover:bg-[#2a3942] text-gray-100 rounded-xl px-4 py-3 flex items-center justify-between text-left transition';
+    row.innerHTML = `
+        <span class="flex items-center space-x-3 min-w-0">
+            <i class="fa-solid fa-eye text-gray-400 w-4"></i>
+            <span class="min-w-0">
+                <span class="block text-sm">Son görülme ve çevrimiçi</span>
+                <span class="block text-[11px] text-gray-400">Gizlersen sen de başkalarınınkini göremezsin</span>
+            </span>
+        </span>
+        <span class="text-xs text-emerald-400 flex-shrink-0 ml-3" data-privacy-value></span>
+    `;
+    privacyValueEl = row.querySelector('[data-privacy-value]');
+    row.addEventListener('click', async () => {
+        const res = await auraDialog({
+            title: 'Son görülme ve çevrimiçi kimler görebilir?',
+            buttons: [
+                { id: 'all', label: 'Herkes' },
+                { id: 'none', label: 'Hiç kimse' },
+                { id: 'cancel', label: 'İptal' }
+            ]
+        });
+        if (res.id === 'all') setPresenceHidden(false);
+        else if (res.id === 'none') setPresenceHidden(true);
+        updatePrivacyLabel();
+    });
+    profileLogoutBtn.insertAdjacentElement('beforebegin', row);
+    updatePrivacyLabel();
+})();
 async function openProfilePanel() {
-    let user = getCurrentUser();
+        let user = getCurrentUser();
     if (!user || !profilePanel) return;
+    updatePrivacyLabel();
 
     pendingAvatarBase64 = null;
 
