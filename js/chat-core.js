@@ -1351,7 +1351,8 @@ function doCloseChatView() {
         setDoc(doc(db, "chats", currentChatId), { [`typing_${currentUser.uid}`]: false }, { merge: true }).catch(() => {});
     }
     composer.clearImages();
-    closeAttachMenu();
+        closeAttachMenu();
+    closeChatSearch();
     cancelReply();
     expandedMsgIds.clear();
     unreadDivider = null;
@@ -1431,7 +1432,190 @@ function toggleMessageSelection(msgId) {
         updateSelectionUI();
     }
 }
+// ------------------------------------------
+// SOHBET İÇİ ARAMA
+// ------------------------------------------
+let searchBarEl = null;
+const searchState = { active: false, chatId: null, query: '', ids: [], index: -1 };
 
+function normSearch(t) {
+    return String(t || '').toLocaleLowerCase('tr');
+}
+
+function ensureSearchBar() {
+    if (searchBarEl) return searchBarEl;
+    const el = document.createElement('div');
+    el.id = 'chat-search-bar';
+    el.className = 'hidden absolute top-0 left-0 right-0 bg-black px-3 h-[65px] items-center flex-shrink-0 z-20';
+    el.innerHTML = `
+        <button type="button" data-search="close" class="text-white text-lg px-2"><i class="fa-solid fa-arrow-left"></i></button>
+        <input type="text" data-search="input" placeholder="Ara..." autocomplete="off" class="flex-1 min-w-0 bg-transparent text-white text-base outline-none px-2" style="color:#fff;">
+        <span data-search="count" class="text-gray-300 text-xs px-2 whitespace-nowrap"></span>
+        <button type="button" data-search="up" class="text-white text-lg px-3"><i class="fa-solid fa-chevron-up"></i></button>
+        <button type="button" data-search="down" class="text-white text-lg px-3"><i class="fa-solid fa-chevron-down"></i></button>
+    `;
+    (selectionToolbar && selectionToolbar.parentElement ? selectionToolbar.parentElement : chatArea).appendChild(el);
+    const input = el.querySelector('[data-search="input"]');
+    input.addEventListener('input', () => runChatSearch());
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); stepChatSearch(-1); }
+    });
+    el.querySelector('[data-search="close"]').addEventListener('click', () => closeChatSearch());
+    el.querySelector('[data-search="up"]').addEventListener('click', () => stepChatSearch(-1));
+    el.querySelector('[data-search="down"]').addEventListener('click', () => stepChatSearch(1));
+    searchBarEl = el;
+    return el;
+}
+
+function computeSearchMatches() {
+    const session = chatSessions.get(searchState.chatId);
+    const q = normSearch(searchState.query).trim();
+    if (!session || !q) return [];
+    const all = session.olderMessagesPrepended.concat(session.messages);
+    const ids = [];
+    all.forEach(({ id, data }) => {
+        if (currentUser && Array.isArray(data.deletedFor) && data.deletedFor.includes(currentUser.uid)) return;
+        if (data.type && data.type !== 'text' && data.type !== 'image') return;
+        if (data.text && normSearch(data.text).includes(q)) ids.push(id);
+    });
+    return ids;
+}
+
+function clearSearchMarks() {
+    messageContainer.querySelectorAll('mark[data-search-mark]').forEach((m) => {
+        const parent = m.parentNode;
+        if (!parent) return;
+        parent.replaceChild(document.createTextNode(m.textContent), m);
+        parent.normalize();
+    });
+    messageContainer.querySelectorAll('[data-search-current]').forEach((el) => {
+        el.removeAttribute('data-search-current');
+        el.style.background = '';
+    });
+}
+
+function highlightInElement(el, q) {
+    el.querySelectorAll('p.whitespace-pre-wrap').forEach((p) => {
+        const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        nodes.forEach((node) => {
+            const data = node.data;
+            const lower = normSearch(data);
+            if (lower.length !== data.length) return;
+            let from = 0;
+            let idx = lower.indexOf(q, from);
+            if (idx < 0) return;
+            const frag = document.createDocumentFragment();
+            while (idx >= 0) {
+                if (idx > from) frag.appendChild(document.createTextNode(data.slice(from, idx)));
+                const mk = document.createElement('mark');
+                mk.setAttribute('data-search-mark', '1');
+                mk.style.cssText = 'background:#f5c542;color:#000;border-radius:3px;padding:0 1px;';
+                mk.textContent = data.slice(idx, idx + q.length);
+                frag.appendChild(mk);
+                from = idx + q.length;
+                idx = lower.indexOf(q, from);
+            }
+            if (from < data.length) frag.appendChild(document.createTextNode(data.slice(from)));
+            node.parentNode.replaceChild(frag, node);
+        });
+    });
+}
+
+function updateSearchCount() {
+    if (!searchBarEl) return;
+    const c = searchBarEl.querySelector('[data-search="count"]');
+    if (!searchState.query.trim()) c.textContent = '';
+    else if (!searchState.ids.length) c.textContent = 'Sonuç yok';
+    else c.textContent = `${searchState.ids.length - searchState.index}/${searchState.ids.length}`;
+}
+
+function refreshSearchMarks(scroll) {
+    clearSearchMarks();
+    const q = normSearch(searchState.query).trim();
+    if (!searchState.active || !q) return;
+    searchState.ids.forEach((id) => {
+        const el = messageElementsById.get(id);
+        if (el) highlightInElement(el, q);
+    });
+    const cur = messageElementsById.get(searchState.ids[searchState.index]);
+    if (cur) {
+        cur.setAttribute('data-search-current', '1');
+        cur.style.background = 'rgba(255,255,255,0.12)';
+        if (scroll) cur.scrollIntoView({ block: 'center' });
+    }
+}
+
+function runChatSearch() {
+    const input = searchBarEl.querySelector('[data-search="input"]');
+    searchState.query = input.value;
+    searchState.ids = computeSearchMatches();
+    searchState.index = searchState.ids.length - 1;
+    updateSearchCount();
+    refreshSearchMarks(true);
+}
+
+function stepChatSearch(dir) {
+    const n = searchState.ids.length;
+    if (!n) return;
+    searchState.index = (searchState.index + dir + n) % n;
+    updateSearchCount();
+    refreshSearchMarks(true);
+}
+
+function closeChatSearchFromBack() {
+    searchState.active = false;
+    searchState.query = '';
+    searchState.ids = [];
+    searchState.index = -1;
+    clearSearchMarks();
+    if (searchBarEl) {
+        const input = searchBarEl.querySelector('[data-search="input"]');
+        input.value = '';
+        input.blur();
+        searchBarEl.classList.add('hidden');
+        searchBarEl.classList.remove('flex');
+        updateSearchCount();
+    }
+}
+
+function closeChatSearch() {
+    if (!searchState.active) return;
+    closeChatSearchFromBack();
+    popBackState();
+}
+
+export function openChatSearch() {
+    if (!currentChatId) return;
+    const el = ensureSearchBar();
+    if (searchState.active) {
+        el.querySelector('[data-search="input"]').focus();
+        return;
+    }
+    searchState.active = true;
+    searchState.chatId = currentChatId;
+    searchState.query = '';
+    searchState.ids = [];
+    searchState.index = -1;
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    updateSearchCount();
+    pushBackState(closeChatSearchFromBack);
+    setTimeout(() => el.querySelector('[data-search="input"]').focus(), 50);
+}
+
+// Mesajlar yeniden çizilince (yeni mesaj, okundu vb.) vurguları geri kur
+function refreshSearchAfterRender(session) {
+    if (!searchState.active) return;
+    if (searchState.chatId !== session.chatId) return;
+    const curId = searchState.ids[searchState.index];
+    searchState.ids = computeSearchMatches();
+    const i = searchState.ids.indexOf(curId);
+    searchState.index = i >= 0 ? i : searchState.ids.length - 1;
+    updateSearchCount();
+    refreshSearchMarks(false);
+}
 // ------------------------------------------
 // MESAJ TEPKİLERİ (emoji)
 // ------------------------------------------
@@ -1752,6 +1936,7 @@ function renderSession(session) {
     });
 
     messageContainer.appendChild(fragment);
+    refreshSearchAfterRender(session);
 }
 
 // ------------------------------------------
