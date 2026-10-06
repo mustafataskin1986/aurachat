@@ -327,7 +327,7 @@ if (currentIsGroup) {
         return;
     }
 
-      if (presenceHidden || !otherPresence || !otherPresence.lastSeenMs) {
+     if (!otherPresence || !otherPresence.lastSeenMs) {
         activeChatStatus.textContent = '';
         return;
     }
