@@ -221,10 +221,46 @@ const PRESENCE_STALE_MS = 25000;
 let presenceTimer = null;
 let unsubscribePresence = null;
 let otherPresence = null; // { online, lastSeenMs } - açık sohbetteki karşı taraf
+let presenceHidden = false; // true = son görülme/çevrimiçi gizli (karşılıklı: ben de başkalarınınkini görmem)
+try { presenceHidden = localStorage.getItem('aura_presence_hidden') === '1'; } catch (e) {}
+
+export function getPresenceHidden() {
+    return presenceHidden;
+}
+
+export function setPresenceHidden(hidden) {
+    presenceHidden = !!hidden;
+    try { localStorage.setItem('aura_presence_hidden', presenceHidden ? '1' : '0'); } catch (e) {}
+    if (currentUser && currentUser.uid) {
+        if (presenceHidden) {
+            setDoc(doc(db, "presence", currentUser.uid), { hidden: true, online: false, lastSeen: deleteField() }, { merge: true }).catch(() => {});
+        } else {
+            setDoc(doc(db, "presence", currentUser.uid), { hidden: false }, { merge: true })
+                .then(() => writePresence(document.visibilityState === 'visible'))
+                .catch(() => {});
+        }
+    }
+    renderChatStatus();
+}
+
+// Başka cihazda yapılan gizlilik seçimini sunucudan al
+function syncPresenceHidden() {
+    if (!currentUser || !currentUser.uid) return Promise.resolve();
+    return getDoc(doc(db, "presence", currentUser.uid)).then((snap) => {
+        if (!snap.exists()) return;
+        const h = !!snap.data().hidden;
+        if (h !== presenceHidden) {
+            presenceHidden = h;
+            try { localStorage.setItem('aura_presence_hidden', h ? '1' : '0'); } catch (e) {}
+            renderChatStatus();
+        }
+    }).catch(() => {});
+}
 let presenceStatusTimer = null;
 
 function writePresence(online) {
     if (!currentUser || !currentUser.uid) return;
+    if (presenceHidden) return;
     setDoc(doc(db, "presence", currentUser.uid), {
         online: online,
         lastSeen: serverTimestamp()
@@ -233,10 +269,10 @@ function writePresence(online) {
 
 export function startPresence() {
     if (presenceTimer) return;
-    writePresence(document.visibilityState === 'visible');
     presenceTimer = setInterval(() => {
         if (document.visibilityState === 'visible') writePresence(true);
     }, PRESENCE_HEARTBEAT_MS);
+    syncPresenceHidden().then(() => writePresence(document.visibilityState === 'visible'));
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -291,7 +327,7 @@ if (currentIsGroup) {
         return;
     }
 
-    if (!otherPresence || !otherPresence.lastSeenMs) {
+      if (presenceHidden || !otherPresence || !otherPresence.lastSeenMs) {
         activeChatStatus.textContent = '';
         return;
     }
@@ -350,7 +386,7 @@ function watchOtherPresence(chatId, otherUid) {
     if (!otherUid) return;
     unsubscribePresence = onSnapshot(doc(db, "presence", otherUid), (snap) => {
         if (currentChatId !== chatId) return;
-        if (snap.exists()) {
+              if (snap.exists() && !snap.data().hidden) {
             const d = snap.data();
             otherPresence = {
                 online: !!d.online,
