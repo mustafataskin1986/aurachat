@@ -55,7 +55,7 @@
 import { db } from "./firebase-init.js";
 import {
     collection, addDoc as rawAddDoc, onSnapshot, query, orderBy, limitToLast, limit, startAfter, where, getDocs,
-    serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, getDoc, getDocFromCache, increment, Timestamp
+        serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, getDoc, getDocFromCache, increment, Timestamp, deleteField
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getChatId, getUserColor, getInitials, escapeHtml, getPhoneLast10 } from "./ui-helpers.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
@@ -1422,6 +1422,85 @@ function toggleMessageSelection(msgId) {
     }
 }
 
+// ------------------------------------------
+// MESAJ TEPKİLERİ (emoji)
+// ------------------------------------------
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const NO_REACT_TYPES = ['deleted', 'system', 'call_duration', 'missed_call', 'declined_call'];
+let reactionBarEl = null;
+
+function hideReactionBar() {
+    if (reactionBarEl) reactionBarEl.style.display = 'none';
+}
+
+function positionReactionBar(msgId) {
+    const el = messageElementsById.get(msgId);
+    if (!el || !reactionBarEl) return;
+    const bubble = el.firstElementChild && el.firstElementChild.classList.contains('relative') ? el.firstElementChild : (el.querySelector('.relative') || el);
+    const r = bubble.getBoundingClientRect();
+    const barH = 48;
+    let top = r.top - barH - 6;
+    if (top < 80) top = r.bottom + 6;
+    if (top > window.innerHeight - barH - 10) top = window.innerHeight - barH - 10;
+    reactionBarEl.style.top = top + 'px';
+    const mine = el.dataset.mine === 'true';
+    const w = reactionBarEl.offsetWidth || 270;
+    let left = mine ? r.right - w : r.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+    reactionBarEl.style.left = left + 'px';
+}
+
+function showReactionBar(msgId, entry) {
+    if (!reactionBarEl) {
+        reactionBarEl = document.createElement('div');
+        reactionBarEl.id = 'reaction-bar';
+        reactionBarEl.style.cssText = 'position:fixed;z-index:55;display:none;gap:2px;padding:6px 8px;border-radius:9999px;background:#233138;box-shadow:0 4px 14px rgba(0,0,0,0.5);align-items:center;';
+        document.body.appendChild(reactionBarEl);
+        messageContainer.addEventListener('scroll', () => {
+            if (selectionMode && selectedMessageIds.size === 1 && reactionBarEl.style.display !== 'none') {
+                positionReactionBar(Array.from(selectedMessageIds)[0]);
+            }
+        }, { passive: true });
+    }
+    const myUid = currentUser && currentUser.uid;
+    const mine = entry.data.reactions && myUid ? entry.data.reactions[myUid] : null;
+    reactionBarEl.innerHTML = REACTION_EMOJIS.map((e) =>
+        `<button type="button" data-react="${e}" style="font-size:26px;line-height:1;width:40px;height:36px;border-radius:9999px;background:${mine === e ? 'rgba(255,255,255,0.18)' : 'transparent'};">${e}</button>`
+    ).join('');
+    reactionBarEl.style.display = 'flex';
+    reactionBarEl.querySelectorAll('button[data-react]').forEach((b) => {
+        b.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            const emoji = b.getAttribute('data-react');
+            exitSelectionMode();
+            applyReaction(msgId, emoji);
+        });
+    });
+    positionReactionBar(msgId);
+}
+
+async function applyReaction(msgId, emoji) {
+    if (!currentUser || !currentUser.uid || !currentChatId || !REACTION_EMOJIS.includes(emoji)) return;
+    const entry = findMessageEntry(msgId);
+    const current = entry && entry.data.reactions ? entry.data.reactions[currentUser.uid] : null;
+    try {
+        await updateDoc(doc(db, "chats", currentChatId, "messages", msgId), {
+            [`reactions.${currentUser.uid}`]: current === emoji ? deleteField() : emoji
+        });
+    } catch (e) {
+        showToast('Tepki gönderilemedi');
+    }
+}
+
+function buildReactionsHtml(msg, isMine) {
+    if (!msg.reactions || NO_REACT_TYPES.includes(msg.type)) return '';
+    const vals = Object.values(msg.reactions).filter((e) => REACTION_EMOJIS.includes(e));
+    if (!vals.length) return '';
+    const uniq = Array.from(new Set(vals));
+    const count = vals.length > 1 ? `<span style="font-size:11px;color:#d1d7db;margin-left:3px;">${vals.length}</span>` : '';
+    return `<div style="position:absolute;bottom:-14px;${isMine ? 'right:10px' : 'left:10px'};background:#233138;border:2px solid #0b141a;border-radius:9999px;padding:1px 6px;font-size:13px;line-height:18px;white-space:nowrap;z-index:2;">${uniq.map(escapeHtml).join('')}${count}</div>`;
+}
+
 function updateSelectionUI() {
     if (!selectionToolbar) return;
     if (selectionMode) {
@@ -1432,10 +1511,12 @@ function updateSelectionUI() {
         const onlyEntry = onlyId ? findMessageEntry(onlyId) : null;
         const onlyType = onlyEntry ? (onlyEntry.data.type || 'text') : '';
         if (selectionReplyBtn) selectionReplyBtn.style.display = (onlyEntry && !['deleted', 'system', 'call_duration', 'missed_call', 'declined_call'].includes(onlyType)) ? '' : 'none';
-        if (selectionForwardBtn) selectionForwardBtn.style.display = (onlyEntry && (onlyType === 'text' || onlyType === 'image')) ? '' : 'none';
+          if (selectionForwardBtn) selectionForwardBtn.style.display = (onlyEntry && (onlyType === 'text' || onlyType === 'image')) ? '' : 'none';
+        if (onlyEntry && !NO_REACT_TYPES.includes(onlyType)) showReactionBar(onlyId, onlyEntry); else hideReactionBar();
     } else {
         selectionToolbar.classList.add('hidden');
         selectionToolbar.classList.remove('flex');
+        hideReactionBar();
     }
 }
 
@@ -2088,6 +2169,9 @@ if (isAlbum) {
     const isReplyable = !['deleted', 'system', 'call_duration', 'missed_call', 'declined_call'].includes(msg.type);
         const replyQuoteHtml = buildReplyQuoteHtml(msg.replyTo, isMine);
 
+    const reactionsHtml = buildReactionsHtml(msg, isMine);
+    if (reactionsHtml) msgDiv.style.marginBottom = '14px';
+
     const actionButtonsHtml = isImage
         ? `<button type="button" class="flex-shrink-0 self-center w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-gray-300 flex items-center justify-center ${isMine ? 'mr-2' : 'ml-2'}" onclick="forwardImageMessage('${msgId}')"><i class="fa-solid fa-share text-xs"></i></button>`
         : '';
@@ -2118,6 +2202,7 @@ if (isAlbum) {
                 ${replyQuoteHtml}
                 ${bodyHtml}
                 ${timeHtml}
+                ${reactionsHtml}
             </div>
         `;
     } else {
@@ -2134,6 +2219,7 @@ if (isAlbum) {
                 ${replyQuoteHtml}
                 ${bodyHtml}
                 ${timeHtml}
+                ${reactionsHtml}
             </div>
             ${actionButtonsHtml}
         `;
