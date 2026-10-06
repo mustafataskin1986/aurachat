@@ -1452,7 +1452,7 @@ function ensureSearchBar() {
     el.className = 'hidden absolute top-0 left-0 right-0 bg-black px-3 h-[65px] items-center flex-shrink-0 z-20';
     el.innerHTML = `
         <button type="button" data-search="close" class="text-white text-lg px-2"><i class="fa-solid fa-arrow-left"></i></button>
-          <input type="text" name="aura_chat_search_no_autofill" data-search="input" placeholder="Ara..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" data-lpignore="true" data-form-type="other" class="flex-1 min-w-0 bg-transparent text-white text-base outline-none px-2" style="color:#fff;">
+          <textarea rows="1" name="aura_chat_search_no_autofill" data-search="input" placeholder="Ara..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" data-lpignore="true" data-form-type="other" class="flex-1 min-w-0 bg-transparent text-white text-base outline-none px-2 resize-none overflow-hidden" style="color:#fff;height:28px;line-height:28px;"></textarea>
         <span data-search="count" class="text-gray-300 text-xs px-2 whitespace-nowrap"></span>
         <button type="button" data-search="up" class="text-white text-lg px-3"><i class="fa-solid fa-chevron-up"></i></button>
         <button type="button" data-search="down" class="text-white text-lg px-3"><i class="fa-solid fa-chevron-down"></i></button>
@@ -1552,7 +1552,7 @@ function refreshSearchMarks(scroll) {
 
 function runChatSearch() {
     const input = searchBarEl.querySelector('[data-search="input"]');
-    searchState.query = input.value;
+        searchState.query = input.value.replace(/\n/g, ' ');
     searchState.ids = computeSearchMatches();
     searchState.index = searchState.ids.length - 1;
     updateSearchCount();
