@@ -9,7 +9,6 @@ import { db, auth } from "./firebase-init.js";
 import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { getCurrentUser, setCurrentUser, getPresenceHidden, setPresenceHidden } from "./chat-core.js";
-import { auraDialog } from "./aura-dialog.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
