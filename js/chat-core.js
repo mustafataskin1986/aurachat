@@ -1050,11 +1050,12 @@ if (currentIsGroup || isGroupChat(currentChatId)) {
 
         await setDoc(otherChatRef, {
             otherUid: currentUser.uid,
-            otherName: currentUser.name,
+                  otherName: currentUser.name,
             lastMessage: lastMessageText,
             lastMessageTime: serverTimestamp(),
             lastSenderUid: currentUser.uid,
             lastMessageRead: false,
+            typing: false,
             unreadCount: increment(1),
             updatedAt: serverTimestamp()
         }, { merge: true });
@@ -3076,6 +3077,7 @@ async function updateSummariesForTarget(chatId, otherUid, otherName, lastMessage
             lastMessageTime: serverTimestamp(),
             lastSenderUid: currentUser.uid,
             lastMessageRead: false,
+            typing: false,
             unreadCount: increment(1),
             updatedAt: serverTimestamp()
         }, { merge: true });
@@ -4036,23 +4038,29 @@ messageInput.addEventListener('keydown', (e) => {
         sendFromComposer();
     }
 });
-
+// Birebir sohbette "yazıyor..." bilgisini karşı tarafın sohbet listesi satırına da yaz
+function writeTypingSummary(typing) {
+    if (!currentUser || !currentChatId || currentChatId === 'global' || currentIsGroup || !currentOtherUid) return;
+    updateDoc(doc(db, "users", currentOtherUid, "chats", currentChatId), { typing: typing, typingAt: Date.now() }).catch(() => {});
+}
 messageInput.addEventListener('input', () => {
 if (!currentChatId || currentChatId === 'global' || !currentUser) return;
 
     if (Date.now() - lastTypingWriteAt > 1500) {
         lastTypingWriteAt = Date.now();
-        setDoc(doc(db, "chats", currentChatId), {
+                setDoc(doc(db, "chats", currentChatId), {
             [`typing_${currentUser.uid}`]: true
         }, { merge: true });
+        writeTypingSummary(true);
     }
 
     if (typingTimeout) clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => {
         if (currentChatId && currentChatId !== 'global') {
-            setDoc(doc(db, "chats", currentChatId), {
+                setDoc(doc(db, "chats", currentChatId), {
                 [`typing_${currentUser.uid}`]: false
             }, { merge: true });
+            writeTypingSummary(false);
         }
     }, 2000);
 });
