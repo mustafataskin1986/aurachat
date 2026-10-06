@@ -8,7 +8,7 @@
 import { db, auth } from "./firebase-init.js";
 import { doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { getCurrentUser, setCurrentUser, getPresenceHidden, setPresenceHidden } from "./chat-core.js";
+import { getCurrentUser, setCurrentUser, getPresenceHidden, setPresenceHidden, getReadReceiptsHidden, setReadReceiptsHidden } from "./chat-core.js";
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
@@ -95,38 +95,43 @@ function renderAvatar(user) {
         profileAvatar.innerHTML = `<span>${initials}</span>`;
     }
 }
-// Son görülme ve çevrimiçi: açık = herkes görür, kapalı = gizli
-let privacySwitchEl = null;
+// Gizlilik anahtarları: açık = paylaş, kapalı = gizle
+const privacySwitches = [];
 
 function updatePrivacyLabel() {
-    if (!privacySwitchEl) return;
-    const on = !getPresenceHidden();
-    privacySwitchEl.setAttribute('aria-checked', on ? 'true' : 'false');
-    privacySwitchEl.style.background = on ? 'var(--aura-btn,#22c55e)' : '#4b5563';
-    privacySwitchEl.firstElementChild.style.transform = on ? 'translateX(20px)' : 'translateX(0)';
+    privacySwitches.forEach((sw) => {
+        const on = sw.getOn();
+        sw.el.setAttribute('aria-checked', on ? 'true' : 'false');
+        sw.el.style.background = on ? 'var(--aura-btn,#22c55e)' : '#4b5563';
+        sw.el.firstElementChild.style.transform = on ? 'translateX(20px)' : 'translateX(0)';
+    });
 }
 
-(function buildPrivacyRow() {
+function addPrivacySwitchRow(icon, label, getOn, setOn) {
     if (!profileLogoutBtn) return;
     const row = document.createElement('div');
     row.className = 'w-full max-w-sm mt-3 bg-[#202c33] text-gray-100 rounded-xl px-4 py-3 flex items-center justify-between';
     row.innerHTML = `
         <span class="flex items-center space-x-3 min-w-0">
-            <i class="fa-solid fa-eye text-gray-400 w-4"></i>
-            <span class="text-sm">Son görülme</span>
+            <i class="fa-solid ${icon} text-gray-400 w-4"></i>
+            <span class="text-sm">${label}</span>
         </span>
         <button type="button" role="switch" aria-checked="true" class="flex-shrink-0 ml-3" style="width:44px;height:24px;border-radius:9999px;padding:2px;transition:background .15s;">
             <span style="display:block;width:20px;height:20px;border-radius:9999px;background:#fff;transition:transform .15s;"></span>
         </button>
     `;
-    privacySwitchEl = row.querySelector('button');
-    privacySwitchEl.addEventListener('click', () => {
-        setPresenceHidden(!getPresenceHidden());
+    const el = row.querySelector('button');
+    el.addEventListener('click', () => {
+        setOn(!getOn());
         updatePrivacyLabel();
     });
+    privacySwitches.push({ el, getOn });
     profileLogoutBtn.insertAdjacentElement('beforebegin', row);
     updatePrivacyLabel();
-})();
+}
+
+addPrivacySwitchRow('fa-eye', 'Son görülme', () => !getPresenceHidden(), (on) => setPresenceHidden(!on));
+addPrivacySwitchRow('fa-check-double', 'Okundu bilgisi', () => !getReadReceiptsHidden(), (on) => setReadReceiptsHidden(!on));
 async function openProfilePanel() {
         let user = getCurrentUser();
     if (!user || !profilePanel) return;
