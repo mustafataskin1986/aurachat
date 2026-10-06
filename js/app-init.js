@@ -4,7 +4,7 @@
 // giris.js başarılı girişten sonra window.initApp()'i çağırır.
 // ==========================================
 
-import { db } from "./firebase-init.js";
+import { db, auth } from "./firebase-init.js";
 import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showTempIncomingBubble, showToast } from "./chat-core.js";
 import { watchCallForChat } from "./video-call.js";
@@ -198,6 +198,14 @@ window.initApp = async function () {
         await hideNativeSplash();
         return;
     }
+
+        // Firebase oturumu diskten yüklenene kadar bekle: bitmeden istek atılırsa
+    // Firestore "permission-denied" verir ve dinleyiciler kalıcı olarak kapanır
+    try {
+        if (auth && typeof auth.authStateReady === 'function') {
+            await Promise.race([auth.authStateReady(), new Promise((resolve) => setTimeout(resolve, 3000))]);
+        }
+    } catch (e) {}
 
     currentUser = await ensureUid(currentUser);
 
