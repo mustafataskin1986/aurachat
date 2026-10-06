@@ -1567,14 +1567,11 @@ function stepChatSearch(dir) {
     refreshSearchMarks(true);
 }
 function setComposerHiddenForSearch(hide) {
-        const inp = document.getElementById('message-input');
+            const inp = document.getElementById('message-input');
     const row = inp ? inp.parentElement : null;
-    const panel = row ? row.parentElement : null;
-    [panel, row].forEach((n) => {
-        if (!n) return;
-        if (hide) n.style.setProperty('display', 'none', 'important');
-        else n.style.removeProperty('display');
-    });
+    if (!row) return;
+    if (hide) row.style.setProperty('display', 'none', 'important');
+    else row.style.removeProperty('display');
 }
 function closeChatSearchFromBack() {
     searchState.active = false;
