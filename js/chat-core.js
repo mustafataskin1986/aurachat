@@ -1563,13 +1563,18 @@ function stepChatSearch(dir) {
     updateSearchCount();
     refreshSearchMarks(true);
 }
-
+function setComposerHiddenForSearch(hide) {
+    const inp = document.getElementById('message-input');
+    const panel = inp ? inp.parentElement : null;
+    if (panel) panel.style.display = hide ? 'none' : '';
+}
 function closeChatSearchFromBack() {
     searchState.active = false;
     searchState.query = '';
     searchState.ids = [];
-    searchState.index = -1;
+        searchState.index = -1;
     clearSearchMarks();
+    setComposerHiddenForSearch(false);
     if (searchBarEl) {
         const input = searchBarEl.querySelector('[data-search="input"]');
         input.value = '';
@@ -1598,8 +1603,9 @@ export function openChatSearch() {
     searchState.query = '';
     searchState.ids = [];
     searchState.index = -1;
-    el.classList.remove('hidden');
+        el.classList.remove('hidden');
     el.classList.add('flex');
+    setComposerHiddenForSearch(true);
     updateSearchCount();
     pushBackState(closeChatSearchFromBack);
     setTimeout(() => el.querySelector('[data-search="input"]').focus(), 50);
