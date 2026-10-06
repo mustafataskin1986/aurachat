@@ -643,7 +643,54 @@ export async function loadContacts() {
             prewarmChatSession(chatId, item.otherUid || null);
         });
     }
+    // "yazıyor..." aktif mi? (gönderen uygulamayı kapatırsa takılı kalmasın diye 6 sn sınırı)
+    function isTypingActive(d) {
+        return !!(d && d.typing === true && Date.now() - (d.typingAt || 0) < 6000);
+    }
 
+    // Satırdaki önizleme metni (yazıyor... varsa o, yoksa son mesaj)
+    function previewInnerHtml(chatData) {
+        if (isTypingActive(chatData)) return `<span class="text-emerald-400 font-medium">yazıyor...</span>`;
+        const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
+        const lastText = chatData.lastMessage || "Henüz mesaj yok";
+        let prefix = '';
+        if (isLastMsgMine) prefix = 'Siz: ';
+        else if (chatData.isGroup && chatData.lastSenderName) prefix = escapeHtml(chatData.lastSenderName) + ': ';
+        return prefix + escapeHtml(lastText);
+    }
+
+    // Sadece yazıyor bilgisi değiştiyse listeyi baştan çizmeden o satırı güncelle
+    const typingResetTimers = new Map();
+    function applyTypingToItem(chatId, chatData) {
+        const entry = contactElementsMap.get(chatId);
+        const span = entry && entry.element ? entry.element.querySelector('.preview-text') : null;
+        if (!span) return;
+        span.innerHTML = previewInnerHtml(chatData);
+        clearTimeout(typingResetTimers.get(chatId));
+        if (isTypingActive(chatData)) {
+            typingResetTimers.set(chatId, setTimeout(() => {
+                const cur = myChats.get(chatId);
+                const e2 = contactElementsMap.get(chatId);
+                const sp2 = e2 && e2.element ? e2.element.querySelector('.preview-text') : null;
+                if (cur && sp2) sp2.innerHTML = previewInnerHtml(cur);
+            }, 6200));
+        }
+    }
+
+    function sameExceptTyping(a, b) {
+        const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+        for (const k of keys) {
+            if (k === 'typing' || k === 'typingAt') continue;
+            const x = a[k];
+            const y = b[k];
+            if (x === y) continue;
+            const xm = x && typeof x.toMillis === 'function' ? x.toMillis() : undefined;
+            const ym = y && typeof y.toMillis === 'function' ? y.toMillis() : undefined;
+            if (xm !== undefined || ym !== undefined) { if (xm !== ym) return false; continue; }
+            if (JSON.stringify(x) !== JSON.stringify(y)) return false;
+        }
+        return true;
+    }
     function renderChatItem(chatId, chatData) {
         const isGroup = !!chatData.isGroup;
         const displayName = isGroup ? (chatData.groupName || 'Grup') : (chatData.otherName || '');
@@ -682,7 +729,7 @@ export async function loadContacts() {
                 <div class="flex justify-between items-center mt-0.5">
                     <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
                         ${tickHtml}
-                        <span class="preview-text truncate">${previewPrefix}${escapeHtml(lastText)}</span>
+                                            <span class="preview-text truncate">${previewInnerHtml(chatData)}</span>
                     </p>
                     ${unreadCount > 0 ? `<div class="unread-badge bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2">${unreadCount}</div>` : ''}
                 </div>
@@ -773,7 +820,23 @@ export async function loadContacts() {
         renderAll();
     });
 
-    onSnapshot(query(collection(db, "users", currentUser.uid, "chats"), orderBy("updatedAt", "desc")), (snapshot) => {
+        onSnapshot(query(collection(db, "users", currentUser.uid, "chats"), orderBy("updatedAt", "desc")), (snapshot) => {
+        // Sadece "yazıyor..." değiştiyse listeyi yeniden çizme, o satırı yerinde güncelle
+        if (chatsLoaded) {
+            const changes = snapshot.docChanges();
+            const onlyTyping = changes.length > 0 && changes.every((ch) => {
+                if (ch.type !== 'modified') return false;
+                const prev = myChats.get(ch.doc.id);
+                return !!prev && sameExceptTyping(prev, ch.doc.data());
+            });
+            if (onlyTyping) {
+                changes.forEach((ch) => {
+                    myChats.set(ch.doc.id, ch.doc.data());
+                    applyTypingToItem(ch.doc.id, ch.doc.data());
+                });
+                return;
+            }
+        }
         myChats.clear();
         if (!window.__aurachatGroupIds) window.__aurachatGroupIds = new Set();
         snapshot.forEach((docSnap) => {
