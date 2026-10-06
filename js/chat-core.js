@@ -1452,7 +1452,7 @@ function ensureSearchBar() {
     el.className = 'hidden absolute top-0 left-0 right-0 bg-black px-3 h-[65px] items-center flex-shrink-0 z-20';
     el.innerHTML = `
         <button type="button" data-search="close" class="text-white text-lg px-2"><i class="fa-solid fa-arrow-left"></i></button>
-        <input type="text" data-search="input" placeholder="Ara..." autocomplete="off" class="flex-1 min-w-0 bg-transparent text-white text-base outline-none px-2" style="color:#fff;">
+          <input type="text" name="aura_chat_search_no_autofill" data-search="input" placeholder="Ara..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" data-lpignore="true" data-form-type="other" class="flex-1 min-w-0 bg-transparent text-white text-base outline-none px-2" style="color:#fff;">
         <span data-search="count" class="text-gray-300 text-xs px-2 whitespace-nowrap"></span>
         <button type="button" data-search="up" class="text-white text-lg px-3"><i class="fa-solid fa-chevron-up"></i></button>
         <button type="button" data-search="down" class="text-white text-lg px-3"><i class="fa-solid fa-chevron-down"></i></button>
@@ -1567,9 +1567,14 @@ function stepChatSearch(dir) {
     refreshSearchMarks(true);
 }
 function setComposerHiddenForSearch(hide) {
-    const inp = document.getElementById('message-input');
-    const panel = inp ? inp.parentElement : null;
-    if (panel) panel.style.display = hide ? 'none' : '';
+        const inp = document.getElementById('message-input');
+    const row = inp ? inp.parentElement : null;
+    const panel = row ? row.parentElement : null;
+    [panel, row].forEach((n) => {
+        if (!n) return;
+        if (hide) n.style.setProperty('display', 'none', 'important');
+        else n.style.removeProperty('display');
+    });
 }
 function closeChatSearchFromBack() {
     searchState.active = false;
@@ -2394,8 +2399,8 @@ if (isAlbum) {
                     <span class="text-[10px] text-white">${timeStr}</span>
                 <i class="fa-solid fa-check-double text-[10px] ${isReadByAll ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
                </div>`
-            : `<div class="flex items-center justify-end space-x-1 mt-1">
-                    <span class="text-[10px] text-white">${timeStr}</span>
+                : `<div class="flex items-center justify-end space-x-1 mt-1">
+                    <span class="text-[10px] text-white">${editedLabel}${timeStr}</span>
                     <i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>
                </div>`;
 
@@ -2415,7 +2420,7 @@ if (isAlbum) {
             ? `<div class="absolute bottom-2 right-2"><span class="text-[10px] text-white">${timeStr}</span></div>`
             : isImage
             ? `<div class="absolute bottom-2 right-2 bg-black/45 rounded-full px-1.5 py-0.5"><span class="text-[10px] text-white">${timeStr}</span></div>`
-            : `<span class="text-[10px] text-white float-right ml-3 mt-1">${timeStr}</span>`;
+                 : `<span class="text-[10px] text-white float-right ml-3 mt-1">${editedLabel}${timeStr}</span>`;
         msgDiv.className = "flex justify-start rounded-lg transition-colors";
         msgDiv.innerHTML = `
             <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
