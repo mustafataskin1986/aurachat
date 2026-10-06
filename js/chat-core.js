@@ -3368,7 +3368,6 @@ function cancelEdit(clearInput) {
 }
 
 function editEligibility(msgId) {
-    if (selectedMessageIds.size !== 1) return { ok: false, reason: 'Düzenlemek için tek mesaj seç' };
     const entry = findMessageEntry(msgId);
     if (!entry || !currentUser || entry.data.senderUid !== currentUser.uid || (entry.data.type && entry.data.type !== 'text')) {
         return { ok: false, reason: 'Sadece kendi yazı mesajlarını düzenleyebilirsin' };
@@ -3433,7 +3432,8 @@ async function submitEdit() {
 
 if (selectionMoreBtn) {
     selectionMoreBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
+          e.stopPropagation();
+        if (selectedMessageIds.size !== 1) { showToast('Düzenlemek için tek mesaj seç'); return; }
         const id = Array.from(selectedMessageIds)[0];
         const el = editEligibility(id);
         if (!el.ok) { showToast(el.reason); return; }
