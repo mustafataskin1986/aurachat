@@ -1287,9 +1287,17 @@ function appendLaunchTemps(session) {
         const fresh = items.filter((i) => !have.has(i.id));
         if (!fresh.length) return false;
         if (fresh.some((i) => !i.text || i.text.length > 400 || /^(📷|🎤|📍|🚫)/.test(i.text))) return false;
-        const fragment = document.createDocumentFragment();
+                const fragment = document.createDocumentFragment();
+        const firstChip = tempDayChipFor(fresh[0].t, undefined);
+        if (firstChip.el) fragment.appendChild(firstChip.el);
+        let tempLabel = firstChip.label;
         fragment.appendChild(buildUnreadDividerElement(fresh.length));
-        fresh.forEach((i) => {
+        fresh.forEach((i, idx) => {
+            if (idx > 0) {
+                const c = tempDayChipFor(i.t, tempLabel);
+                if (c.el) fragment.appendChild(c.el);
+                tempLabel = c.label;
+            }
             fragment.appendChild(buildMessageElement({
                 type: 'text',
                 text: i.text,
@@ -1326,6 +1334,8 @@ export function showTempIncomingBubble(chatId, msgId, text, timeMs, withDivider)
         };
         // Okunmamış çizgisi de geçici balonla birlikte hemen çıksın (gerçek mesaj gelince aynı yerde kalır)
        tempIncoming = { chatId: chatId, msgId: msgId, at: Date.now() };
+          const tempChip = tempDayChipFor(timeMs, undefined);
+        if (tempChip.el) messageContainer.appendChild(tempChip.el);
         if (withDivider && (!unreadDivider || unreadDivider.chatId !== chatId)) {
             unreadDivider = { chatId: chatId, msgId: msgId, count: 1 };
             messageContainer.appendChild(buildUnreadDividerElement(1));
@@ -3187,7 +3197,18 @@ function buildDateChipElement(date) {
     el.innerHTML = `<span class="bg-[#182229] text-gray-300 text-xs px-3 py-1 rounded-lg shadow">${el.dataset.label}</span>`;
     return el;
 }
-
+// Geçici balonlar için: gün değiştiyse (ya da hiç etiket yoksa) tarih etiketi üret
+function tempDayChipFor(timeMs, prevLabel) {
+    const d = new Date(timeMs || Date.now());
+    const label = formatDayLabel(d);
+    let last = prevLabel;
+    if (last === undefined) {
+        const chips = messageContainer.querySelectorAll('[data-date-chip]');
+        last = chips.length ? chips[chips.length - 1].dataset.label : null;
+    }
+    if (last === label) return { el: null, label };
+    return { el: buildDateChipElement(d), label };
+}
 function buildUnreadDividerElement(count) {
     const el = document.createElement('div');
     el.dataset.unreadDivider = '1';
