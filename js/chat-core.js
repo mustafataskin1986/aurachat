@@ -227,7 +227,34 @@ try { presenceHidden = localStorage.getItem('aura_presence_hidden') === '1'; } c
 export function getPresenceHidden() {
     return presenceHidden;
 }
+// Okundu bilgisi (mavi tik) kapalıysa: ben mesajı okusam da gönderen görmez (ben başkalarınınkini görmeye devam ederim)
+let readReceiptsHidden = false;
+try { readReceiptsHidden = localStorage.getItem('aura_receipts_hidden') === '1'; } catch (e) {}
 
+export function getReadReceiptsHidden() {
+    return readReceiptsHidden;
+}
+
+export function setReadReceiptsHidden(hidden) {
+    readReceiptsHidden = !!hidden;
+    try { localStorage.setItem('aura_receipts_hidden', readReceiptsHidden ? '1' : '0'); } catch (e) {}
+    if (currentUser && currentUser.uid) {
+        setDoc(doc(db, "presence", currentUser.uid), { hideReceipts: readReceiptsHidden }, { merge: true }).catch(() => {});
+    }
+}
+
+// Okundu bilgisi kapalıyken okuduğum mesajları bu cihazda hatırla (okunmamış çizgisi tekrar çıkmasın, sonradan "okundu" gitmesin)
+function getChatLastReadMs(chatId) {
+    try { return Number(localStorage.getItem('aura_lastread_' + chatId)) || 0; } catch (e) { return 0; }
+}
+
+function setChatLastReadMs(chatId, ms) {
+    try { if (ms > getChatLastReadMs(chatId)) localStorage.setItem('aura_lastread_' + chatId, String(ms)); } catch (e) {}
+}
+
+function msgCreatedMs(msg) {
+    return msg && msg.createdAt && typeof msg.createdAt.toMillis === 'function' ? msg.createdAt.toMillis() : 0;
+}
 export function setPresenceHidden(hidden) {
     presenceHidden = !!hidden;
     try { localStorage.setItem('aura_presence_hidden', presenceHidden ? '1' : '0'); } catch (e) {}
@@ -248,6 +275,11 @@ function syncPresenceHidden() {
     if (!currentUser || !currentUser.uid) return Promise.resolve();
     return getDoc(doc(db, "presence", currentUser.uid)).then((snap) => {
         if (!snap.exists()) return;
+                const hr = !!snap.data().hideReceipts;
+        if (hr !== readReceiptsHidden) {
+            readReceiptsHidden = hr;
+            try { localStorage.setItem('aura_receipts_hidden', hr ? '1' : '0'); } catch (e) {}
+        }
         const h = !!snap.data().hidden;
         if (h !== presenceHidden) {
             presenceHidden = h;
@@ -800,18 +832,29 @@ function markVisibleMessagesRead(session) {
 if (session.isGroup) {
         if (!currentUser || document.visibilityState !== 'visible') return;
 
-        let markedAny = false;
+                let markedAny = false;
+        let newestSeenMs = 0;
+        const lastReadMs = getChatLastReadMs(session.chatId);
         session.messages.forEach(({ id, data: msg }) => {
             if (msg.senderUid === currentUser.uid || msg.type === 'system') return;
             const readBy = Array.isArray(msg.readBy) ? msg.readBy : [];
             if (!readBy.includes(currentUser.uid)) {
-                updateDoc(doc(db, "chats", session.chatId, "messages", id), { readBy: arrayUnion(currentUser.uid) }).catch(() => {});
-                markedAny = true;
+                const t = msgCreatedMs(msg);
+                if (readReceiptsHidden) {
+                    if (t > lastReadMs) { newestSeenMs = Math.max(newestSeenMs, t); markedAny = true; }
+                } else if (!(t > 0 && t <= lastReadMs)) {
+                    updateDoc(doc(db, "chats", session.chatId, "messages", id), { readBy: arrayUnion(currentUser.uid) }).catch(() => {});
+                    markedAny = true;
+                }
             }
         });
 
         if (markedAny) {
             updateDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), { unreadCount: 0 }).catch(() => {});
+            if (readReceiptsHidden) {
+                setChatLastReadMs(session.chatId, newestSeenMs);
+                return;
+            }
 
             // Son mesajı herkes okuduysa gönderenin listesinde tik maviye dönsün
             const lastEntry = session.messages[session.messages.length - 1];
@@ -829,12 +872,19 @@ if (session.isGroup) {
     if (session.chatId === 'global' || !currentUser || !session.otherUid) return;
     if (document.visibilityState !== 'visible') return;
 
-    let markedAny = false;
+        let markedAny = false;
+    let newestSeenMs = 0;
+    const lastReadMs = getChatLastReadMs(session.chatId);
     session.messages.forEach(({ id, data: msg }) => {
         const isMine = !!(currentUser.uid && msg.senderUid === currentUser.uid);
         if (!isMine && msg.read === false) {
-            updateDoc(doc(db, "chats", session.chatId, "messages", id), { read: true }).catch(() => {});
-            markedAny = true;
+            const t = msgCreatedMs(msg);
+            if (readReceiptsHidden) {
+                if (t > lastReadMs) { newestSeenMs = Math.max(newestSeenMs, t); markedAny = true; }
+            } else if (!(t > 0 && t <= lastReadMs)) {
+                updateDoc(doc(db, "chats", session.chatId, "messages", id), { read: true }).catch(() => {});
+                markedAny = true;
+            }
         }
     });
 
@@ -842,9 +892,13 @@ if (session.isGroup) {
         updateDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), {
             unreadCount: 0
         }).catch(() => {});
-        updateDoc(doc(db, "users", session.otherUid, "chats", session.chatId), {
-            lastMessageRead: true
-        }).catch(() => {});
+        if (readReceiptsHidden) {
+            setChatLastReadMs(session.chatId, newestSeenMs);
+        } else {
+            updateDoc(doc(db, "users", session.otherUid, "chats", session.chatId), {
+                lastMessageRead: true
+            }).catch(() => {});
+        }
     }
 }
 
@@ -3594,7 +3648,8 @@ if (session.chatId === 'global' || !currentUser) return null;
         const unreadForMe = session.isGroup
             ? (msg.type !== 'system' && !(Array.isArray(msg.readBy) && msg.readBy.includes(currentUser.uid)))
             : msg.read === false;
-        if (!isMine && unreadForMe) {
+             const seenWhileHidden = (() => { const t = msgCreatedMs(msg); return t > 0 && t <= getChatLastReadMs(session.chatId); })();
+        if (!isMine && unreadForMe && !seenWhileHidden) {
             if (!firstId) firstId = id;
             count++;
         }
