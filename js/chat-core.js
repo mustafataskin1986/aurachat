@@ -1157,7 +1157,8 @@ export async function selectChat(otherUser) {
     if (currentUser && currentChatId && currentChatId !== 'global') {
         setDoc(doc(db, "chats", currentChatId), { [`typing_${currentUser.uid}`]: false }, { merge: true }).catch(() => {});
     }
-    exitSelectionMode();
+        exitSelectionMode();
+    cancelEdit(true);
     cancelReply();
     expandedMsgIds.clear();
     currentIsGroup = false;
@@ -1352,7 +1353,8 @@ function doCloseChatView() {
     }
     composer.clearImages();
         closeAttachMenu();
-    closeChatSearch();
+        closeChatSearch();
+    cancelEdit(true);
     cancelReply();
     expandedMsgIds.clear();
     unreadDivider = null;
@@ -1402,6 +1404,7 @@ function enterSelectionMode(firstMsgId) {
 }
 
 function exitSelectionModeFromBack() {
+    if (typeof closeMoreMenu === 'function') closeMoreMenu();
     selectionMode = false;
     selectedMessageIds.clear();
     messageElementsById.forEach((el) => el.classList.remove('msg-selected'));
@@ -2370,7 +2373,8 @@ if (isAlbum) {
     const isReplyable = !['deleted', 'system', 'call_duration', 'missed_call', 'declined_call'].includes(msg.type);
         const replyQuoteHtml = buildReplyQuoteHtml(msg.replyTo, isMine);
 
-    const reactionsHtml = buildReactionsHtml(msg, isMine);
+        const reactionsHtml = buildReactionsHtml(msg, isMine);
+    const editedLabel = (msg.edited && msg.type !== 'deleted') ? 'düzenlendi · ' : '';
     if (reactionsHtml) msgDiv.style.marginBottom = '14px';
 
     const actionButtonsHtml = isImage
@@ -3319,7 +3323,136 @@ function consumeReplyPayload() {
     cancelReply();
         return { msgId: r.msgId, senderName: r.senderName, senderUid: r.senderUid || null, previewText: r.previewText };
 }
+// ------------------------------------------
+// MESAJ DÜZENLEME (gönderdikten sonra 15 dakika)
+// ------------------------------------------
+const EDIT_WINDOW_MS = 15 * 60 * 1000;
+let editingMsg = null; // { chatId, msgId, originalText, createdMs }
+let editBarEl = null;
+let moreMenuEl = null;
+const selectionMoreBtn = document.getElementById('selection-more-btn');
 
+function ensureEditBar() {
+    if (editBarEl) return editBarEl;
+    const el = document.createElement('div');
+    el.className = 'hidden items-start px-3 py-2 bg-[#202c33] border-l-4 border-emerald-500';
+    el.innerHTML = `
+        <div class="flex-1 min-w-0">
+            <p class="text-emerald-400 text-xs font-semibold truncate"><i class="fa-solid fa-pen mr-1"></i>Mesajı düzenle</p>
+            <p id="edit-bar-text" class="text-gray-300 text-xs truncate"></p>
+        </div>
+        <button type="button" id="edit-bar-cancel" class="text-gray-400 hover:text-white px-2 flex-shrink-0"><i class="fa-solid fa-xmark"></i></button>
+    `;
+    messageInput.parentElement.insertAdjacentElement('beforebegin', el);
+    el.querySelector('#edit-bar-cancel').addEventListener('click', () => cancelEdit(true));
+    editBarEl = el;
+    return el;
+}
+
+function cancelEdit(clearInput) {
+    if (!editingMsg) return;
+    editingMsg = null;
+    if (editBarEl) {
+        editBarEl.classList.add('hidden');
+        editBarEl.classList.remove('flex');
+    }
+    if (clearInput) {
+        messageInput.value = '';
+        updateMicToggle();
+    }
+}
+
+function editEligibility(msgId) {
+    if (selectedMessageIds.size !== 1) return { ok: false, reason: 'Düzenlemek için tek mesaj seç' };
+    const entry = findMessageEntry(msgId);
+    if (!entry || !currentUser || entry.data.senderUid !== currentUser.uid || (entry.data.type && entry.data.type !== 'text')) {
+        return { ok: false, reason: 'Sadece kendi yazı mesajlarını düzenleyebilirsin' };
+    }
+    if (!entry.data.createdAt) return { ok: false, reason: 'Mesaj henüz gönderiliyor' };
+    const ms = entry.data.createdAt.toMillis ? entry.data.createdAt.toMillis() : entry.data.createdAt.toDate().getTime();
+    if (Date.now() - ms > EDIT_WINDOW_MS) return { ok: false, reason: 'Düzenleme süresi (15 dk) doldu' };
+    return { ok: true, entry, createdMs: ms };
+}
+
+function closeMoreMenu() {
+    if (moreMenuEl) moreMenuEl.style.display = 'none';
+}
+
+function startEdit(msgId) {
+    const el = editEligibility(msgId);
+    if (!el.ok) { showToast(el.reason); return; }
+    cancelReply();
+    editingMsg = { chatId: currentChatId, msgId, originalText: el.entry.data.text || '', createdMs: el.createdMs };
+    const bar = ensureEditBar();
+    bar.querySelector('#edit-bar-text').textContent = editingMsg.originalText.slice(0, 120);
+    bar.classList.remove('hidden');
+    bar.classList.add('flex');
+    messageInput.value = editingMsg.originalText;
+    updateMicToggle();
+    messageInput.focus();
+    try { messageInput.setSelectionRange(messageInput.value.length, messageInput.value.length); } catch (e) {}
+}
+
+async function submitEdit() {
+    const ed = editingMsg;
+    if (!ed) return;
+    const text = messageInput.value.trim();
+    if (!text) { showToast('Mesaj boş olamaz'); return; }
+    if (text === ed.originalText.trim()) { cancelEdit(true); return; }
+    if (Date.now() - ed.createdMs > EDIT_WINDOW_MS) {
+        showToast('Düzenleme süresi (15 dk) doldu');
+        cancelEdit(true);
+        return;
+    }
+    try {
+        await updateDoc(doc(db, "chats", ed.chatId, "messages", ed.msgId), {
+            text: text,
+            edited: true,
+            editedAt: serverTimestamp()
+        });
+    } catch (e) {
+        showToast('Mesaj düzenlenemedi');
+        return;
+    }
+    // Düzenlenen mesaj sohbetin son mesajıysa liste özetini de güncelle (birebir sohbetler)
+    try {
+        const session = chatSessions.get(ed.chatId);
+        const last = session && session.messages.length ? session.messages[session.messages.length - 1] : null;
+        if (last && last.id === ed.msgId && !isGroupChat(ed.chatId) && currentOtherUid && currentUser) {
+            await setDoc(doc(db, "users", currentUser.uid, "chats", ed.chatId), { lastMessage: text }, { merge: true });
+            await setDoc(doc(db, "users", currentOtherUid, "chats", ed.chatId), { lastMessage: text }, { merge: true });
+        }
+    } catch (e) {}
+    cancelEdit(true);
+}
+
+if (selectionMoreBtn) {
+    selectionMoreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = Array.from(selectedMessageIds)[0];
+        const el = editEligibility(id);
+        if (!el.ok) { showToast(el.reason); return; }
+        if (!moreMenuEl) {
+            moreMenuEl = document.createElement('div');
+            moreMenuEl.style.cssText = 'position:fixed;top:58px;right:8px;z-index:60;min-width:160px;background:#233138;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.5);padding:4px 0;display:none;';
+            moreMenuEl.innerHTML = `<button type="button" data-more="edit" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 text-left"><i class="fa-solid fa-pen w-4"></i><span>Düzenle</span></button>`;
+            moreMenuEl.addEventListener('click', (ev) => {
+                const b = ev.target.closest('[data-more]');
+                if (!b) return;
+                ev.stopPropagation();
+                const mid = Array.from(selectedMessageIds)[0];
+                closeMoreMenu();
+                if (b.dataset.more === 'edit') {
+                    exitSelectionMode();
+                    startEdit(mid);
+                }
+            });
+            document.body.appendChild(moreMenuEl);
+            document.addEventListener('click', closeMoreMenu);
+        }
+        moreMenuEl.style.display = moreMenuEl.style.display === 'block' ? 'none' : 'block';
+    });
+}
 function scrollToOriginalMessage(msgId) {
     const el = messageElementsById.get(msgId);
     if (!el) { showToast('Orijinal mesaj bulunamadı'); return; }
@@ -3844,6 +3977,7 @@ async function sendMessage() {
 
 // Önce bekleyen resimler, sonra yazı gider
 async function sendFromComposer() {
+    if (editingMsg) { await submitEdit(); return; }
     const files = composer.takeImages();
     if (files.length) {
         const caption = messageInput.value.trim();
