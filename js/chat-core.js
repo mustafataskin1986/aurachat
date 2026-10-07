@@ -3951,11 +3951,11 @@ function updateJumpBottomBtn() {
         jumpBottomBtn = document.createElement('button');
         jumpBottomBtn.type = 'button';
         jumpBottomBtn.setAttribute('aria-label', 'En alta git');
-        jumpBottomBtn.style.cssText = 'position:fixed;z-index:40;display:none;width:42px;height:42px;border-radius:9999px;background:#202c33;color:#d1d7db;border:1px solid rgba(255,255,255,0.12);box-shadow:0 2px 8px rgba(0,0,0,0.5);align-items:center;justify-content:center;font-size:16px;';
+                jumpBottomBtn.style.cssText = 'position:fixed;z-index:40;display:none;width:36px;height:36px;border-radius:9999px;background:#202c33;color:#d1d7db;border:1px solid rgba(255,255,255,0.12);box-shadow:0 2px 8px rgba(0,0,0,0.5);align-items:center;justify-content:center;font-size:14px;';
         jumpBottomBtn.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
         jumpBottomBtn.addEventListener('mousedown', (e) => e.preventDefault());
         jumpBottomBtn.addEventListener('click', () => {
-            messageContainer.scrollTo({ top: messageContainer.scrollHeight, behavior: 'smooth' });
+                        messageContainer.scrollTop = messageContainer.scrollHeight;
         });
         document.body.appendChild(jumpBottomBtn);
     }
