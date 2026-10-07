@@ -3441,10 +3441,33 @@ let editBarEl = null;
 let moreMenuEl = null;
 const selectionMoreBtn = document.getElementById('selection-more-btn');
 
+let editTopEl = null;
+
 function ensureEditBar() {
     if (editBarEl) return editBarEl;
+
+    // Yazma kutusunun İÇİNDE, üstte çıkan "Mesaj düzenleniyor" çubuğu
+    if (!document.getElementById('aura-editbar-css')) {
+        const st = document.createElement('style');
+        st.id = 'aura-editbar-css';
+        st.textContent = `
+#chat-area .aura-composer.aura-composer > .aura-editbar.aura-editbar { display: none !important; }
+#chat-area .aura-composer.aura-composer.aura-editing.aura-editing > .aura-editbar.aura-editbar {
+    display: flex !important;
+    grid-row: 1 !important;
+    grid-column: 1 !important;
+    align-self: stretch !important;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 4px 0 !important;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08) !important;
+}`;
+        document.head.appendChild(st);
+    }
     const el = document.createElement('div');
-        el.className = 'hidden items-center justify-between mx-3 mt-2 mb-1 px-4 py-3 rounded-2xl bg-white/10';
+    el.className = 'aura-editbar';
     el.innerHTML = `
         <div class="flex items-center gap-3 min-w-0">
             <i class="fa-solid fa-pencil text-gray-300 text-base"></i>
@@ -3452,19 +3475,41 @@ function ensureEditBar() {
         </div>
         <button type="button" id="edit-bar-cancel" class="text-gray-300 hover:text-white px-2 flex-shrink-0 text-lg"><i class="fa-solid fa-xmark"></i></button>
     `;
-    messageInput.parentElement.insertAdjacentElement('beforebegin', el);
+    const row = messageInput.parentElement;
+    row.insertBefore(el, row.firstChild);
     el.querySelector('#edit-bar-cancel').addEventListener('click', () => cancelEdit(true));
     editBarEl = el;
+
+    // Sohbetin üst çubuğunun üstüne binen "Mesaj düzenleniyor" çubuğu (mesaj seçme çubuğu gibi)
+    if (selectionToolbar) {
+        const t = document.createElement('div');
+        t.className = 'hidden absolute top-0 left-0 right-0 bg-black px-4 h-[65px] items-center flex-shrink-0 z-20';
+        t.innerHTML = `
+            <div class="flex items-center space-x-4">
+                <button type="button" id="edit-top-cancel" class="text-white text-lg px-1"><i class="fa-solid fa-arrow-left"></i></button>
+                <span class="text-white font-medium text-base">Mesaj düzenleniyor</span>
+            </div>
+        `;
+        selectionToolbar.insertAdjacentElement('afterend', t);
+        t.querySelector('#edit-top-cancel').addEventListener('click', () => cancelEdit(true));
+        editTopEl = t;
+    }
     return el;
+}
+
+function setEditUI(on) {
+    const row = messageInput.parentElement;
+    if (row) row.classList.toggle('aura-editing', on);
+    if (editTopEl) {
+        editTopEl.classList.toggle('hidden', !on);
+        editTopEl.classList.toggle('flex', on);
+    }
 }
 
 function cancelEdit(clearInput) {
     if (!editingMsg) return;
     editingMsg = null;
-    if (editBarEl) {
-        editBarEl.classList.add('hidden');
-        editBarEl.classList.remove('flex');
-    }
+    setEditUI(false);
     if (clearInput) {
         messageInput.value = '';
         updateMicToggle();
@@ -3491,9 +3536,8 @@ function startEdit(msgId) {
     if (!el.ok) { showToast(el.reason); return; }
     cancelReply();
     editingMsg = { chatId: currentChatId, msgId, originalText: el.entry.data.text || '', createdMs: el.createdMs };
-    const bar = ensureEditBar();
-    bar.classList.remove('hidden');
-    bar.classList.add('flex');
+        ensureEditBar();
+    setEditUI(true);
     messageInput.value = editingMsg.originalText;
     updateMicToggle();
     messageInput.focus();
