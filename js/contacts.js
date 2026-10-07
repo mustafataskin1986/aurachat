@@ -945,6 +945,22 @@ function updateChatSelectionUI() {
         chatSelectionToolbar.classList.remove('hidden');
         chatSelectionToolbar.classList.add('flex');
         if (chatSelectionCountEl) chatSelectionCountEl.textContent = `${selectedChatIds.size} seçildi`;
+                // Seçilenlerin hepsi zaten sabit / favori ise ikon "kaldır" haline döner
+        const selItems = Array.from(selectedChatIds).map((id) => contactElementsMap.get(id)).filter((it) => it && it.hasChat);
+        const allPinned = selItems.length > 0 && selItems.every((it) => it.pinned);
+        const allFav = selItems.length > 0 && selItems.every((it) => it.archived);
+        if (chatSelectionPinBtn) {
+            chatSelectionPinBtn.title = allPinned ? 'Sabitlemeyi kaldır' : 'Sabitle';
+            chatSelectionPinBtn.innerHTML = allPinned
+                ? '<span style="position:relative;display:inline-block"><i class="fa-solid fa-thumbtack"></i><span style="position:absolute;left:50%;top:-2px;width:2px;height:calc(100% + 4px);background:currentColor;transform:translateX(-50%) rotate(45deg);box-shadow:0 0 0 1px #2a3942"></span></span>'
+                : '<i class="fa-solid fa-thumbtack"></i>';
+        }
+        if (chatSelectionArchiveBtn) {
+            chatSelectionArchiveBtn.title = allFav ? 'Favorilerden kaldır' : 'Favorile';
+            chatSelectionArchiveBtn.innerHTML = allFav
+                ? '<i class="fa-solid fa-star text-amber-400"></i>'
+                : '<i class="fa-regular fa-star"></i>';
+        }
     } else {
         chatSelectionToolbar.classList.add('hidden');
         chatSelectionToolbar.classList.remove('flex');
@@ -1009,12 +1025,13 @@ if (chatSelectionPinBtn) {
             return;
         }
 
+                const allPinnedNow = validIds.every((id) => contactElementsMap.get(id).pinned);
         chatSelectionPinBtn.disabled = true;
         try {
             for (const chatId of validIds) {
                 const item = contactElementsMap.get(chatId);
                 await updateDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
-                    pinned: !item.pinned
+                                        pinned: !allPinnedNow
                 });
             }
         } catch (err) {
@@ -1044,12 +1061,13 @@ if (chatSelectionArchiveBtn) {
             return;
         }
 
+                const allFavNow = validIds.every((id) => contactElementsMap.get(id).archived);
         chatSelectionArchiveBtn.disabled = true;
         try {
             for (const chatId of validIds) {
                 const item = contactElementsMap.get(chatId);
                 await updateDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
-                    archived: !item.archived
+                                        archived: !allFavNow
                 });
             }
         } catch (err) {
