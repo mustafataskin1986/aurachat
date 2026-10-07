@@ -3941,7 +3941,40 @@ function scrollToBottom() {
 function isNearBottom() {
     return (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight) < 150;
 }
+// ------------------------------------------
+// "AŞAĞI GİT" DÜĞMESİ (yukarı kaydırınca sağ altta çıkar)
+// ------------------------------------------
+let jumpBottomBtn = null;
 
+function updateJumpBottomBtn() {
+    if (!jumpBottomBtn) {
+        jumpBottomBtn = document.createElement('button');
+        jumpBottomBtn.type = 'button';
+        jumpBottomBtn.setAttribute('aria-label', 'En alta git');
+        jumpBottomBtn.style.cssText = 'position:fixed;z-index:40;display:none;width:42px;height:42px;border-radius:9999px;background:#202c33;color:#d1d7db;border:1px solid rgba(255,255,255,0.12);box-shadow:0 2px 8px rgba(0,0,0,0.5);align-items:center;justify-content:center;font-size:16px;';
+        jumpBottomBtn.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
+        jumpBottomBtn.addEventListener('mousedown', (e) => e.preventDefault());
+        jumpBottomBtn.addEventListener('click', () => {
+            messageContainer.scrollTo({ top: messageContainer.scrollHeight, behavior: 'smooth' });
+        });
+        document.body.appendChild(jumpBottomBtn);
+    }
+    const away = messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight;
+    const show = !!currentChatId && messageContainer.clientHeight > 0 && away > 400 && !selectionMode;
+    if (!show) { jumpBottomBtn.style.display = 'none'; return; }
+    const r = messageContainer.getBoundingClientRect();
+    jumpBottomBtn.style.right = Math.max(8, window.innerWidth - r.right + 14) + 'px';
+    jumpBottomBtn.style.bottom = Math.max(8, window.innerHeight - r.bottom + 14) + 'px';
+    jumpBottomBtn.style.display = 'flex';
+}
+
+messageContainer.addEventListener('scroll', updateJumpBottomBtn, { passive: true });
+window.addEventListener('resize', updateJumpBottomBtn);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', updateJumpBottomBtn);
+try {
+    new MutationObserver(updateJumpBottomBtn).observe(messageContainer, { childList: true });
+    if (window.ResizeObserver) new ResizeObserver(updateJumpBottomBtn).observe(messageContainer);
+} catch (e) {}
 // ------------------------------------------
 // GERİ ARAMA ONAYI (cevapsız/reddedilen arama balonuna basınca çıkar)
 // Doğrudan aramaz, isim + yeşil "Ara" düğmesiyle onay ister.
