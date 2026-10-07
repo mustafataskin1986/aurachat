@@ -8,7 +8,7 @@
 
 import { db } from "./firebase-init.js";
 import { collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getCurrentUser, getCurrentChatId, selectChat, sendPushToUser, leaveGroup, showToast, toggleBlockUser, openChatSearch } from "./chat-core.js";
+import { getCurrentUser, getCurrentChatId, selectChat, sendPushToUser, leaveGroup, showToast, toggleBlockUser, openChatSearch, openStarredPanel } from "./chat-core.js";
 import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
@@ -856,7 +856,10 @@ async function openChatMenu() {
 
         let itemsHtml = `
         <button type="button" data-chat-menu="search" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
-            <i class="fa-solid fa-magnifying-glass text-gray-300 w-4"></i><span>Ara</span>
+                     <i class="fa-solid fa-magnifying-glass text-gray-300 w-4"></i><span>Ara</span>
+        </button>
+        <button type="button" data-chat-menu="starred" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid fa-star text-amber-400 w-4"></i><span>Yıldızlı mesajlar</span>
         </button>`;
     if (isGrp) {
         itemsHtml += `
@@ -903,6 +906,7 @@ async function openChatMenu() {
         if (getCurrentChatId() !== id) return;
 
               if (action === 'search') { openChatSearch(); return; }
+                      if (action === 'starred') { openStarredPanel(); return; }
         if (action === 'info') { openGroupInfo(id); return; }
         if (action === 'add') { openAddPanelForGroup(id); return; }
         if (action === 'theme') { openChatThemePicker(id); return; }
