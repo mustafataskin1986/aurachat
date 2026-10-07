@@ -1809,7 +1809,7 @@ function buildReactionsHtml(msg, isMine) {
     if (!vals.length) return '';
     const uniq = Array.from(new Set(vals));
     const count = vals.length > 1 ? `<span style="font-size:11px;color:#d1d7db;margin-left:3px;">${vals.length}</span>` : '';
-        return `<div data-reactions-chip="1" style="cursor:pointer;position:absolute;bottom:-14px;${isMine ? 'right:10px' : 'left:10px'};background:#233138;border:2px solid #0b141a;border-radius:9999px;padding:1px 6px;font-size:13px;line-height:18px;white-space:nowrap;z-index:2;">${uniq.map(escapeHtml).join('')}${count}</div>`;
+    return `<div data-reactions-chip="1" style="cursor:pointer;position:absolute;bottom:-14px;${isMine ? 'right:10px' : 'left:10px'};background:#233138;border:2px solid #0b141a;border-radius:9999px;padding:1px 6px;font-size:13px;line-height:18px;white-space:nowrap;z-index:2;">${uniq.map(escapeHtml).join('')}${count}</div>`;
 }
 // ------------------------------------------
 // TEPKİ DETAYI (alttan açılan sayfa): kim hangi tepkiyi verdi
