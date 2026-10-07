@@ -639,6 +639,9 @@ jobs:
           import androidx.core.app.NotificationCompat;
           import androidx.core.app.Person;
           import androidx.core.app.RemoteInput;
+          import androidx.core.content.LocusIdCompat;
+          import androidx.core.content.pm.ShortcutInfoCompat;
+          import androidx.core.content.pm.ShortcutManagerCompat;
           import androidx.core.graphics.drawable.IconCompat;
           import java.io.OutputStream;
           import java.net.HttpURLConnection;
@@ -936,9 +939,16 @@ jobs:
                               .setData(Uri.parse("aura://clear/" + chatId)).putExtra("chatId", chatId);
                       PendingIntent clearPi = PendingIntent.getBroadcast(c, chatId.hashCode(), clearIntent, PendingIntent.FLAG_UPDATE_CURRENT | imm);
 
+                      // Android 11+: kısayol tanımlanınca bildirim "konuşma" görünümü alır
+                      // (büyük avatar, sağ altında uygulama ikonu, yanında ad ve süre)
+                      String shortcutId = "chat_" + chatId;
+                      publishShortcut(c, shortcutId, title, avatar);
+
                       NotificationCompat.Builder b = new NotificationCompat.Builder(c, CHANNEL)
                               .setSmallIcon(smallIcon(c))
                               .setColor(ACCENT)
+                              .setShortcutId(shortcutId)
+                              .setLocusId(new LocusIdCompat(shortcutId))
                               .setContentTitle(title)
                               .setContentText(lastText)
                               .setStyle(style)
@@ -957,6 +967,22 @@ jobs:
 
                       nm.notify("chat_" + chatId, 1, b.build());
                   } catch (Exception e) {}
+              }
+
+              private static void publishShortcut(Context c, String sid, String title, Bitmap avatar) {
+                  try {
+                      IconCompat icon = IconCompat.createWithBitmap(avatar != null ? avatar : initialsBitmap(title, 128));
+                      Person target = new Person.Builder().setName(title).setKey(sid).setIcon(icon).build();
+                      Intent i = new Intent(c, MainActivity.class).setAction(Intent.ACTION_VIEW);
+                      ShortcutInfoCompat sc = new ShortcutInfoCompat.Builder(c, sid)
+                              .setShortLabel(title)
+                              .setLongLived(true)
+                              .setIntent(i)
+                              .setPerson(target)
+                              .setIcon(icon)
+                              .build();
+                      ShortcutManagerCompat.pushDynamicShortcut(c, sc);
+                  } catch (Throwable t) {}
               }
 
               // Arama gibi tek satırlık bildirimler (aynı tag ile eskisinin yerine geçer)
