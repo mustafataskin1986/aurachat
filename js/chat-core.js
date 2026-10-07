@@ -1809,9 +1809,167 @@ function buildReactionsHtml(msg, isMine) {
     if (!vals.length) return '';
     const uniq = Array.from(new Set(vals));
     const count = vals.length > 1 ? `<span style="font-size:11px;color:#d1d7db;margin-left:3px;">${vals.length}</span>` : '';
-    return `<div style="position:absolute;bottom:-14px;${isMine ? 'right:10px' : 'left:10px'};background:#233138;border:2px solid #0b141a;border-radius:9999px;padding:1px 6px;font-size:13px;line-height:18px;white-space:nowrap;z-index:2;">${uniq.map(escapeHtml).join('')}${count}</div>`;
+        return `<div data-reactions-chip="1" style="cursor:pointer;position:absolute;bottom:-14px;${isMine ? 'right:10px' : 'left:10px'};background:#233138;border:2px solid #0b141a;border-radius:9999px;padding:1px 6px;font-size:13px;line-height:18px;white-space:nowrap;z-index:2;">${uniq.map(escapeHtml).join('')}${count}</div>`;
+}
+// ------------------------------------------
+// TEPKİ DETAYI (alttan açılan sayfa): kim hangi tepkiyi verdi
+// Tepki balonuna dokununca açılır, aşağı çekince / dışına dokununca kapanır.
+// ------------------------------------------
+let reactSheetEl = null;
+const userBriefCache = new Map();
+
+async function getUserBrief(uid) {
+    if (currentUser && uid === currentUser.uid) return { name: 'Siz', avatar: currentUser.avatar || '' };
+    if (!currentIsGroup && uid === currentOtherUid) return { name: currentChatName || 'Kullanıcı', avatar: currentOtherAvatar || '' };
+    if (userBriefCache.has(uid)) return userBriefCache.get(uid);
+    let info = { name: 'Kullanıcı', avatar: '' };
+    try {
+        const snap = await getDoc(doc(db, "users", uid));
+        if (snap.exists()) {
+            const d = snap.data();
+            info = { name: d.name || d.displayName || 'Kullanıcı', avatar: d.avatar || '' };
+        }
+    } catch (e) {}
+    userBriefCache.set(uid, info);
+    return info;
 }
 
+function closeReactSheetFromBack() {
+    if (!reactSheetEl) return;
+    const el = reactSheetEl;
+    reactSheetEl = null;
+    const panel = el.querySelector('[data-sheet]');
+    if (panel) panel.style.transform = 'translateY(100%)';
+    el.style.background = 'rgba(0,0,0,0)';
+    setTimeout(() => el.remove(), 220);
+}
+
+function closeReactSheet() {
+    if (!reactSheetEl) return;
+    closeReactSheetFromBack();
+    popBackState();
+}
+
+async function openReactionSheet(msgId) {
+    const entry = findMessageEntry(msgId);
+    if (!entry || !entry.data.reactions || !currentUser) return;
+    if (reactSheetEl) closeReactSheet();
+
+    const myUid = currentUser.uid;
+    const pairs = Object.entries(entry.data.reactions).filter(([, e]) => REACTION_EMOJIS.includes(e));
+    if (!pairs.length) return;
+    const briefs = await Promise.all(pairs.map(([uid]) => getUserBrief(uid)));
+    const people = pairs.map(([uid, emoji], i) => ({ uid, emoji, name: briefs[i].name, avatar: briefs[i].avatar }));
+    // Kendi tepkin en üstte
+    people.sort((a, b) => (a.uid === myUid ? -1 : 0) - (b.uid === myUid ? -1 : 0));
+
+    const counts = new Map();
+    people.forEach((p) => counts.set(p.emoji, (counts.get(p.emoji) || 0) + 1));
+    let filter = 'all';
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,0);transition:background .2s;display:flex;align-items:flex-end;';
+    wrap.innerHTML = `
+        <div data-sheet style="width:100%;max-height:70vh;display:flex;flex-direction:column;background:#111b21;border-radius:24px 24px 0 0;transform:translateY(100%);transition:transform .22s ease;padding-bottom:env(safe-area-inset-bottom,0px);">
+            <div data-grab style="padding:10px 0 4px;display:flex;justify-content:center;flex-shrink:0;"><div style="width:40px;height:4px;border-radius:9999px;background:#8696a0;"></div></div>
+            <div style="padding:8px 20px 4px;color:#fff;font-size:18px;flex-shrink:0;">${people.length} ifade</div>
+            <div data-chips style="display:flex;gap:8px;padding:10px 16px;overflow-x:auto;flex-shrink:0;"></div>
+            <div data-list style="overflow-y:auto;overscroll-behavior:contain;padding:4px 0 12px;"></div>
+        </div>`;
+    document.body.appendChild(wrap);
+    reactSheetEl = wrap;
+    pushBackState(closeReactSheetFromBack);
+    requestAnimationFrame(() => {
+        wrap.style.background = 'rgba(0,0,0,0.55)';
+        wrap.querySelector('[data-sheet]').style.transform = 'translateY(0)';
+    });
+
+    const chipsEl = wrap.querySelector('[data-chips]');
+    const listEl = wrap.querySelector('[data-list]');
+
+    function renderChips() {
+        const items = [['all', `Tümü ${people.length}`]].concat(Array.from(counts.entries()).map(([e, c]) => [e, `${e} ${c}`]));
+        chipsEl.innerHTML = items.map(([key, label]) => {
+            const on = key === filter;
+            return `<button type="button" data-chip="${key}" style="flex-shrink:0;padding:8px 16px;border-radius:9999px;font-size:15px;color:${on ? '#53bdeb' : '#d1d7db'};background:${on ? 'rgba(83,189,235,0.15)' : '#202c33'};">${escapeHtml(label)}</button>`;
+        }).join('');
+    }
+
+    function renderList() {
+        const shown = people.filter((p) => filter === 'all' || p.emoji === filter);
+        listEl.innerHTML = shown.map((p) => {
+            const mine = p.uid === myUid;
+            const initial = escapeHtml((p.name || '?').trim().charAt(0).toUpperCase());
+            const av = p.avatar
+                ? `<img src="${escapeHtml(p.avatar)}" style="width:46px;height:46px;border-radius:9999px;object-fit:cover;flex-shrink:0;">`
+                : `<div style="width:46px;height:46px;border-radius:9999px;background:#6b7c85;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${initial}</div>`;
+            return `<div data-row="${escapeHtml(p.uid)}" style="display:flex;align-items:center;gap:14px;padding:10px 20px;${mine ? 'cursor:pointer;' : ''}">
+                ${av}
+                <div style="flex:1;min-width:0;">
+                    <div style="color:#fff;font-size:16px;" class="truncate">${escapeHtml(p.name)}</div>
+                    ${mine ? '<div style="color:#8696a0;font-size:13px;">Kaldırmak için dokunun</div>' : ''}
+                </div>
+                <div style="font-size:26px;line-height:1;">${escapeHtml(p.emoji)}</div>
+            </div>`;
+        }).join('');
+    }
+
+    renderChips();
+    renderList();
+
+    chipsEl.addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-chip]');
+        if (!b) return;
+        filter = b.getAttribute('data-chip');
+        renderChips();
+        renderList();
+    });
+
+    // Kendi tepkine dokununca kaldırılır
+    listEl.addEventListener('click', (ev) => {
+        const row = ev.target.closest('[data-row]');
+        if (!row || row.getAttribute('data-row') !== myUid) return;
+        const mineP = people.find((p) => p.uid === myUid);
+        closeReactSheet();
+        if (mineP) applyReaction(msgId, mineP.emoji);
+    });
+
+    // Dışına dokununca kapat
+    wrap.addEventListener('click', (ev) => { if (ev.target === wrap) closeReactSheet(); });
+
+    // Aşağı çekince kapat
+    const panel = wrap.querySelector('[data-sheet]');
+    let startY = null;
+    let dy = 0;
+    panel.addEventListener('touchstart', (ev) => {
+        if (listEl.contains(ev.target) && listEl.scrollTop > 0) { startY = null; return; }
+        startY = ev.touches[0].clientY;
+        dy = 0;
+        panel.style.transition = 'none';
+    }, { passive: true });
+    panel.addEventListener('touchmove', (ev) => {
+        if (startY === null) return;
+        dy = Math.max(0, ev.touches[0].clientY - startY);
+        panel.style.transform = `translateY(${dy}px)`;
+    }, { passive: true });
+    panel.addEventListener('touchend', () => {
+        if (startY === null) return;
+        startY = null;
+        panel.style.transition = 'transform .22s ease';
+        if (dy > 90) closeReactSheet();
+        else panel.style.transform = 'translateY(0)';
+    }, { passive: true });
+}
+
+messageContainer.addEventListener('click', (ev) => {
+    const chip = ev.target.closest ? ev.target.closest('[data-reactions-chip]') : null;
+    if (!chip || selectionMode) return;
+    const row = chip.closest('[data-msg-id]');
+    if (!row) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    openReactionSheet(row.dataset.msgId);
+}, true);
 function updateSelectionUI() {
     if (!selectionToolbar) return;
     if (selectionMode) {
