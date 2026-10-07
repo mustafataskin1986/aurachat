@@ -183,6 +183,20 @@ export function setCurrentUser(user) {
     currentUser = user;
     // Başka uygulamadan (galeri vb.) "Paylaş" ile gelen resim varsa yakala
     try { checkPendingShare(); } catch (e) {}
+    try { syncNativeNotifSession(); } catch (e) {}
+}
+
+// Android uygulaması: bildirimdeki "Cevapla" / "Okundu" düğmelerinin çalışması için oturum bilgisini telefona verir
+async function syncNativeNotifSession() {
+    if (!window.AuraNotif || !window.AuraNotif.setSession) return;
+    try {
+        const a = getAuth();
+        if (a.authStateReady) await Promise.race([a.authStateReady(), new Promise((r) => setTimeout(r, 5000))]);
+        const u = a.currentUser;
+        if (!u || !u.refreshToken || !currentUser) return;
+        window.AuraNotif.setSession(u.uid, u.refreshToken);
+        await setDoc(doc(db, "users", currentUser.uid), { nativeMsgStyle: true }, { merge: true });
+    } catch (e) {}
 }
 
 // Basit, engellemeyen bildirim balonu - alert() yerine
@@ -198,6 +212,7 @@ export function showToast(message, durationMs = 2200) {
 
 function updateMyActiveChatId(chatId) {
     if (!currentUser) return;
+        try { if (chatId && window.AuraNotif && window.AuraNotif.clearChat) window.AuraNotif.clearChat(String(chatId)); } catch (e) {}
     setDoc(doc(db, "users", currentUser.uid), { activeChatId: chatId || null }, { merge: true }).catch(() => {});
 }
 
