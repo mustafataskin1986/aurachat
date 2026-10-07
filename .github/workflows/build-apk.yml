@@ -626,6 +626,11 @@ jobs:
           import android.content.Intent;
           import android.content.SharedPreferences;
           import android.graphics.Bitmap;
+          import android.graphics.BitmapFactory;
+          import android.util.Base64;
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.io.InputStream;
           import android.graphics.Canvas;
           import android.graphics.Paint;
           import android.graphics.Rect;
@@ -649,6 +654,7 @@ jobs:
               static final String PREFS = "aura_notif";
               static final String ACT_REPLY = "com.aurachat.app.NOTIF_REPLY";
               static final String ACT_READ = "com.aurachat.app.NOTIF_READ";
+              static final String ACT_MUTE = "com.aurachat.app.NOTIF_MUTE";
               static final String ACT_CLEAR = "com.aurachat.app.NOTIF_CLEAR";
               static final String KEY_REPLY = "aura_reply";
               static final String API = "https://aurachat-amber.vercel.app/api/notify-action";
@@ -776,6 +782,7 @@ jobs:
                       m.put("msgType", d.get("msgType") == null ? "" : d.get("msgType"));
                       sp(c).edit().putString("meta_" + chatId, m.toString()).apply();
 
+                      if (!group) ensureAvatar(c, chatId);
                       post(c, chatId, false);
                   } catch (Exception e) {}
               }
@@ -848,6 +855,7 @@ jobs:
                           style.setGroupConversation(true);
                       }
 
+                      Bitmap avatar = group ? null : cachedAvatar(c, chatId);
                       Map<String, Person> people = new HashMap<>();
                       long lastT = System.currentTimeMillis();
                       String lastText = "";
@@ -869,7 +877,7 @@ jobs:
                                   p = new Person.Builder()
                                           .setName(name)
                                           .setKey(key)
-                                          .setIcon(IconCompat.createWithBitmap(initialsBitmap(name, 128)))
+                                          .setIcon(IconCompat.createWithBitmap(avatar != null ? avatar : initialsBitmap(name, 128)))
                                           .build();
                                   people.put(key, p);
                               }
@@ -914,6 +922,15 @@ jobs:
                               .setShowsUserInterface(false)
                               .build();
 
+                      // Sessize al
+                      Intent muteIntent = new Intent(c, AuraActionReceiver.class).setAction(ACT_MUTE)
+                              .setData(Uri.parse("aura://mute/" + chatId)).putExtra("chatId", chatId);
+                      PendingIntent mutePi = PendingIntent.getBroadcast(c, chatId.hashCode(), muteIntent, PendingIntent.FLAG_UPDATE_CURRENT | imm);
+                      NotificationCompat.Action muteAction = new NotificationCompat.Action.Builder(0, "Sessize al", mutePi)
+                              .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MUTE)
+                              .setShowsUserInterface(false)
+                              .build();
+
                       // Kaydırıp kapatınca depoyu temizle
                       Intent clearIntent = new Intent(c, AuraActionReceiver.class).setAction(ACT_CLEAR)
                               .setData(Uri.parse("aura://clear/" + chatId)).putExtra("chatId", chatId);
@@ -935,7 +952,8 @@ jobs:
                               .setDeleteIntent(clearPi)
                               .addAction(replyAction)
                               .addAction(readAction)
-                              .setLargeIcon(initialsBitmap(title, 192));
+                              .addAction(muteAction)
+                              .setLargeIcon(avatar != null ? avatar : initialsBitmap(title, 192));
 
                       nm.notify("chat_" + chatId, 1, b.build());
                   } catch (Exception e) {}
@@ -1013,12 +1031,66 @@ jobs:
                   return bm;
               }
 
+              // ---------- avatar (karşı kişinin profil resmi) ----------
+              private static File avatarFile(Context c, String chatId) {
+                  return new File(c.getApplicationContext().getFilesDir(), "avatar_" + Math.abs(chatId.hashCode()) + ".png");
+              }
+
+              static Bitmap cachedAvatar(Context c, String chatId) {
+                  try {
+                      File f = avatarFile(c, chatId);
+                      if (!f.exists()) return null;
+                      return BitmapFactory.decodeFile(f.getAbsolutePath());
+                  } catch (Throwable t) {
+                      return null;
+                  }
+              }
+
+              // Önbellekte yoksa ya da 12 saatten eskiyse sunucudan indirir (kısa zaman aşımı)
+              static void ensureAvatar(Context c, String chatId) {
+                  try {
+                      File f = avatarFile(c, chatId);
+                      if (f.exists() && System.currentTimeMillis() - f.lastModified() < 12L * 3600 * 1000) return;
+                      String resp = callServerRaw(c, "avatar", chatId, null, 3500);
+                      if (resp == null) return;
+                      String av = new JSONObject(resp).optString("avatar", "");
+                      if (av.isEmpty()) return;
+                      Bitmap src = null;
+                      if (av.startsWith("data:")) {
+                          int comma = av.indexOf(',');
+                          if (comma < 0) return;
+                          byte[] bytes = Base64.decode(av.substring(comma + 1), Base64.DEFAULT);
+                          src = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                      } else if (av.startsWith("http")) {
+                          HttpURLConnection con = (HttpURLConnection) new URL(av).openConnection();
+                          con.setConnectTimeout(3000);
+                          con.setReadTimeout(3000);
+                          InputStream in = con.getInputStream();
+                          src = BitmapFactory.decodeStream(in);
+                          in.close();
+                          con.disconnect();
+                      }
+                      if (src == null) return;
+                      int side = Math.min(src.getWidth(), src.getHeight());
+                      Bitmap sq = Bitmap.createBitmap(src, (src.getWidth() - side) / 2, (src.getHeight() - side) / 2, side, side);
+                      Bitmap out = Bitmap.createScaledBitmap(sq, 192, 192, true);
+                      FileOutputStream fo = new FileOutputStream(f);
+                      out.compress(Bitmap.CompressFormat.PNG, 100, fo);
+                      fo.close();
+                  } catch (Throwable t) {}
+              }
+
               // ---------- sunucuya istek ----------
               static boolean callServer(Context c, String action, String chatId, String text) {
+                  return callServerRaw(c, action, chatId, text, 8000) != null;
+              }
+
+              // Başarılıysa yanıt gövdesini, değilse null döner
+              static String callServerRaw(Context c, String action, String chatId, String text, int timeoutMs) {
                   try {
                       SharedPreferences s = sp(c);
                       String rt = s.getString("rt", "");
-                      if (rt == null || rt.isEmpty()) return false;
+                      if (rt == null || rt.isEmpty()) return null;
                       JSONObject j = new JSONObject();
                       j.put("refreshToken", rt);
                       j.put("action", action);
@@ -1026,18 +1098,25 @@ jobs:
                       if (text != null) j.put("text", text);
                       HttpURLConnection con = (HttpURLConnection) new URL(API).openConnection();
                       con.setRequestMethod("POST");
-                      con.setConnectTimeout(8000);
-                      con.setReadTimeout(8000);
+                      con.setConnectTimeout(timeoutMs);
+                      con.setReadTimeout(timeoutMs);
                       con.setDoOutput(true);
                       con.setRequestProperty("Content-Type", "application/json; charset=utf-8");
                       OutputStream os = con.getOutputStream();
                       os.write(j.toString().getBytes("UTF-8"));
                       os.close();
                       int code = con.getResponseCode();
+                      if (code != 200) { con.disconnect(); return null; }
+                      InputStream in = con.getInputStream();
+                      java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                      byte[] buf = new byte[8192];
+                      int n;
+                      while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+                      in.close();
                       con.disconnect();
-                      return code == 200;
+                      return bos.toString("UTF-8");
                   } catch (Throwable t) {
-                      return false;
+                      return null;
                   }
               }
           }
@@ -1049,6 +1128,9 @@ jobs:
           import android.content.Context;
           import android.content.Intent;
           import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.widget.Toast;
           import androidx.core.app.RemoteInput;
 
           // Bildirimdeki "Cevapla", "Okundu olarak işaretle" düğmeleri ve bildirimin kaydırılıp kapatılması
@@ -1074,6 +1156,28 @@ jobs:
                           public void run() {
                               try {
                                   AuraNotif.callServer(app, "read", chatId, null);
+                              } finally {
+                                  pr.finish();
+                              }
+                          }
+                      }).start();
+                      return;
+                  }
+
+                  if (AuraNotif.ACT_MUTE.equals(action)) {
+                      AuraNotif.clearChat(app, chatId);
+                      final PendingResult pr = goAsync();
+                      new Thread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  final boolean ok = AuraNotif.callServer(app, "mute", chatId, null);
+                                  new Handler(Looper.getMainLooper()).post(new Runnable() {
+                                      @Override
+                                      public void run() {
+                                          Toast.makeText(app, ok ? "Sohbet sessize al\u0131nd\u0131" : "Sessize al\u0131namad\u0131", Toast.LENGTH_SHORT).show();
+                                      }
+                                  });
                               } finally {
                                   pr.finish();
                               }
