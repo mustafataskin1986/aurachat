@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   }
 
   const { refreshToken, action, chatId, text } = req.body || {};
-  if (typeof refreshToken !== 'string' || !refreshToken || (action !== 'reply' && action !== 'read')) {
+  if (typeof refreshToken !== 'string' || !refreshToken || !['reply', 'read', 'mute', 'avatar'].includes(action)) {
     return res.status(400).json({ error: 'Eksik parametre.' });
   }
   if (typeof chatId !== 'string' || !ID_RE.test(chatId)) {
@@ -92,6 +92,19 @@ export default async function handler(req, res) {
         });
         if (n) await batch.commit();
       }
+    }
+
+    if (action === 'mute') {
+      await db.doc(`users/${uid}/chats/${chatId}`).set({ muted: true }, { merge: true });
+      return res.status(200).json({ success: true });
+    }
+
+    if (action === 'avatar') {
+      // Sadece doğrudan sohbette karşı kişinin profil resmi
+      if (isGroup) return res.status(200).json({ avatar: '' });
+      const o = await db.doc(`users/${otherUid}`).get();
+      const av = o.exists && typeof o.data().avatar === 'string' ? o.data().avatar : '';
+      return res.status(200).json({ avatar: av.length < 2000000 ? av : '' });
     }
 
     if (action === 'read') {
