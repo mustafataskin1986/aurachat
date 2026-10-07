@@ -3459,21 +3459,23 @@ function ensureEditBar() {
     align-self: stretch !important;
     align-items: center;
     justify-content: space-between;
-    margin: 0 0 4px 0 !important;
-    padding: 10px 12px;
+        margin: 0 0 4px 0 !important;
+    padding: 6px 10px;
     border-radius: 10px;
     background: rgba(255,255,255,0.08) !important;
-}`;
+}
+#chat-area .aura-composer.aura-composer.aura-editing.aura-editing { max-height: 230px !important; }
+#chat-area .aura-composer.aura-editing #attach-btn { display: none !important; }`;
         document.head.appendChild(st);
     }
     const el = document.createElement('div');
     el.className = 'aura-editbar';
     el.innerHTML = `
         <div class="flex items-center gap-3 min-w-0">
-            <i class="fa-solid fa-pencil text-gray-300 text-base"></i>
+                     <i class="fa-solid fa-pencil text-gray-300 text-sm"></i>
             <span class="text-gray-200 text-sm truncate">Mesaj düzenleniyor</span>
         </div>
-        <button type="button" id="edit-bar-cancel" class="text-gray-300 hover:text-white px-2 flex-shrink-0 text-lg"><i class="fa-solid fa-xmark"></i></button>
+             <button type="button" id="edit-bar-cancel" class="text-gray-300 hover:text-white px-2 flex-shrink-0 text-base"><i class="fa-solid fa-xmark"></i></button>
     `;
     const row = messageInput.parentElement;
     row.insertBefore(el, row.firstChild);
@@ -3578,6 +3580,8 @@ async function submitEdit() {
 }
 
 if (selectionMoreBtn) {
+    // Üç noktaya basınca yazma kutusu odağı (klavye) kaybetmesin
+    selectionMoreBtn.addEventListener('mousedown', (e) => e.preventDefault());
     selectionMoreBtn.addEventListener('click', (e) => {
           e.stopPropagation();
         if (selectedMessageIds.size !== 1) { showToast('Düzenlemek için tek mesaj seç'); return; }
@@ -3588,6 +3592,7 @@ if (selectionMoreBtn) {
             moreMenuEl = document.createElement('div');
             moreMenuEl.style.cssText = 'position:fixed;top:58px;right:8px;z-index:60;min-width:160px;background:#233138;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.5);padding:4px 0;display:none;';
             moreMenuEl.innerHTML = `<button type="button" data-more="edit" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 text-left"><i class="fa-solid fa-pen w-4"></i><span>Düzenle</span></button>`;
+                     moreMenuEl.addEventListener('mousedown', (ev) => ev.preventDefault());
             moreMenuEl.addEventListener('click', (ev) => {
                 const b = ev.target.closest('[data-more]');
                 if (!b) return;
