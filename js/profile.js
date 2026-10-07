@@ -275,6 +275,7 @@ if (profileSaveBtn) {
 if (profileLogoutBtn) {
     profileLogoutBtn.addEventListener('click', async () => {
         try {
+                try { if (window.AuraNotif && window.AuraNotif.clearSession) window.AuraNotif.clearSession(); } catch (e) {}
             if (auth) await signOut(auth);
             localStorage.clear();
             sessionStorage.clear();
