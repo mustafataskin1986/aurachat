@@ -3444,13 +3444,13 @@ const selectionMoreBtn = document.getElementById('selection-more-btn');
 function ensureEditBar() {
     if (editBarEl) return editBarEl;
     const el = document.createElement('div');
-    el.className = 'hidden items-start px-3 py-2 bg-[#202c33] border-l-4 border-emerald-500';
+        el.className = 'hidden items-center justify-between mx-3 mt-2 mb-1 px-4 py-3 rounded-2xl bg-white/10';
     el.innerHTML = `
-        <div class="flex-1 min-w-0">
-            <p class="text-emerald-400 text-xs font-semibold truncate"><i class="fa-solid fa-pen mr-1"></i>Mesajı düzenle</p>
-            <p id="edit-bar-text" class="text-gray-300 text-xs truncate"></p>
+        <div class="flex items-center gap-3 min-w-0">
+            <i class="fa-solid fa-pencil text-gray-300 text-base"></i>
+            <span class="text-gray-200 text-sm truncate">Mesaj düzenleniyor</span>
         </div>
-        <button type="button" id="edit-bar-cancel" class="text-gray-400 hover:text-white px-2 flex-shrink-0"><i class="fa-solid fa-xmark"></i></button>
+        <button type="button" id="edit-bar-cancel" class="text-gray-300 hover:text-white px-2 flex-shrink-0 text-lg"><i class="fa-solid fa-xmark"></i></button>
     `;
     messageInput.parentElement.insertAdjacentElement('beforebegin', el);
     el.querySelector('#edit-bar-cancel').addEventListener('click', () => cancelEdit(true));
@@ -3492,7 +3492,6 @@ function startEdit(msgId) {
     cancelReply();
     editingMsg = { chatId: currentChatId, msgId, originalText: el.entry.data.text || '', createdMs: el.createdMs };
     const bar = ensureEditBar();
-    bar.querySelector('#edit-bar-text').textContent = editingMsg.originalText.slice(0, 120);
     bar.classList.remove('hidden');
     bar.classList.add('flex');
     messageInput.value = editingMsg.originalText;
