@@ -85,6 +85,7 @@ const selectionCancelBtn = document.getElementById('selection-cancel-btn');
 const selectionCountEl = document.getElementById('selection-count');
 const selectionDeleteBtn = document.getElementById('selection-delete-btn');
 const selectionReplyBtn = document.getElementById('selection-reply-btn');
+const selectionStarBtn = document.getElementById('selection-star-btn');
 const selectionCopyBtn = document.getElementById('selection-copy-btn');
 const selectionForwardBtn = document.getElementById('selection-forward-btn');
 
@@ -184,6 +185,7 @@ export function setCurrentUser(user) {
     // Başka uygulamadan (galeri vb.) "Paylaş" ile gelen resim varsa yakala
     try { checkPendingShare(); } catch (e) {}
     try { syncNativeNotifSession(); } catch (e) {}
+        try { startStarredWatch(); } catch (e) {}
 }
 
 // Android uygulaması: bildirimdeki "Cevapla" / "Okundu" düğmelerinin çalışması için oturum bilgisini telefona verir
@@ -1970,6 +1972,155 @@ messageContainer.addEventListener('click', (ev) => {
     ev.preventDefault();
     openReactionSheet(row.dataset.msgId);
 }, true);
+// ------------------------------------------
+// YILDIZLI MESAJLAR
+// Her kullanıcının kendi listesi: users/{uid}/starred/{chatId__msgId}
+// Seçim çubuğundaki yıldıza basınca eklenir / kaldırılır, sohbet menüsünden listelenir.
+// ------------------------------------------
+const starredMap = new Map();
+let starredUnsub = null;
+let starredPanelEl = null;
+
+function starKey(chatId, msgId) { return `${chatId}__${msgId}`; }
+function isStarred(chatId, msgId) { return starredMap.has(starKey(chatId, msgId)); }
+
+(function injectStarCss() {
+    const st = document.createElement('style');
+    st.id = 'aura-star-css';
+    st.textContent = '.aura-starred .aura-time::before{content:"\\2605  ";color:#fbbf24;}';
+    document.head.appendChild(st);
+})();
+
+async function startStarredWatch() {
+    if (starredUnsub || !currentUser) return;
+    try {
+        const a = getAuth();
+        if (a.authStateReady) await Promise.race([a.authStateReady(), new Promise((r) => setTimeout(r, 5000))]);
+    } catch (e) {}
+    if (starredUnsub || !currentUser) return;
+    starredUnsub = onSnapshot(collection(db, "users", currentUser.uid, "starred"), (snap) => {
+        starredMap.clear();
+        snap.forEach((d) => starredMap.set(d.id, d.data()));
+        messageElementsById.forEach((el, msgId) => el.classList.toggle('aura-starred', isStarred(currentChatId, msgId)));
+        if (selectionMode) updateSelectionUI();
+        if (starredPanelEl) renderStarredPanel();
+    }, () => {});
+}
+
+function starEligibleIds() {
+    return Array.from(selectedMessageIds).filter((id) => {
+        const e = findMessageEntry(id);
+        return e && !NO_REACT_TYPES.includes(e.data.type || 'text');
+    });
+}
+
+async function toggleStarSelected() {
+    if (!currentUser || !currentChatId) return;
+    const ids = starEligibleIds();
+    if (!ids.length) { showToast('Bu mesaj yıldızlanamaz'); return; }
+    const chatId = currentChatId;
+    const allStarred = ids.every((id) => isStarred(chatId, id));
+    exitSelectionMode();
+    try {
+        for (const id of ids) {
+            const ref = doc(db, "users", currentUser.uid, "starred", starKey(chatId, id));
+            if (allStarred) {
+                await deleteDoc(ref);
+            } else if (!isStarred(chatId, id)) {
+                const e = findMessageEntry(id);
+                const m = e.data;
+                const ms = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
+                await setDoc(ref, {
+                    chatId: chatId,
+                    msgId: id,
+                    chatName: currentChatName || '',
+                    preview: replyPreviewTextFor(m),
+                    senderUid: m.senderUid || '',
+                    senderName: m.senderName || '',
+                    msgTime: ms,
+                    starredAt: serverTimestamp()
+                });
+            }
+        }
+        showToast(allStarred ? 'Yıldız kaldırıldı' : 'Yıldızlandı');
+    } catch (e) {
+        showToast('Yıldız işlemi başarısız');
+    }
+}
+
+if (selectionStarBtn) {
+    // Yıldıza basınca yazma kutusu odağı (klavye) kaybetmesin
+    selectionStarBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    selectionStarBtn.addEventListener('click', () => toggleStarSelected());
+}
+
+function closeStarredPanelFromBack() {
+    if (!starredPanelEl) return;
+    starredPanelEl.remove();
+    starredPanelEl = null;
+}
+
+function closeStarredPanel() {
+    if (!starredPanelEl) return;
+    closeStarredPanelFromBack();
+    popBackState();
+}
+
+function renderStarredPanel() {
+    if (!starredPanelEl) return;
+    const list = starredPanelEl.querySelector('[data-list]');
+    const items = Array.from(starredMap.values())
+        .filter((d) => d.chatId === currentChatId)
+        .sort((a, b) => (b.msgTime || 0) - (a.msgTime || 0));
+    if (!items.length) {
+        list.innerHTML = '<div style="padding:40px 24px;text-align:center;color:#8696a0;font-size:15px;">Bu sohbette yıldızlı mesaj yok.<br>Bir mesajı seçip üstteki yıldıza dokun.</div>';
+        return;
+    }
+    list.innerHTML = items.map((d) => {
+        const mine = currentUser && d.senderUid === currentUser.uid;
+        const who = mine ? 'Sen' : (d.senderName || d.chatName || 'Kullanıcı');
+        const dt = new Date(d.msgTime || 0);
+        const when = dt.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + dt.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        return `<div data-msg="${escapeHtml(d.msgId)}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer;">
+            <div style="flex:1;min-width:0;">
+                <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;"><span style="color:#34d399;">${escapeHtml(who)}</span><span style="color:#8696a0;">${escapeHtml(when)}</span></div>
+                <div style="color:#e9edef;font-size:15px;margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere;">${escapeHtml(d.preview || '')}</div>
+            </div>
+            <button type="button" data-unstar="${escapeHtml(d.msgId)}" style="color:#fbbf24;font-size:18px;padding:4px 6px;"><i class="fa-solid fa-star"></i></button>
+        </div>`;
+    }).join('');
+}
+
+export function openStarredPanel() {
+    if (!currentChatId || !currentUser) return;
+    if (starredPanelEl) closeStarredPanel();
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;inset:0;z-index:75;background:#0b141a;display:flex;flex-direction:column;';
+    el.innerHTML = `
+        <div style="display:flex;align-items:center;gap:16px;padding:0 16px;height:65px;background:#000;flex-shrink:0;">
+            <button type="button" data-back style="color:#fff;font-size:18px;padding:4px;"><i class="fa-solid fa-arrow-left"></i></button>
+            <span style="color:#fff;font-size:17px;font-weight:500;">Yıldızlı mesajlar</span>
+        </div>
+        <div data-list style="flex:1;overflow-y:auto;"></div>`;
+    document.body.appendChild(el);
+    starredPanelEl = el;
+    pushBackState(closeStarredPanelFromBack);
+    renderStarredPanel();
+    el.querySelector('[data-back]').addEventListener('click', () => closeStarredPanel());
+    el.querySelector('[data-list]').addEventListener('click', (ev) => {
+        const un = ev.target.closest('[data-unstar]');
+        if (un) {
+            ev.stopPropagation();
+            deleteDoc(doc(db, "users", currentUser.uid, "starred", starKey(currentChatId, un.getAttribute('data-unstar')))).catch(() => showToast('Kaldırılamadı'));
+            return;
+        }
+        const row = ev.target.closest('[data-msg]');
+        if (!row) return;
+        const mid = row.getAttribute('data-msg');
+        closeStarredPanel();
+        setTimeout(() => scrollToOriginalMessage(mid), 60);
+    });
+}
 function updateSelectionUI() {
     if (!selectionToolbar) return;
     if (selectionMode) {
@@ -1980,6 +2131,12 @@ function updateSelectionUI() {
         const onlyEntry = onlyId ? findMessageEntry(onlyId) : null;
         const onlyType = onlyEntry ? (onlyEntry.data.type || 'text') : '';
         if (selectionReplyBtn) selectionReplyBtn.style.display = (onlyEntry && !['deleted', 'system', 'call_duration', 'missed_call', 'declined_call'].includes(onlyType)) ? '' : 'none';
+                if (selectionStarBtn) {
+            const sIds = starEligibleIds();
+            selectionStarBtn.style.display = sIds.length ? '' : 'none';
+            const on = sIds.length > 0 && sIds.every((id) => isStarred(currentChatId, id));
+            selectionStarBtn.innerHTML = on ? '<i class="fa-solid fa-star" style="color:#fbbf24"></i>' : '<i class="fa-regular fa-star"></i>';
+        }
           if (selectionForwardBtn) selectionForwardBtn.style.display = (onlyEntry && (onlyType === 'text' || onlyType === 'image')) ? '' : 'none';
         if (onlyEntry && !NO_REACT_TYPES.includes(onlyType)) showReactionBar(onlyId, onlyEntry); else hideReactionBar();
     } else {
@@ -2652,16 +2809,16 @@ if (isAlbum) {
         const tickColor = isReadByAll ? 'text-[#53bdeb]' : 'text-gray-400';
         const timeHtml = isAlbum
             ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1">
-                    <span class="text-[10px] text-white">${timeStr}</span>
+                   <span class="aura-time text-[10px] text-white">${timeStr}</span>
                 <i class="fa-solid fa-check-double text-[10px] ${isReadByAll ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
                </div>`
             : isImage
             ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1 bg-black/45 rounded-full px-1.5 py-0.5">
-                    <span class="text-[10px] text-white">${timeStr}</span>
+                   <span class="aura-time text-[10px] text-white">${timeStr}</span>
                 <i class="fa-solid fa-check-double text-[10px] ${isReadByAll ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
                </div>`
                 : `<div class="flex items-center justify-end space-x-1 mt-1">
-                    <span class="text-[10px] text-white">${editedLabel}${timeStr}</span>
+                   <span class="aura-time text-[10px] text-white">${editedLabel}${timeStr}</span>
                     <i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>
                </div>`;
 
@@ -2678,10 +2835,10 @@ if (isAlbum) {
         `;
     } else {
         const timeHtml = isAlbum
-            ? `<div class="absolute bottom-2 right-2"><span class="text-[10px] text-white">${timeStr}</span></div>`
+            ? `<div class="absolute bottom-2 right-2"><span class="aura-time text-[10px] text-white">${timeStr}</span></div>`
             : isImage
-            ? `<div class="absolute bottom-2 right-2 bg-black/45 rounded-full px-1.5 py-0.5"><span class="text-[10px] text-white">${timeStr}</span></div>`
-                 : `<span class="text-[10px] text-white float-right ml-3 mt-1">${editedLabel}${timeStr}</span>`;
+            ? `<div class="absolute bottom-2 right-2 bg-black/45 rounded-full px-1.5 py-0.5"><span class="aura-time text-[10px] text-white">${timeStr}</span></div>`
+                 : `<span class="aura-time text-[10px] text-white float-right ml-3 mt-1">${editedLabel}${timeStr}</span>`;
         msgDiv.className = "flex justify-start rounded-lg transition-colors";
         msgDiv.innerHTML = `
             <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
@@ -2784,7 +2941,8 @@ if (selectedMessageIds.has(msgId)) {
         msgDiv.classList.add('msg-selected');
     }
 
-    attachSelectionHandlers(msgDiv, msgId, isReplyable, msg, isMine);
+        attachSelectionHandlers(msgDiv, msgId, isReplyable, msg, isMine);
+    if (isStarred(currentChatId, msgId)) msgDiv.classList.add('aura-starred');
     messageElementsById.set(msgId, msgDiv);
     return msgDiv;
 }
