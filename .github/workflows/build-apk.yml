@@ -195,6 +195,21 @@ jobs:
               private volatile String launchChatJson = "";
 
             // JS, sohbet temasının rengini bildirir; seçim tutamakları bu renge boyanır
+              public class NotifBridge {
+                  @JavascriptInterface
+                  public void setSession(String uid, String refreshToken) {
+                      AuraNotif.setSession(getApplicationContext(), uid, refreshToken);
+                  }
+                  @JavascriptInterface
+                  public void clearSession() {
+                      AuraNotif.clearSession(getApplicationContext());
+                  }
+                  @JavascriptInterface
+                  public void clearChat(String chatId) {
+                      AuraNotif.clearChat(getApplicationContext(), chatId);
+                  }
+              }
+
               public class ThemeBridge {
                   @JavascriptInterface
                   public void setAccent(final String hex) {
@@ -249,6 +264,30 @@ jobs:
               private void addPendingCount(Intent intent) {
                   try {
                       if (launchChatJson == null || launchChatJson.isEmpty() || intent == null) return;
+                      // Yeni sistem: bekleyen mesajlar AuraNotif deposunda
+                      String storedChat = intent.getStringExtra("chatId");
+                      if (storedChat != null && !storedChat.isEmpty()) {
+                          org.json.JSONArray st = AuraNotif.stored(this, storedChat);
+                          if (st.length() > 0) {
+                              org.json.JSONArray smsgs = new org.json.JSONArray();
+                              for (int i = 0; i < st.length(); i++) {
+                                  org.json.JSONObject so = st.optJSONObject(i);
+                                  if (so == null || so.optBoolean("me", false)) continue;
+                                  String stg = so.optString("tag", "");
+                                  if (!stg.startsWith("msg-")) continue;
+                                  org.json.JSONObject mo = new org.json.JSONObject();
+                                  mo.put("tag", stg);
+                                  mo.put("text", so.optString("raw", so.optString("text", "")));
+                                  mo.put("t", so.optLong("t", 0));
+                                  smsgs.put(mo);
+                              }
+                              org.json.JSONObject so2 = new org.json.JSONObject(launchChatJson);
+                              so2.put("pending", Math.max(1, smsgs.length()));
+                              so2.put("msgs", smsgs);
+                              launchChatJson = so2.toString();
+                              return;
+                          }
+                      }
                       String title = intent.getStringExtra("title");
                       int count = 1;
                       org.json.JSONArray msgs = new org.json.JSONArray();
@@ -298,6 +337,16 @@ jobs:
                   setIntent(intent);
                   handleShareIntent(intent);
                   handleCallIntent(intent);
+                  clearChatFromIntent(intent);
+              }
+
+              // Bildirime dokunarak açılan sohbetin bildirim bloğunu kaldır
+              private void clearChatFromIntent(Intent intent) {
+                  try {
+                      if (intent == null || !intent.hasExtra("google.message_id")) return;
+                      String cid = intent.getStringExtra("chatId");
+                      if (cid != null && !cid.isEmpty()) AuraNotif.clearChat(getApplicationContext(), cid);
+                  } catch (Throwable t) {}
               }
 
               private void handleShareIntent(Intent intent) {
@@ -407,6 +456,8 @@ jobs:
                   addPendingCount(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new LaunchBridge(), "AuraLaunch");
                   this.bridge.getWebView().addJavascriptInterface(new ThemeBridge(), "AuraTheme");
+                  this.bridge.getWebView().addJavascriptInterface(new NotifBridge(), "AuraNotif");
+                  clearChatFromIntent(getIntent());
                   getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
                       @Override
                       public void handleOnBackPressed() {
@@ -479,6 +530,21 @@ jobs:
                       }
                       return;
                   }
+                  // Sunucu "sadece veri" yolladıysa bildirimi telefon kendi çizer: sohbet başına tek blok
+                  if (data != null && remoteMessage.getNotification() == null && data.get("chatId") != null) {
+                      // Uygulama ekrandaysa bildirim çıkmaz (eskisi gibi); sadece JS'e haber gider
+                      if (MainActivity.inForeground) {
+                          super.onMessageReceived(remoteMessage);
+                          return;
+                      }
+                      String tg = data.get("tag");
+                      if (tg != null && (tg.startsWith("call_") || tg.startsWith("gcall_"))) {
+                          AuraNotif.showSimple(this, data);
+                      } else {
+                          AuraNotif.show(this, data);
+                      }
+                      return;
+                  }
                   super.onMessageReceived(remoteMessage);
               }
 
@@ -518,7 +584,8 @@ jobs:
                   PendingIntent pi = PendingIntent.getActivity(this, 7100, intent, piFlags);
 
                   NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CALL_CHANNEL_ID)
-                          .setSmallIcon(getApplicationInfo().icon)
+                          .setSmallIcon(AuraNotif.smallIcon(this))
+                          .setColor(AuraNotif.ACCENT)
                           .setContentTitle(title)
                           .setContentText(body)
                           .setCategory(NotificationCompat.CATEGORY_CALL)
@@ -542,6 +609,524 @@ jobs:
             echo "AuraMessagingService.java yazıldı."
           else
             echo "UYARI: MainActivity.java bulunamadı, servis yazılamadı!"
+          fi
+
+      - name: Bildirim Sistemi - AuraNotif, AuraActionReceiver ve küçük logo
+        run: |
+          MAIN_ACTIVITY=$(find android -name "MainActivity.java" | head -n 1)
+          if [ -n "$MAIN_ACTIVITY" ]; then
+            DIR="$(dirname "$MAIN_ACTIVITY")"
+            cat > "$DIR/AuraNotif.java" << 'EOF'
+          package com.aurachat.app;
+
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.graphics.Bitmap;
+          import android.graphics.Canvas;
+          import android.graphics.Paint;
+          import android.graphics.Rect;
+          import android.net.Uri;
+          import android.os.Build;
+          import androidx.core.app.NotificationCompat;
+          import androidx.core.app.Person;
+          import androidx.core.app.RemoteInput;
+          import androidx.core.graphics.drawable.IconCompat;
+          import java.io.OutputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import java.util.HashMap;
+          import java.util.Map;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+
+          // Sohbet başına TEK bildirim bloğu (WhatsApp gibi), "Cevapla" ve "Okundu olarak işaretle" düğmeleri.
+          public class AuraNotif {
+              static final String CHANNEL = "aurachat-messages";
+              static final String PREFS = "aura_notif";
+              static final String ACT_REPLY = "com.aurachat.app.NOTIF_REPLY";
+              static final String ACT_READ = "com.aurachat.app.NOTIF_READ";
+              static final String ACT_CLEAR = "com.aurachat.app.NOTIF_CLEAR";
+              static final String KEY_REPLY = "aura_reply";
+              static final String API = "https://aurachat-amber.vercel.app/api/notify-action";
+              static final String DELETED = "🚫 Bu mesaj silindi";
+              static final int ACCENT = 0xFF9333EA;
+              static final int MAX_MSGS = 15;
+
+              private static SharedPreferences sp(Context c) {
+                  return c.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+              }
+
+              // ---------- oturum (Cevapla / Okundu için) ----------
+              static void setSession(Context c, String uid, String refreshToken) {
+                  sp(c).edit().putString("uid", uid == null ? "" : uid).putString("rt", refreshToken == null ? "" : refreshToken).apply();
+              }
+
+              static void clearSession(Context c) {
+                  sp(c).edit().remove("uid").remove("rt").apply();
+              }
+
+              // ---------- sohbet deposu ----------
+              static synchronized JSONArray stored(Context c, String chatId) {
+                  try {
+                      String s = sp(c).getString("chat_" + chatId, null);
+                      return s == null ? new JSONArray() : new JSONArray(s);
+                  } catch (Exception e) {
+                      return new JSONArray();
+                  }
+              }
+
+              private static synchronized void save(Context c, String chatId, JSONArray arr) {
+                  JSONArray out = new JSONArray();
+                  int start = Math.max(0, arr.length() - MAX_MSGS);
+                  for (int i = start; i < arr.length(); i++) out.put(arr.opt(i));
+                  sp(c).edit().putString("chat_" + chatId, out.toString()).apply();
+              }
+
+              private static synchronized JSONObject meta(Context c, String chatId) {
+                  try {
+                      String s = sp(c).getString("meta_" + chatId, null);
+                      return s == null ? new JSONObject() : new JSONObject(s);
+                  } catch (Exception e) {
+                      return new JSONObject();
+                  }
+              }
+
+              // Sadece depoyu temizler (bildirim kullanıcı tarafından kaydırılıp kapatıldığında)
+              static synchronized void forget(Context c, String chatId) {
+                  sp(c).edit().remove("chat_" + chatId).remove("meta_" + chatId).apply();
+              }
+
+              // Bildirimi kaldırır ve depoyu temizler (sohbet açıldığında / okundu işaretlendiğinde)
+              static void clearChat(Context c, String chatId) {
+                  if (chatId == null || chatId.isEmpty()) return;
+                  forget(c, chatId);
+                  try {
+                      NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+                      if (nm != null) nm.cancel("chat_" + chatId, 1);
+                  } catch (Exception e) {}
+              }
+
+              // ---------- gelen mesaj ----------
+              static void show(Context c, Map<String, String> d) {
+                  try {
+                      String chatId = d.get("chatId");
+                      if (chatId == null || chatId.isEmpty()) return;
+                      String title = d.get("title");
+                      String body = d.get("body");
+                      if (title == null || title.isEmpty()) title = "AuraChat";
+                      if (body == null) body = "";
+                      String tag = d.get("tag");
+                      boolean group = "1".equals(d.get("isGroup"));
+
+                      JSONArray arr = stored(c, chatId);
+
+                      if (DELETED.equals(body) && tag != null && !tag.isEmpty()) {
+                          boolean found = false;
+                          for (int i = 0; i < arr.length(); i++) {
+                              JSONObject o = arr.optJSONObject(i);
+                              if (o != null && tag.equals(o.optString("tag"))) {
+                                  o.put("text", DELETED);
+                                  o.put("raw", DELETED);
+                                  found = true;
+                              }
+                          }
+                          if (!found) return;
+                      } else {
+                          String sender = title;
+                          String text = body;
+                          if (group) {
+                              int i = body.indexOf(": ");
+                              if (i > 0 && i <= 40) {
+                                  sender = body.substring(0, i);
+                                  text = body.substring(i + 2);
+                              }
+                          }
+                          JSONObject o = new JSONObject();
+                          o.put("tag", tag == null ? "" : tag);
+                          o.put("text", text);
+                          o.put("raw", body);
+                          o.put("sender", sender);
+                          String suid = group ? "" : d.get("senderUid");
+                          o.put("senderUid", suid == null ? "" : suid);
+                          o.put("t", System.currentTimeMillis());
+                          o.put("me", false);
+                          // Aynı mesajın bildirimi iki kez gelirse tekrar ekleme
+                          if (tag != null && !tag.isEmpty()) {
+                              for (int i = 0; i < arr.length(); i++) {
+                                  JSONObject e = arr.optJSONObject(i);
+                                  if (e != null && tag.equals(e.optString("tag"))) return;
+                              }
+                          }
+                          arr.put(o);
+                      }
+                      save(c, chatId, arr);
+
+                      JSONObject m = new JSONObject();
+                      m.put("title", title);
+                      m.put("group", group);
+                      m.put("otherUid", d.get("otherUid") == null ? "" : d.get("otherUid"));
+                      m.put("otherName", d.get("otherName") == null ? title : d.get("otherName"));
+                      m.put("otherAvatar", d.get("otherAvatar") == null ? "" : d.get("otherAvatar"));
+                      m.put("body", body);
+                      m.put("tag", tag == null ? "" : tag);
+                      m.put("msgType", d.get("msgType") == null ? "" : d.get("msgType"));
+                      sp(c).edit().putString("meta_" + chatId, m.toString()).apply();
+
+                      post(c, chatId, false);
+                  } catch (Exception e) {}
+              }
+
+              // ---------- bildirimden verilen cevap ----------
+              static void appendMine(Context c, String chatId, String text) {
+                  try {
+                      JSONArray arr = stored(c, chatId);
+                      JSONObject o = new JSONObject();
+                      o.put("tag", "");
+                      o.put("text", text);
+                      o.put("raw", text);
+                      o.put("sender", "");
+                      o.put("senderUid", "");
+                      o.put("t", System.currentTimeMillis());
+                      o.put("me", true);
+                      arr.put(o);
+                      save(c, chatId, arr);
+                      post(c, chatId, true);
+                  } catch (Exception e) {}
+              }
+
+              static void appendFailure(Context c, String chatId) {
+                  try {
+                      JSONArray arr = stored(c, chatId);
+                      JSONObject o = new JSONObject();
+                      o.put("tag", "");
+                      o.put("text", "⚠️ Cevap gönderilemedi");
+                      o.put("raw", "");
+                      o.put("sender", "AuraChat");
+                      o.put("senderUid", "aura-system");
+                      o.put("t", System.currentTimeMillis());
+                      o.put("me", false);
+                      arr.put(o);
+                      save(c, chatId, arr);
+                      post(c, chatId, true);
+                  } catch (Exception e) {}
+              }
+
+              // ---------- bildirimi çiz ----------
+              private static void ensureChannel(Context c, NotificationManager nm) {
+                  if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
+                      NotificationChannel ch = new NotificationChannel(CHANNEL, "Mesaj Bildirimleri", NotificationManager.IMPORTANCE_HIGH);
+                      ch.setDescription("Yeni mesaj bildirimleri");
+                      nm.createNotificationChannel(ch);
+                  }
+              }
+
+              static int smallIcon(Context c) {
+                  int id = c.getResources().getIdentifier("ic_stat_aura", "drawable", c.getPackageName());
+                  return id != 0 ? id : c.getApplicationInfo().icon;
+              }
+
+              static void post(Context c, String chatId, boolean quiet) {
+                  try {
+                      NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+                      if (nm == null) return;
+                      ensureChannel(c, nm);
+
+                      JSONArray arr = stored(c, chatId);
+                      if (arr.length() == 0) return;
+                      JSONObject meta = meta(c, chatId);
+                      String title = meta.optString("title", "AuraChat");
+                      boolean group = meta.optBoolean("group", false);
+
+                      Person me = new Person.Builder().setName("Ben").setKey("aura-me").build();
+                      NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(me);
+                      if (group) {
+                          style.setConversationTitle(title);
+                          style.setGroupConversation(true);
+                      }
+
+                      Map<String, Person> people = new HashMap<>();
+                      long lastT = System.currentTimeMillis();
+                      String lastText = "";
+                      for (int i = 0; i < arr.length(); i++) {
+                          JSONObject o = arr.optJSONObject(i);
+                          if (o == null) continue;
+                          long t = o.optLong("t", System.currentTimeMillis());
+                          String text = o.optString("text", "");
+                          lastT = t;
+                          lastText = text;
+                          if (o.optBoolean("me", false)) {
+                              style.addMessage(text, t, me);
+                          } else {
+                              String name = o.optString("sender", title);
+                              String key = o.optString("senderUid", "");
+                              if (key.isEmpty()) key = "n:" + name;
+                              Person p = people.get(key);
+                              if (p == null) {
+                                  p = new Person.Builder()
+                                          .setName(name)
+                                          .setKey(key)
+                                          .setIcon(IconCompat.createWithBitmap(initialsBitmap(name, 128)))
+                                          .build();
+                                  people.put(key, p);
+                              }
+                              style.addMessage(text, t, p);
+                          }
+                      }
+
+                      // Bildirime dokununca sohbeti aç (FCM bildirimiyle aynı bilgiler)
+                      Intent open = new Intent(c, MainActivity.class);
+                      open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                      open.putExtra("google.message_id", "aura-" + System.currentTimeMillis());
+                      open.putExtra("title", title);
+                      open.putExtra("chatId", chatId);
+                      open.putExtra("otherUid", meta.optString("otherUid", ""));
+                      open.putExtra("otherName", meta.optString("otherName", title));
+                      open.putExtra("otherAvatar", meta.optString("otherAvatar", ""));
+                      open.putExtra("body", meta.optString("body", ""));
+                      open.putExtra("tag", meta.optString("tag", ""));
+                      open.putExtra("msgType", meta.optString("msgType", ""));
+                      int imm = Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0;
+                      PendingIntent openPi = PendingIntent.getActivity(c, chatId.hashCode(), open, PendingIntent.FLAG_UPDATE_CURRENT | imm);
+
+                      // Cevapla
+                      RemoteInput ri = new RemoteInput.Builder(KEY_REPLY).setLabel("Mesaj yaz").build();
+                      Intent replyIntent = new Intent(c, AuraActionReceiver.class).setAction(ACT_REPLY)
+                              .setData(Uri.parse("aura://reply/" + chatId)).putExtra("chatId", chatId);
+                      int mut = Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0;
+                      PendingIntent replyPi = PendingIntent.getBroadcast(c, chatId.hashCode(), replyIntent, PendingIntent.FLAG_UPDATE_CURRENT | mut);
+                      NotificationCompat.Action replyAction = new NotificationCompat.Action.Builder(0, "Cevapla", replyPi)
+                              .addRemoteInput(ri)
+                              .setAllowGeneratedReplies(true)
+                              .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+                              .setShowsUserInterface(false)
+                              .build();
+
+                      // Okundu olarak işaretle
+                      Intent readIntent = new Intent(c, AuraActionReceiver.class).setAction(ACT_READ)
+                              .setData(Uri.parse("aura://read/" + chatId)).putExtra("chatId", chatId);
+                      PendingIntent readPi = PendingIntent.getBroadcast(c, chatId.hashCode(), readIntent, PendingIntent.FLAG_UPDATE_CURRENT | imm);
+                      NotificationCompat.Action readAction = new NotificationCompat.Action.Builder(0, "Okundu olarak işaretle", readPi)
+                              .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                              .setShowsUserInterface(false)
+                              .build();
+
+                      // Kaydırıp kapatınca depoyu temizle
+                      Intent clearIntent = new Intent(c, AuraActionReceiver.class).setAction(ACT_CLEAR)
+                              .setData(Uri.parse("aura://clear/" + chatId)).putExtra("chatId", chatId);
+                      PendingIntent clearPi = PendingIntent.getBroadcast(c, chatId.hashCode(), clearIntent, PendingIntent.FLAG_UPDATE_CURRENT | imm);
+
+                      NotificationCompat.Builder b = new NotificationCompat.Builder(c, CHANNEL)
+                              .setSmallIcon(smallIcon(c))
+                              .setColor(ACCENT)
+                              .setContentTitle(title)
+                              .setContentText(lastText)
+                              .setStyle(style)
+                              .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                              .setPriority(NotificationCompat.PRIORITY_HIGH)
+                              .setAutoCancel(true)
+                              .setShowWhen(true)
+                              .setWhen(lastT)
+                              .setOnlyAlertOnce(quiet)
+                              .setContentIntent(openPi)
+                              .setDeleteIntent(clearPi)
+                              .addAction(replyAction)
+                              .addAction(readAction)
+                              .setLargeIcon(initialsBitmap(title, 192));
+
+                      nm.notify("chat_" + chatId, 1, b.build());
+                  } catch (Exception e) {}
+              }
+
+              // Arama gibi tek satırlık bildirimler (aynı tag ile eskisinin yerine geçer)
+              static void showSimple(Context c, Map<String, String> d) {
+                  try {
+                      NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+                      if (nm == null) return;
+                      ensureChannel(c, nm);
+                      String title = d.get("title");
+                      String body = d.get("body");
+                      String tag = d.get("tag");
+                      if (title == null || title.isEmpty()) title = "AuraChat";
+                      if (body == null) body = "";
+                      Intent open = new Intent(c, MainActivity.class);
+                      open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                      open.putExtra("google.message_id", "aura-" + System.currentTimeMillis());
+                      open.putExtra("title", title);
+                      open.putExtra("body", body);
+                      open.putExtra("tag", tag == null ? "" : tag);
+                      String[] keys = new String[]{"chatId", "otherUid", "otherName", "otherAvatar", "msgType"};
+                      for (String k : keys) {
+                          if (d.get(k) != null) open.putExtra(k, d.get(k));
+                      }
+                      int imm = Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0;
+                      String cid = d.get("chatId") == null ? "x" : d.get("chatId");
+                      PendingIntent pi = PendingIntent.getActivity(c, ("s" + cid).hashCode(), open, PendingIntent.FLAG_UPDATE_CURRENT | imm);
+                      NotificationCompat.Builder b = new NotificationCompat.Builder(c, CHANNEL)
+                              .setSmallIcon(smallIcon(c))
+                              .setColor(ACCENT)
+                              .setContentTitle(title)
+                              .setContentText(body)
+                              .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                              .setPriority(NotificationCompat.PRIORITY_HIGH)
+                              .setAutoCancel(true)
+                              .setContentIntent(pi)
+                              .setLargeIcon(initialsBitmap(title, 192));
+                      nm.notify(tag == null || tag.isEmpty() ? null : tag, 0, b.build());
+                  } catch (Exception e) {}
+              }
+
+              // ---------- baş harf daireleri ----------
+              static Bitmap initialsBitmap(String name, int size) {
+                  Bitmap bm = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+                  try {
+                      int[] palette = new int[]{0xFF7C3AED, 0xFFDB2777, 0xFF0EA5E9, 0xFF059669, 0xFFEA580C, 0xFF4F46E5, 0xFFC026D3, 0xFF0D9488};
+                      String n = name == null ? "" : name.trim();
+                      int color = palette[Math.abs(n.hashCode()) % palette.length];
+                      String initials = "?";
+                      if (!n.isEmpty()) {
+                          String[] words = n.split("\\s+");
+                          StringBuilder sb = new StringBuilder();
+                          for (int i = 0; i < words.length && sb.length() < 2; i++) {
+                              if (words[i].isEmpty()) continue;
+                              int cp = words[i].codePointAt(0);
+                              sb.appendCodePoint(cp);
+                          }
+                          if (sb.length() > 0) initials = sb.toString().toUpperCase();
+                      }
+                      Canvas cv = new Canvas(bm);
+                      Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+                      p.setColor(color);
+                      cv.drawCircle(size / 2f, size / 2f, size / 2f, p);
+                      p.setColor(0xFFFFFFFF);
+                      p.setTextSize(size * 0.42f);
+                      p.setFakeBoldText(true);
+                      Rect r = new Rect();
+                      p.getTextBounds(initials, 0, initials.length(), r);
+                      float x = size / 2f - r.exactCenterX();
+                      float y = size / 2f - r.exactCenterY();
+                      cv.drawText(initials, x, y, p);
+                  } catch (Throwable t) {}
+                  return bm;
+              }
+
+              // ---------- sunucuya istek ----------
+              static boolean callServer(Context c, String action, String chatId, String text) {
+                  try {
+                      SharedPreferences s = sp(c);
+                      String rt = s.getString("rt", "");
+                      if (rt == null || rt.isEmpty()) return false;
+                      JSONObject j = new JSONObject();
+                      j.put("refreshToken", rt);
+                      j.put("action", action);
+                      j.put("chatId", chatId);
+                      if (text != null) j.put("text", text);
+                      HttpURLConnection con = (HttpURLConnection) new URL(API).openConnection();
+                      con.setRequestMethod("POST");
+                      con.setConnectTimeout(8000);
+                      con.setReadTimeout(8000);
+                      con.setDoOutput(true);
+                      con.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                      OutputStream os = con.getOutputStream();
+                      os.write(j.toString().getBytes("UTF-8"));
+                      os.close();
+                      int code = con.getResponseCode();
+                      con.disconnect();
+                      return code == 200;
+                  } catch (Throwable t) {
+                      return false;
+                  }
+              }
+          }
+          EOF
+            cat > "$DIR/AuraActionReceiver.java" << 'EOF'
+          package com.aurachat.app;
+
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.os.Bundle;
+          import androidx.core.app.RemoteInput;
+
+          // Bildirimdeki "Cevapla", "Okundu olarak işaretle" düğmeleri ve bildirimin kaydırılıp kapatılması
+          public class AuraActionReceiver extends BroadcastReceiver {
+              @Override
+              public void onReceive(final Context context, Intent intent) {
+                  if (intent == null) return;
+                  final String action = intent.getAction();
+                  final String chatId = intent.getStringExtra("chatId");
+                  if (action == null || chatId == null || chatId.isEmpty()) return;
+                  final Context app = context.getApplicationContext();
+
+                  if (AuraNotif.ACT_CLEAR.equals(action)) {
+                      AuraNotif.forget(app, chatId);
+                      return;
+                  }
+
+                  if (AuraNotif.ACT_READ.equals(action)) {
+                      AuraNotif.clearChat(app, chatId);
+                      final PendingResult pr = goAsync();
+                      new Thread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  AuraNotif.callServer(app, "read", chatId, null);
+                              } finally {
+                                  pr.finish();
+                              }
+                          }
+                      }).start();
+                      return;
+                  }
+
+                  if (AuraNotif.ACT_REPLY.equals(action)) {
+                      Bundle results = RemoteInput.getResultsFromIntent(intent);
+                      CharSequence cs = results == null ? null : results.getCharSequence(AuraNotif.KEY_REPLY);
+                      final String text = cs == null ? "" : cs.toString().trim();
+                      if (text.isEmpty()) {
+                          AuraNotif.post(app, chatId, true);
+                          return;
+                      }
+                      // Cevap hemen bildirimde görünsün (dönen çubuk kalkar)
+                      AuraNotif.appendMine(app, chatId, text);
+                      final PendingResult pr = goAsync();
+                      new Thread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  boolean ok = AuraNotif.callServer(app, "reply", chatId, text);
+                                  if (!ok) AuraNotif.appendFailure(app, chatId);
+                              } finally {
+                                  pr.finish();
+                              }
+                          }
+                      }).start();
+                  }
+              }
+          }
+          EOF
+            mkdir -p android/app/src/main/res/drawable
+            cat > android/app/src/main/res/drawable/ic_stat_aura.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path
+                  android:strokeColor="#FFFFFFFF"
+                  android:strokeWidth="2"
+                  android:strokeLineCap="round"
+                  android:strokeLineJoin="round"
+                  android:pathData="M15,4 L15,2 M15,16 L15,14 M8,9 L10,9 M20,9 L22,9 M17.8,11.8 L19,13 M17.8,6.2 L19,5 M12.2,6.2 L11,5 M3,21 L12,12 M12.2,11.8 L11,13"/>
+          </vector>
+          EOF
+            echo "Bildirim dosyaları yazıldı."
+          else
+            echo "UYARI: MainActivity.java bulunamadı, bildirim dosyaları yazılamadı!"
           fi
 
       - name: Firebase google-services.json Dosyasını Ekle
@@ -587,6 +1172,10 @@ jobs:
             # Kapalı uygulamada gelen aramayı yakalayan bildirim servisi (Capacitor'ın servisinden önceliklidir)
             if ! grep -q "AuraMessagingService" "$MANIFEST_PATH"; then
               sed -i 's#</application>#    <service android:name=".AuraMessagingService" android:exported="false">\n        <intent-filter android:priority="100">\n            <action android:name="com.google.firebase.MESSAGING_EVENT" />\n        </intent-filter>\n    </service>\n</application>#' "$MANIFEST_PATH"
+            fi
+            # Bildirimdeki Cevapla / Okundu düğmelerini karşılayan alıcı
+            if ! grep -q "AuraActionReceiver" "$MANIFEST_PATH"; then
+              sed -i 's#</application>#    <receiver android:name=".AuraActionReceiver" android:exported="false" />\n</application>#' "$MANIFEST_PATH"
             fi
             # Galeri vb. uygulamalarda "Paylaş" menüsünde AuraChat görünsün (resim paylaşma filtresi)
             if ! grep -q "android.intent.action.SEND" "$MANIFEST_PATH"; then
