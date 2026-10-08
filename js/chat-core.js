@@ -3239,19 +3239,56 @@ let attachExpanded = false;
 let attachDragZone = 'top';
 let attachGestureDone = false;
 
+// Sohbetin alt kenarındaki mesajlar menü büyürken / küçülürken yerinde dursun
+function pinChatBottom(ms) {
+    const dist = messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight;
+    const t0 = performance.now();
+    const step = () => {
+        messageContainer.scrollTop = Math.max(0, messageContainer.scrollHeight - messageContainer.clientHeight - dist);
+        if (performance.now() - t0 < ms) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+}
+
+function clearExpandedLayout() {
+    messageInput.parentElement.style.display = '';
+    messageContainer.style.paddingTop = '';
+    messageContainer.style.paddingBottom = '';
+    messageContainer.style.flex = '';
+    messageContainer.style.minHeight = '';
+    if (attachMenuEl) {
+        attachMenuEl.style.flex = '';
+        attachMenuEl.style.minHeight = '';
+        attachMenuEl.style.paddingBottom = '';
+    }
+}
+
 // Menüyü tam ekran yapar: mesaj kutusu gizlenir, galeri ekranı doldurur
 function expandAttachMenu() {
     if (!attachMenuEl || attachExpanded || !galleryAvailable()) return;
     const row = messageInput.parentElement;
-    const total = messageContainer.clientHeight + attachMenuEl.offsetHeight + row.offsetHeight;
+    const rcs = getComputedStyle(row);
+    const rowFull = row.offsetHeight + (parseFloat(rcs.marginTop) || 0) + (parseFloat(rcs.marginBottom) || 0);
+    const total = messageContainer.clientHeight + attachMenuEl.offsetHeight + rowFull;
     attachExpanded = true;
+    pinChatBottom(260);
     row.style.display = 'none';
     messageContainer.style.paddingTop = '0px';
     messageContainer.style.paddingBottom = '0px';
+    attachMenuEl.style.paddingBottom = '0px';
     attachMenuEl.style.transition = 'height 0.2s ease-out';
     attachMenuEl.style.height = Math.max(attachMenuTargetHeight, Math.round(total)) + 'px';
     setGalleryExpanded(true);
-    setTimeout(() => { if (attachMenuEl) attachMenuEl.style.transition = ''; }, 230);
+    // Animasyon bitince menü kalan tüm boşluğu tam doldursun (kenarlarda boşluk kalmasın)
+    setTimeout(() => {
+        if (!attachMenuEl || !attachExpanded) return;
+        attachMenuEl.style.transition = '';
+        messageContainer.style.flex = '0 0 0px';
+        messageContainer.style.minHeight = '0px';
+        attachMenuEl.style.height = 'auto';
+        attachMenuEl.style.flex = '1 1 0px';
+        attachMenuEl.style.minHeight = '0px';
+    }, 230);
     // Geri tuşu önce tam ekrandan yarım boya döndürsün
     attachExpandEntry = true;
     pushBackState(collapseFromBack);
@@ -3270,22 +3307,25 @@ function collapseAttachMenu(fromBack) {
         popBackState();
     }
     attachExpanded = false;
-    messageInput.parentElement.style.display = '';
-    messageContainer.style.paddingTop = '';
-    messageContainer.style.paddingBottom = '';
+    const curH = attachMenuEl.offsetHeight;
+    clearExpandedLayout();
+    attachMenuEl.style.transition = 'none';
+    attachMenuEl.style.height = curH + 'px';
+    void attachMenuEl.offsetHeight;
     setGalleryExpanded(false);
-    attachMenuEl.style.transition = 'height 0.2s ease-out';
-    attachMenuEl.style.height = attachMenuTargetHeight + 'px';
-    setTimeout(() => { if (attachMenuEl) attachMenuEl.style.transition = ''; }, 230);
+    pinChatBottom(260);
+    requestAnimationFrame(() => {
+        attachMenuEl.style.transition = 'height 0.2s ease-out';
+        attachMenuEl.style.height = attachMenuTargetHeight + 'px';
+    });
+    setTimeout(() => { if (attachMenuEl) attachMenuEl.style.transition = ''; }, 260);
 }
 
 let attachMenuCloseTimer = null;
 function closeAttachMenuFromBack(instant) {
     if (attachExpanded) {
         attachExpanded = false;
-        messageInput.parentElement.style.display = '';
-        messageContainer.style.paddingTop = '';
-        messageContainer.style.paddingBottom = '';
+        clearExpandedLayout();
         instant = true;
     }
     try { closeGallery(); } catch (e) {}
