@@ -389,29 +389,21 @@ jobs:
                   String action = intent.getAction();
                   if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) return;
                                          String scId = intent.getStringExtra("android.intent.extra.shortcut.ID");
-                  String scKeys = "";
+                  StringBuilder kb = new StringBuilder();
                   try {
                       android.os.Bundle ex = intent.getExtras();
                       if (ex != null) {
-                          if (scId == null) {
-                              for (String k : ex.keySet()) {
-                                  Object v = ex.get(k);
-                                  if (v instanceof String && ((String) v).startsWith("chat_")) { scId = (String) v; break; }
-                              }
+                          for (String k : ex.keySet()) {
+                              Object v = ex.get(k);
+                              String vs = String.valueOf(v);
+                              if (vs.length() > 40) vs = vs.substring(0, 40);
+                              kb.append(k).append("=").append(vs).append("; ");
+                              if (scId == null && v instanceof String && ((String) v).startsWith("chat_")) scId = (String) v;
                           }
                       }
                   } catch (Throwable t) {}
                   pendingShareTarget = (scId != null && scId.startsWith("chat_")) ? scId.substring(5) : "";
-                  StringBuilder kb = new StringBuilder();
-for (String k : ex.keySet()) {
-    Object v = ex.get(k);
-    String vs = String.valueOf(v);
-    if (vs.length() > 40) vs = vs.substring(0, 40);
-    kb.append(k).append("=").append(vs).append("; ");
-    if (v instanceof String && ((String) v).startsWith("chat_")) scId = (String) v;
-}
-scKeys = kb.toString();
-pendingShareDiag = "id=" + scId + " bilesen=" + intent.getComponent() + " kategori=" + intent.getCategories() + " anahtarlar=" + scKeys;
+                  pendingShareDiag = "id=" + scId + " bilesen=" + intent.getComponent() + " kategori=" + intent.getCategories() + " anahtarlar=" + kb.toString();
 
                   final ArrayList<Uri> uris = new ArrayList<>();
                   if (Intent.ACTION_SEND.equals(action)) {
