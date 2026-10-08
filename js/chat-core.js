@@ -2306,4 +2306,3221 @@ if (selectionDeleteBtn) {
                             otherName: currentUser.name,
                             tag: `msg-${id}`
                         });
-            
+                    }
+                } else {
+                    await updateDoc(doc(db, "chats", chatIdAtDeleteTime, "messages", id), {
+                        deletedFor: arrayUnion(currentUser.uid)
+                    });
+                }
+            }
+        } catch (err) {
+            alert("Mesajlar silinemedi: " + err.message);
+        }
+
+        // Silinen mesaj sohbetin SON mesajıysa sohbet listesindeki önizlemeyi de güncelle
+        try {
+            const sessForSummary = chatSessions.get(chatIdAtDeleteTime);
+            const lastEntry = sessForSummary && sessForSummary.messages[sessForSummary.messages.length - 1];
+        if (lastEntry && everyoneDeletedIds.has(lastEntry.id) && currentIsGroup && sessForSummary.groupData) {
+                await Promise.allSettled((sessForSummary.groupData.members || []).map((memberUid) =>
+                    setDoc(doc(db, "users", memberUid, "chats", chatIdAtDeleteTime), { lastMessage: '🚫 Bu mesaj silindi' }, { merge: true })
+                ));
+            }
+            if (lastEntry && everyoneDeletedIds.has(lastEntry.id) && chatIdAtDeleteTime !== 'global' && currentOtherUid) {
+                await setDoc(doc(db, "users", currentUser.uid, "chats", chatIdAtDeleteTime), { lastMessage: '🚫 Bu mesaj silindi' }, { merge: true });
+                await setDoc(doc(db, "users", currentOtherUid, "chats", chatIdAtDeleteTime), { lastMessage: '🚫 Bu mesaj silindi' }, { merge: true });
+            }
+        } catch (err) {}
+
+        const session = chatSessions.get(chatIdAtDeleteTime);
+        if (session) {
+            const removeLocally = ids.filter((x) => !everyoneDeletedIds.has(x));
+            const markDeletedForMe = (list) => list.forEach((m) => {
+                if (!removeLocally.includes(m.id)) return;
+                const prev = Array.isArray(m.data.deletedFor) ? m.data.deletedFor : [];
+                if (!prev.includes(currentUser.uid)) m.data.deletedFor = prev.concat(currentUser.uid);
+            });
+            markDeletedForMe(session.olderMessagesPrepended);
+            markDeletedForMe(session.messages);
+            everyoneDeletedIds.forEach((x) => {
+                const e = session.messages.find((m) => m.id === x) || session.olderMessagesPrepended.find((m) => m.id === x);
+                if (e) Object.assign(e.data, { type: 'deleted', deleted: true, text: '', imageUrl: null, images: null, imagesCount: 0, lat: null, lng: null });
+            });
+            writeChatDiskCache(chatIdAtDeleteTime, session);
+            session.messages = session.messages.filter((m) => !removeLocally.includes(m.id));
+            everyoneDeletedIds.forEach((x) => {
+                const e = session.messages.find((m) => m.id === x) || session.olderMessagesPrepended.find((m) => m.id === x);
+                if (e) Object.assign(e.data, { type: 'deleted', deleted: true, text: '', imageUrl: null, images: null, imagesCount: 0, lat: null, lng: null });
+            });
+          everyoneDeletedIds.forEach((x) => {
+                const e = session.messages.find((m) => m.id === x) || session.olderMessagesPrepended.find((m) => m.id === x);
+                if (e) Object.assign(e.data, { type: 'deleted', deleted: true, text: '', imageUrl: null, images: null, imagesCount: 0, lat: null, lng: null });
+            });
+            if (currentChatId === chatIdAtDeleteTime) {
+                renderSession(session);
+            }
+            if (currentChatId === chatIdAtDeleteTime) {
+                renderSession(session);
+            }
+        }
+
+        exitSelectionMode();
+    });
+}
+
+// ------------------------------------------
+// MESAJLARI EKRANA ÇİZME
+// ------------------------------------------
+function renderSession(session) {
+    messageContainer.innerHTML = '';
+    messageElementsById.clear();
+
+    if (session.chatId !== 'global') {
+        const olderBtn = buildLoadOlderButtonElement(session);
+        if (olderBtn) messageContainer.appendChild(olderBtn);
+    }
+
+    const fragment = document.createDocumentFragment();
+    const all = session.olderMessagesPrepended.concat(session.messages);
+    let lastDayKey = null;
+
+    all.forEach(({ id, data: msg }) => {
+        if (currentUser && Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) return;
+
+        // Gün değişince tarih etiketi
+        const msgDate = msg.createdAt ? msg.createdAt.toDate() : new Date();
+        const dayKey = dayKeyOf(msgDate);
+        if (dayKey !== lastDayKey) {
+            fragment.appendChild(buildDateChipElement(msgDate));
+            lastDayKey = dayKey;
+        }
+
+        // İlk okunmamış mesajın üstüne "N okunmamış mesaj" çizgisi
+        if (unreadDivider && unreadDivider.chatId === session.chatId && unreadDivider.msgId === id) {
+            fragment.appendChild(buildUnreadDividerElement(unreadDivider.count));
+        }
+
+        const isMine = !!(currentUser && currentUser.uid && msg.senderUid === currentUser.uid);
+        fragment.appendChild(buildMessageElement(msg, isMine, id));
+    });
+
+    messageContainer.appendChild(fragment);
+    refreshSearchAfterRender(session);
+}
+
+// ------------------------------------------
+// ESKİ MESAJLARI YÜKLE (pagination)
+// ------------------------------------------
+function buildLoadOlderButtonElement(session) {
+    if (!session.hasMoreOlderCandidate || session.noMoreOlderMessages || !session.oldestLoadedCreatedAt) {
+        return null;
+    }
+
+    const btnWrap = document.createElement('div');
+    btnWrap.className = 'flex justify-center py-2';
+    btnWrap.innerHTML = `
+        <button class="bg-[#202c33] hover:bg-[#2a3942] text-emerald-400 text-xs font-medium px-4 py-2 rounded-full transition">
+            Eski mesajları yükle
+        </button>
+    `;
+    btnWrap.querySelector('button').addEventListener('click', () => loadOlderMessages(session, btnWrap));
+    return btnWrap;
+}
+
+async function loadOlderMessages(session, btnWrapEl) {
+    if (!session.oldestLoadedCreatedAt) return;
+
+    const btn = btnWrapEl.querySelector('button');
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+
+    try {
+        const q = session.clearedAt
+            ? query(
+                collection(db, "chats", session.chatId, "messages"),
+                where("createdAt", ">", session.clearedAt),
+                orderBy("createdAt", "desc"),
+                startAfter(session.oldestLoadedCreatedAt),
+                limit(50)
+            )
+            : query(
+                collection(db, "chats", session.chatId, "messages"),
+                orderBy("createdAt", "desc"),
+                startAfter(session.oldestLoadedCreatedAt),
+                limit(50)
+            );
+
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            session.noMoreOlderMessages = true;
+            if (currentChatId === session.chatId) renderSession(session);
+            return;
+        }
+
+        const docsAsc = snap.docs.slice().reverse().map((d) => ({ id: d.id, data: d.data() }));
+        session.olderMessagesPrepended = docsAsc.concat(session.olderMessagesPrepended);
+        session.oldestLoadedCreatedAt = docsAsc[0].data.createdAt;
+
+        if (snap.size < 50) {
+            session.noMoreOlderMessages = true;
+        }
+
+        if (currentChatId === session.chatId) renderSession(session);
+    } catch (err) {
+        console.error("Eski mesajlar yüklenemedi:", err);
+        if (currentChatId === session.chatId) {
+            btn.disabled = false;
+            btn.textContent = "Eski mesajları yükle";
+        }
+    }
+}
+
+// ------------------------------------------
+// MESAJ MEDYASI YEREL DOSYA ÖNBELLEĞİ + TESLİMAT SONRASI TEMİZLİK
+// ------------------------------------------
+const MEDIA_CACHE_DIR = 'chat_media';
+const mediaUriCache = new Map(); // "chatId/msgId" veya "chatId/msgId_index" -> yerel gösterilebilir src (data: URI)
+const mediaResolveInFlight = new Map();
+
+// ------------------------------------------
+// PWA/TARAYICI için kalıcı yerel depo (IndexedDB) - Capacitor
+// Filesystem sadece Android APK'da var, tarayıcıda yok. Bu olmadan
+// PWA tarafında hiçbir kalıcı kopya oluşmuyordu; karşı taraf resmi
+// indirip Firestore'daki kopyayı temizleyince, PWA'da hiç yerel kopya
+// kalmadığı için resim kalıcı olarak kayboluyordu. Android'deki
+// Filesystem'in tam karşılığı burada IndexedDB ile sağlanıyor.
+// ------------------------------------------
+const PWA_DB_NAME = 'aurachat-media';
+const PWA_DB_STORE = 'images';
+let pwaDbPromise = null;
+
+function openPwaDb() {
+    if (pwaDbPromise) return pwaDbPromise;
+    pwaDbPromise = new Promise((resolve) => {
+        if (!('indexedDB' in window)) { resolve(null); return; }
+        const req = indexedDB.open(PWA_DB_NAME, 1);
+        req.onupgradeneeded = () => {
+            req.result.createObjectStore(PWA_DB_STORE);
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+    });
+    return pwaDbPromise;
+}
+
+async function pwaDbGet(key) {
+    const dbase = await openPwaDb();
+    if (!dbase) return null;
+    return new Promise((resolve) => {
+        try {
+            const tx = dbase.transaction(PWA_DB_STORE, 'readonly');
+            const req = tx.objectStore(PWA_DB_STORE).get(key);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => resolve(null);
+        } catch (e) {
+            resolve(null);
+        }
+    });
+}
+
+async function pwaDbSet(key, value) {
+    const dbase = await openPwaDb();
+    if (!dbase) return;
+    return new Promise((resolve) => {
+        try {
+            const tx = dbase.transaction(PWA_DB_STORE, 'readwrite');
+            tx.objectStore(PWA_DB_STORE).put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+        } catch (e) {
+            resolve();
+        }
+    });
+}
+
+
+// ------------------------------------------
+// GALERİ DOSYA ADLARI
+// Resim yalnızca galeriye (Pictures/AuraChat) yazılır, başka kopya yok.
+// Ad: AuraChat_TARİH_SAAT_<mesajId>[_sıra].jpg - mesaj kimliği adın
+// içinde olduğu için ayrı indekse gerek yok; klasör taranarak her
+// resim kendi mesajına geri bağlanır.
+// ------------------------------------------
+const GALLERY_DIR = 'Pictures/AuraChat';
+const GALLERY_NAME_RE = /^AuraChat_\d{8}_\d{6}_([A-Za-z0-9]{20})(?:_(\d+))?\.jpg$/;
+let galleryFileMap = null; // "msgId" veya "msgId_idx" -> dosya adı
+let galleryFileMapPromise = null;
+
+function galleryKey(msgId, idx) {
+    return (idx === null || idx === undefined) ? msgId : `${msgId}_${idx}`;
+}
+
+let galleryMapScannedAt = 0;
+function loadGalleryFileMap() {
+    if (galleryFileMapPromise) return galleryFileMapPromise;
+    galleryMapScannedAt = Date.now();
+    galleryFileMapPromise = (async () => {
+        galleryFileMap = new Map();
+        const Filesystem = getFilesystemPlugin();
+        if (!Filesystem) return galleryFileMap;
+        try {
+            const dir = await Filesystem.readdir({ path: GALLERY_DIR, directory: 'EXTERNAL_STORAGE' });
+            for (const f of (dir.files || [])) {
+                const name = typeof f === 'string' ? f : f.name;
+                const m = name && name.match(GALLERY_NAME_RE);
+                if (m) {
+                    const idx = m[2] ? parseInt(m[2], 10) - 1 : null;
+                    galleryFileMap.set(galleryKey(m[1], idx), name);
+                }
+            }
+        } catch (e) {
+            // klasör henüz yok, ilk resim yazılınca oluşur
+        }
+        return galleryFileMap;
+    })();
+    return galleryFileMapPromise;
+}
+
+function getMessageTimeMs(chatId, msgId) {
+    const s = chatSessions.get(chatId);
+    if (s) {
+        const m = s.messages.find((x) => x.id === msgId) || s.olderMessagesPrepended.find((x) => x.id === msgId);
+        if (m && m.data.createdAt) return m.data.createdAt.toMillis();
+    }
+    return Date.now();
+}
+
+function buildGalleryFileName(timeMs, msgId, idx) {
+    const d = new Date(timeMs);
+    const p = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+    const idxPart = (idx === null || idx === undefined) ? '' : `_${idx + 1}`;
+    return `AuraChat_${stamp}_${msgId}${idxPart}.jpg`;
+}
+
+const toImageSrc = (raw) => (typeof raw === 'string' && raw.startsWith('data:')) ? raw : `data:image/jpeg;base64,${raw}`;
+
+async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
+    if (!chatId || !msgId) return base64Data || null;
+
+    const suffix = (idx === null || idx === undefined) ? '' : `_${idx}`;
+    const cacheKey = `${chatId}/${msgId}${suffix}`;
+    if (mediaUriCache.has(cacheKey)) return mediaUriCache.get(cacheKey);
+
+    if (mediaResolveInFlight.has(cacheKey)) {
+        return mediaResolveInFlight.get(cacheKey);
+    }
+
+    const resolvePromise = (async () => {
+        const Filesystem = getFilesystemPlugin();
+
+        if (Filesystem) {
+            let map = await loadGalleryFileMap();
+            // İzin verilmeden önce taranıp boş kaldıysa (ilk açılış) yeniden tara (en fazla 5 sn'de bir)
+            if (map.size === 0 && Date.now() - galleryMapScannedAt > 5000) galleryFileMapPromise = null;
+            map = await loadGalleryFileMap();
+            const key = galleryKey(msgId, idx);
+            const knownName = map.get(key);
+
+            // 1. Galeride bu mesajın resmi varsa oradan oku
+            if (knownName) {
+                try {
+                    const found = await Filesystem.readFile({
+                        path: `${GALLERY_DIR}/${knownName}`,
+                        directory: 'EXTERNAL_STORAGE'
+                    });
+                    const src = toImageSrc(found.data);
+                    mediaUriCache.set(cacheKey, src);
+                    return src;
+                } catch (e) {
+                    map.delete(key); // galeriden silinmiş
+                }
+            }
+
+            // 2. Galeride yok, sunucudan gelen veri de yoksa gösterilecek bir şey kalmadı
+            if (!base64Data) return null;
+
+            // 3. Yeni kayıt: sadece galeriye yaz
+            try {
+                const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+                const fileName = buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx);
+
+                await Filesystem.writeFile({
+                    path: `${GALLERY_DIR}/${fileName}`,
+                    data: pureBase64,
+                    directory: 'EXTERNAL_STORAGE',
+                    recursive: true
+                });
+                map.set(key, fileName);
+
+                const src = `data:image/jpeg;base64,${pureBase64}`;
+                mediaUriCache.set(cacheKey, src);
+                return src;
+            } catch (err) {
+                console.warn("Medya galeriye yazılamadı:", err);
+                return null;
+            }
+        }
+
+        // Tarayıcı / PWA fallback (IndexedDB)
+        const existing = await pwaDbGet(cacheKey);
+        if (existing) {
+            mediaUriCache.set(cacheKey, existing);
+            return existing;
+        }
+
+        if (!base64Data) return null;
+
+        const src = toImageSrc(base64Data);
+        await pwaDbSet(cacheKey, src);
+        mediaUriCache.set(cacheKey, src);
+        return src;
+    })();
+
+    mediaResolveInFlight.set(cacheKey, resolvePromise);
+    try {
+        return await resolvePromise;
+    } finally {
+        mediaResolveInFlight.delete(cacheKey);
+    }
+}
+
+// Firebase = kurye. Resim gerçekten bu cihaza (diske) indiyse ve ben
+// ALICIYSAM (gönderen değilsem), Firestore'daki kopyayı temizle.
+// Global odada dokunmuyoruz (paylaşımlı arşiv).
+function maybeStripDeliveredImage(chatId, msgId, msg) {
+    if (chatId === 'global' || isGroupChat(chatId)) return;
+    if (!currentUser || !msg.imageUrl) return;
+    if (msg.senderUid === currentUser.uid) return;
+
+    const cacheKey = `${chatId}/${msgId}`;
+    
+    // GÜVENLİK SUBABI: Eğer resim yerel bellek kütüphanesine (mediaUriCache) 
+    // başarıyla yazılmadıysa (Android Filesystem veya PWA IndexedDB patladıysa) 
+    // sakın sunucudaki resmi silme!
+    if (!mediaUriCache.has(cacheKey)) return; 
+
+    updateDoc(doc(db, "chats", chatId, "messages", msgId), {
+        imageUrl: null,
+        imageDelivered: true
+    }).catch((err) => console.warn("Teslim edilen resim Firestore'dan temizlenemedi:", err));
+}
+
+// Albüm (çoklu resim) versiyonu: ALICI tarafında albümdeki TÜM
+// resimler yerel diske/IndexedDB'ye başarıyla yazıldıysa, Firestore'daki
+// images dizisini temizler (imagesDelivered:true bırakır).
+function maybeStripAlbumImages(chatId, msgId, msg, imagesCount) {
+    if (chatId === 'global' || isGroupChat(chatId)) return;
+    if (!currentUser || msg.senderUid === currentUser.uid) return;
+    if (!Array.isArray(msg.images) || !msg.images.length) return; // zaten temizlenmiş ya da hiç yoktu
+    if (!imagesCount) return;
+
+    for (let i = 0; i < imagesCount; i++) {
+        if (!mediaUriCache.has(`${chatId}/${msgId}_${i}`)) return; // hepsi henüz diske yazılmadı
+    }
+
+    updateDoc(doc(db, "chats", chatId, "messages", msgId), {
+        images: null,
+        imagesDelivered: true
+    }).catch((err) => console.warn("Albüm resimleri Firestore'dan temizlenemedi:", err));
+}
+
+// WhatsApp tarzı 2 sütunlu albüm ızgarası. 4'ten fazla resim varsa
+// son görünen karede "+N" bindirmesi gösterilir.
+function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
+    const maxTiles = Math.min(imagesCount, 4);
+    const extra = imagesCount - maxTiles;
+    let tiles = '';
+
+    for (let i = 0; i < maxTiles; i++) {
+        const cachedSrc = mediaUriCache.get(`${chatId}/${msgId}_${i}`);
+        const showOverlay = i === maxTiles - 1 && extra > 0;
+        const inner = cachedSrc
+     ? `<img src="${cachedSrc}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" oncontextmenu="return false" draggable="false" style="-webkit-user-drag:none;" onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})">`
+            : `<div class="w-full h-full flex items-center justify-center bg-black/20" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})"><i class="fa-solid fa-image text-gray-500"></i></div>`;
+        tiles += `
+            <div class="relative overflow-hidden" style="aspect-ratio:1/1;">
+                ${inner}
+                ${showOverlay ? `<div class="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-lg font-bold pointer-events-none">+${extra}</div>` : ''}
+            </div>`;
+    }
+
+    return `<div class="grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden" style="width:280px;max-width:100%;">${tiles}</div>`;
+}
+
+function buildMessageElement(msg, isMine, msgId) {
+   // Konuşma süresi mesajı: iki tarafta da ortada küçük etiket
+    if (msg.type === 'call_duration') {
+        const cdDiv = document.createElement('div');
+        cdDiv.dataset.msgId = msgId;
+        cdDiv.dataset.mine = 'false';
+        cdDiv.className = 'flex justify-center';
+        const cdAudio = msg.callType === 'audio';
+        cdDiv.innerHTML = `<span class="bg-[#182229] text-gray-300 text-xs px-3 py-1 rounded-lg shadow"><i class="fa-solid ${cdAudio ? 'fa-phone' : 'fa-video'} mr-1.5"></i>${cdAudio ? 'Sesli arama' : 'Görüntülü arama'} • ${formatCallDuration(msg.duration)}</span>`;
+        messageElementsById.set(msgId, cdDiv);
+        return cdDiv;
+    }
+
+    // Sistem mesajı (örn. "X gruptan ayrıldı"): ortada küçük etiket
+    if (msg.type === 'system') {
+        const sysDiv = document.createElement('div');
+        sysDiv.dataset.msgId = msgId;
+        sysDiv.dataset.mine = 'false';
+        sysDiv.className = 'flex justify-center';
+        sysDiv.innerHTML = `<span class="bg-[#182229] text-gray-300 text-xs px-3 py-1 rounded-lg shadow">${escapeHtml(msg.text || '')}</span>`;
+        messageElementsById.set(msgId, sysDiv);
+        return sysDiv;
+    }
+    const msgDiv = document.createElement('div');
+    msgDiv.dataset.msgId = msgId;
+    msgDiv.dataset.mine = isMine ? 'true' : 'false';
+    const timeStr = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi';
+
+    const imagesCount = msg.imagesCount || 0;
+    const isAlbum = msg.type === 'image' && imagesCount > 1;
+    const isSingleImage = msg.type === 'image' && !isAlbum && (msg.imageUrl || msg.imageDelivered);
+    const isImage = isAlbum || isSingleImage;
+
+    const localCachedSrc = isSingleImage ? mediaUriCache.get(`${currentChatId}/${msgId}`) : null;
+    const initialImgSrc = localCachedSrc || msg.imageUrl || '';
+
+let bodyHtml;
+if (isAlbum) {
+        bodyHtml = buildAlbumTilesHtml(currentChatId, msgId, imagesCount);
+        if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
+    } else if (isSingleImage) {
+        bodyHtml = initialImgSrc
+            ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;-webkit-user-drag:none;" data-media-msg="${msgId}" oncontextmenu="return false" draggable="false" onclick="openImageLightbox(this.src)">`
+            : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`;
+        if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
+} else if (msg.type === 'location') {
+        bodyHtml = `<div class="cursor-pointer" style="min-width:200px;" onclick="openLocation(${Number(msg.lat)},${Number(msg.lng)})">
+            <div class="rounded-lg bg-black/25 flex items-center justify-center" style="height:90px;"><i class="fa-solid fa-location-dot text-rose-500 text-4xl"></i></div>
+            <p class="mt-1.5 font-medium text-sm">📍 Konum</p>
+            <p class="text-[11px] text-gray-300">${Number(msg.lat).toFixed(5)}, ${Number(msg.lng).toFixed(5)}</p>
+            <p class="text-[11px] text-sky-300 mt-0.5">Haritada aç</p>
+        </div>`;
+  } else if (msg.type === 'deleted') {
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-gray-400 italic text-[13px]"><i class="fa-solid fa-ban text-xs"></i> ${isMine ? 'Bu mesajı sildin' : 'Bu mesaj silindi'}</p>`;
+} else if (msg.type === 'missed_call') {
+        const missedIsVideo = msg.callType !== 'audio';
+        const missedLabel = missedIsVideo ? 'Cevapsız görüntülü arama' : 'Cevapsız sesli arama';
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${missedIsVideo ? 'video' : 'audio'}')"><i class="fa-solid ${missedIsVideo ? 'fa-video-slash' : 'fa-phone-slash'}"></i> ${missedLabel}</p>`;
+    } else if (msg.type === 'declined_call') {
+        const declinedIsVideo = msg.callType !== 'audio';
+        const declinedLabel = declinedIsVideo ? 'Reddedilen görüntülü arama' : 'Reddedilen sesli arama';
+        bodyHtml = `<p class="break-words flex items-center gap-2 text-rose-300 italic cursor-pointer" onclick="callBackFromBubble('${declinedIsVideo ? 'video' : 'audio'}')"><i class="fa-solid ${declinedIsVideo ? 'fa-video-slash' : 'fa-phone-slash'}"></i> ${declinedLabel}</p>`;
+} else if (msg.type === 'audio') {
+        bodyHtml = buildAudioBubbleHtml(msgId, msg);
+} else {
+        const fullText = msg.text || '';
+        const textLines = fullText.split('\n');
+        const tooLong = fullText.length > 700 || textLines.length > 14;
+        if (tooLong && !expandedMsgIds.has(msgId)) {
+            let shown = textLines.slice(0, 14).join('\n');
+            if (shown.length > 700) shown = shown.slice(0, 700);
+            bodyHtml = `<p class="break-words whitespace-pre-wrap">${linkifyText(shown.trimEnd())}…</p><button type="button" data-read-more="${msgId}" class="inline-block text-[12.5px] font-medium mt-1.5 px-3 py-1 rounded-full text-white" style="background:rgba(0,0,0,0.28);">Devamını okuyun</button>`;
+        } else {
+            bodyHtml = `<p class="break-words whitespace-pre-wrap">${linkifyText(fullText)}</p>${buildLinkPreviewHtml(msg.linkPreview)}`;
+        }
+    }
+
+  const forwardedLabel = msg.forwarded
+        ? `<div class="text-[11px] text-gray-300 italic px-2 pt-1 pb-0.5"><i class="fa-solid fa-share mr-1"></i>İletildi</div>`
+        : '';
+
+    const isReplyable = !['deleted', 'system', 'call_duration', 'missed_call', 'declined_call'].includes(msg.type);
+        const replyQuoteHtml = buildReplyQuoteHtml(msg.replyTo, isMine);
+
+        const reactionsHtml = buildReactionsHtml(msg, isMine);
+    const editedLabel = (msg.edited && msg.type !== 'deleted') ? 'düzenlendi · ' : '';
+    if (reactionsHtml) msgDiv.style.marginBottom = '14px';
+
+    const actionButtonsHtml = isImage
+        ? `<button type="button" class="flex-shrink-0 self-center w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-gray-300 flex items-center justify-center ${isMine ? 'mr-2' : 'ml-2'}" onclick="forwardImageMessage('${msgId}')"><i class="fa-solid fa-share text-xs"></i></button>`
+        : '';
+
+    if (isMine) {
+        const isReadByAll = currentIsGroup ? groupMessageReadByAll(msg) : !!msg.read;
+        const tickColor = isReadByAll ? 'text-[#53bdeb]' : 'text-gray-400';
+        const timeHtml = isAlbum
+            ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1">
+                   <span class="aura-time text-[10px] text-white">${timeStr}</span>
+                <i class="fa-solid fa-check-double text-[10px] ${isReadByAll ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
+               </div>`
+            : isImage
+            ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1 bg-black/45 rounded-full px-1.5 py-0.5">
+                   <span class="aura-time text-[10px] text-white">${timeStr}</span>
+                <i class="fa-solid fa-check-double text-[10px] ${isReadByAll ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
+               </div>`
+                : `<div class="flex items-center justify-end space-x-1 mt-1">
+                   <span class="aura-time text-[10px] text-white">${editedLabel}${timeStr}</span>
+                    <i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i>
+               </div>`;
+
+        msgDiv.className = "flex justify-end rounded-lg transition-colors";
+        msgDiv.innerHTML = `
+            ${actionButtonsHtml}
+            <div class="bg-[#005c4b] text-white ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
+                ${forwardedLabel}
+                ${replyQuoteHtml}
+                ${bodyHtml}
+                ${timeHtml}
+                ${reactionsHtml}
+            </div>
+        `;
+    } else {
+        const timeHtml = isAlbum
+            ? `<div class="absolute bottom-2 right-2"><span class="aura-time text-[10px] text-white">${timeStr}</span></div>`
+            : isImage
+            ? `<div class="absolute bottom-2 right-2 bg-black/45 rounded-full px-1.5 py-0.5"><span class="aura-time text-[10px] text-white">${timeStr}</span></div>`
+                 : `<span class="aura-time text-[10px] text-white float-right ml-3 mt-1">${editedLabel}${timeStr}</span>`;
+        msgDiv.className = "flex justify-start rounded-lg transition-colors";
+        msgDiv.innerHTML = `
+            <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
+                           ${(currentChatId === 'global' || currentIsGroup) ? senderLineHtml(msg, isImage) : ''}
+                ${forwardedLabel}
+                ${replyQuoteHtml}
+                ${bodyHtml}
+                ${timeHtml}
+                ${reactionsHtml}
+            </div>
+            ${actionButtonsHtml}
+        `;
+    }
+
+    if (isAlbum) {
+        const arr = Array.isArray(msg.images) ? msg.images : [];
+        const maxTiles = Math.min(imagesCount, 4);
+
+        // Zaten önbellekte olup senkron çizilen karelere de yükleme sonrası kaydırma bağla
+        for (let i = 0; i < maxTiles; i++) {
+            const tileImg = msgDiv.querySelector(`img[data-media-idx="${i}"]`);
+            if (tileImg) {
+                tileImg.addEventListener('load', () => {
+                    if (recentOpenScrollLock || isNearBottom()) scrollToBottom();
+                });
+            }
+        }
+
+        let resolvedCount = 0;
+        for (let i = 0; i < imagesCount; i++) {
+            resolveLocalMedia(currentChatId, msgId, arr[i], i).then((src) => {
+                resolvedCount++;
+
+                if (src && i < maxTiles) {
+                    const tileEl = msgDiv.querySelector(`[data-media-msg="${msgId}"][data-media-idx="${i}"]`);
+                    if (tileEl && tileEl.isConnected) {
+                        if (tileEl.tagName === 'IMG') {
+                            if (src !== tileEl.src) tileEl.src = src;
+                        } else {
+                            tileEl.outerHTML = `<img src="${src}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" oncontextmenu="return false" draggable="false" style="-webkit-user-drag:none;" onclick="openAlbumLightbox('${currentChatId}','${msgId}',${imagesCount},${i})">`;
+                            const newTile = msgDiv.querySelector(`img[data-media-idx="${i}"]`);
+                            if (newTile) {
+                                newTile.addEventListener('load', () => {
+                                    if (recentOpenScrollLock || isNearBottom()) scrollToBottom();
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if (resolvedCount === imagesCount) {
+                    maybeStripAlbumImages(currentChatId, msgId, msg, imagesCount);
+                }
+            });
+        }
+    } else if (isSingleImage) {
+        const mediaEl = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
+        if (mediaEl && mediaEl.tagName === 'IMG') {
+            mediaEl.addEventListener('error', () => {
+                if (msg.imageUrl && mediaEl.src !== msg.imageUrl) mediaEl.src = msg.imageUrl;
+            });
+            mediaEl.addEventListener('load', () => {
+                if (recentOpenScrollLock || isNearBottom()) scrollToBottom();
+            });
+        }
+        resolveLocalMedia(currentChatId, msgId, msg.imageUrl).then((src) => {
+            if (!src) return; // ne yerelde ne sunucuda kaldı - gösterecek bir şey yok
+            const el = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
+            if (el && el.isConnected) {
+                if (el.tagName === 'IMG') {
+                    if (src !== el.src) el.src = src;
+                } else {
+              el.outerHTML = `<img src="${src}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;-webkit-user-drag:none;" data-media-msg="${msgId}" oncontextmenu="return false" draggable="false" onclick="openImageLightbox(this.src)">`;
+                    const newEl = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
+                    if (newEl) {
+                        newEl.addEventListener('load', () => {
+                            if (recentOpenScrollLock || isNearBottom()) scrollToBottom();
+                        });
+                    }
+                }
+            }
+            maybeStripDeliveredImage(currentChatId, msgId, msg);
+        });
+    }
+
+if (msg.type === 'audio') bindAudioPlayer(msgDiv, msgId, msg);
+
+    const readMoreBtn = msgDiv.querySelector('[data-read-more]');
+    if (readMoreBtn) {
+        readMoreBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            expandedMsgIds.add(msgId);
+            const p = readMoreBtn.previousElementSibling;
+            if (p) p.textContent = msg.text || '';
+            readMoreBtn.remove();
+        });
+    }
+
+if (selectedMessageIds.has(msgId)) {
+        msgDiv.classList.add('msg-selected');
+    }
+
+        attachSelectionHandlers(msgDiv, msgId, isReplyable, msg, isMine);
+    if (isStarred(currentChatId, msgId)) msgDiv.classList.add('aura-starred');
+    messageElementsById.set(msgId, msgDiv);
+    return msgDiv;
+}
+
+function attachSelectionHandlers(el, msgId, replyable, msg, isMine) {
+    let pressTimer = null;
+    let longPressTriggered = false;
+
+    const startPress = () => {
+        longPressTriggered = false;
+        if (document.activeElement === messageInput) window.__auraKeepFocusUntil = Date.now() + 1500;
+        pressTimer = setTimeout(() => {
+            longPressTriggered = true;
+            if (!selectionMode) {
+                enterSelectionMode(msgId);
+            } else {
+                toggleMessageSelection(msgId);
+            }
+            if (navigator.vibrate) navigator.vibrate(30);
+        }, 450);
+    };
+
+    const cancelPress = () => {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    };
+
+    el.addEventListener('pointerdown', startPress);
+    el.addEventListener('pointerup', cancelPress);
+    el.addEventListener('pointerleave', cancelPress);
+    el.addEventListener('pointercancel', cancelPress);
+
+    // Sağa kaydırıp bırakınca yanıtla (WhatsApp tarzı): parmakla birlikte hareket
+    // eder, solda beliren ok belirli bir noktada durur, balon kaymaya devam eder.
+    if (replyable) {
+        el.style.touchAction = 'pan-y'; // dikey kaydırma tarayıcıda kalsın, yatayı biz yönetelim
+        el.style.position = 'relative';
+
+        const replyIcon = document.createElement('div');
+        replyIcon.className = 'absolute top-1/2 left-1 text-emerald-400 opacity-0 pointer-events-none';
+        replyIcon.style.transform = 'translateY(-50%)';
+        replyIcon.innerHTML = '<i class="fa-solid fa-reply"></i>';
+        el.insertBefore(replyIcon, el.firstChild);
+
+        const SWIPE_TRIGGER = 10;
+        const SWIPE_MAX = 80;
+        const ICON_MAX = 28;
+
+        let swipeStartX = null;
+        let swipeStartY = null;
+        let swiping = false;
+        let swipeDecided = false;
+
+        el.addEventListener('pointerdown', (e) => {
+            if (selectionMode) return;
+            swipeStartX = e.clientX;
+            swipeStartY = e.clientY;
+            swiping = false;
+            swipeDecided = false;
+            try { el.setPointerCapture(e.pointerId); } catch (err) {}
+        });
+
+        el.addEventListener('pointermove', (e) => {
+            if (swipeStartX === null || selectionMode) return;
+            const dx = e.clientX - swipeStartX;
+            const dy = e.clientY - swipeStartY;
+
+            if (!swipeDecided) {
+                if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+                swipeDecided = true;
+                if (dx > 0 && dx > Math.abs(dy)) {
+                    swiping = true;
+                    cancelPress();
+                    el.style.transition = 'none';
+                    replyIcon.style.transition = 'none';
+                }
+            }
+         if (!swiping) return;
+            e.preventDefault();
+            const move = Math.max(0, Math.min(dx, SWIPE_MAX));
+            el.style.transform = `translateX(${move}px)`;
+            // İkon, el'in içinde olduğu için el kayınca o da kayar; ICON_MAX'tan
+            // sonra net konumu sabit kalsın diye el'in kendi kaymasını geri çıkarıyoruz.
+            const iconNet = Math.min(move, ICON_MAX);
+            replyIcon.style.transform = `translateY(-50%) translateX(${iconNet - move}px)`;
+            replyIcon.style.opacity = String(Math.min(1, move / SWIPE_TRIGGER));
+        });
+
+        const endSwipe = () => {
+            if (swiping) {
+                const applied = parseFloat((el.style.transform || '').replace(/[^0-9.]/g, '')) || 0;
+                el.style.transition = 'transform 0.15s ease-out';
+                el.style.transform = '';
+                replyIcon.style.transition = 'opacity 0.15s ease-out';
+                replyIcon.style.opacity = '0';
+                replyIcon.style.transform = 'translateY(-50%)';
+                if (applied >= SWIPE_TRIGGER) {
+                    startReply(msgId, msg, isMine);
+                    if (navigator.vibrate) navigator.vibrate(15);
+                }
+            }
+            swipeStartX = null;
+            swiping = false;
+            swipeDecided = false;
+        };
+
+        el.addEventListener('pointerup', endSwipe);
+        el.addEventListener('pointercancel', endSwipe);
+    }
+
+    el.addEventListener('click', (e) => {
+        if (longPressTriggered) {
+            e.stopPropagation();
+            longPressTriggered = false;
+            return;
+        }
+        if (selectionMode) {
+            e.stopPropagation();
+            toggleMessageSelection(msgId);
+        }
+    }, true);
+}
+
+// ------------------------------------------
+// "+" MENÜSÜ (WhatsApp tarzı: input'un altında açılır)
+// Input çubuğuyla aynı renk, köşe yok, boşluk yok: input'un devamı gibi durur.
+// Aşağı sürüklenince ya da geri tuşuyla kapanır.
+// ------------------------------------------
+let attachMenuEl = null;
+let attachMenuOpen = false;
+let attachDragStartY = null;
+let attachMenuTargetHeight = 0;
+let attachComposerHeight = 0;
+let composerWrap = null;
+
+function ensureComposerWrap() {
+    if (composerWrap) return composerWrap;
+    const composerRow = messageInput.parentElement;
+    const wrap = document.createElement('div');
+    wrap.style.overflow = 'hidden';
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.justifyContent = 'flex-end';
+    wrap.style.flexShrink = '0';
+    composerRow.parentElement.insertBefore(wrap, composerRow);
+    wrap.appendChild(composerRow);
+    composerWrap = wrap;
+    return wrap;
+}
+
+function ensureAttachMenu() {
+    if (attachMenuEl) return attachMenuEl;
+    const el = document.createElement('div');
+    // min-h-[45vh] YOK: bu sınıf popup'ın JS'ten küçültülmesini CSS
+    // seviyesinde engelliyordu (görsel olarak 45vh'nin altına asla
+    // inmiyordu) - tüm önceki senkron sorunlarının asıl kaynağı buydu.
+ el.className = 'hidden flex-shrink-0 pt-3 pb-6 overflow-hidden';
+el.innerHTML = `
+        <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5"></div>
+        <div class="grid grid-cols-4 gap-x-3 px-3 pb-1">
+            <button type="button" data-attach="gallery" class="w-full flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="w-full h-14 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#3b9eff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                </span>
+                <span class="text-gray-300 text-[14px]">Galeri</span>
+            </button>
+            <button type="button" data-attach="camera" class="w-full flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="w-full h-14 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#ff2d75" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                </span>
+                <span class="text-gray-300 text-[14px]">Kamera</span>
+            </button>
+            <button type="button" data-attach="location" class="w-full flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="w-full h-14 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#12c26b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
+                </span>
+                <span class="text-gray-300 text-[14px]">Konum</span>
+            </button>
+        </div>
+    `;
+    messageInput.parentElement.insertAdjacentElement('afterend', el);
+
+    el.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-attach]');
+        if (btn) handleAttachChoice(btn.dataset.attach);
+    });
+
+    // Aşağı sürükleyerek kapatma
+    el.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        attachDragStartY = e.touches[0].clientY;
+        el.style.transition = 'none';
+    }, { passive: true });
+
+el.addEventListener('touchmove', (e) => {
+        if (attachDragStartY === null) return;
+        const dy = Math.max(0, e.touches[0].clientY - attachDragStartY);
+        el.style.height = Math.max(0, attachMenuTargetHeight - dy) + 'px';
+        const reveal = Math.min(attachComposerHeight, dy);
+        if (composerWrap) composerWrap.style.height = reveal + 'px';
+    }, { passive: true });
+
+el.addEventListener('touchend', (e) => {
+        if (attachDragStartY === null) return;
+        const dy = Math.max(0, e.changedTouches[0].clientY - attachDragStartY);
+        attachDragStartY = null;
+        if (dy > 60) {
+            closeAttachMenu();
+        } else {
+            el.style.transition = 'height 0.15s ease-out';
+            el.style.height = attachMenuTargetHeight + 'px';
+            if (composerWrap) {
+                composerWrap.style.transition = 'height 0.15s ease-out';
+                composerWrap.style.height = '0px';
+            }
+            setTimeout(() => { el.style.transition = ''; if (composerWrap) composerWrap.style.transition = ''; }, 160);
+        }
+    });
+
+el.addEventListener('touchcancel', () => {
+        attachDragStartY = null;
+        el.style.transition = 'height 0.15s ease-out';
+        el.style.height = attachMenuTargetHeight + 'px';
+        if (composerWrap) {
+            composerWrap.style.transition = 'height 0.15s ease-out';
+            composerWrap.style.height = '0px';
+        }
+    });
+
+    attachMenuEl = el;
+    return el;
+}
+
+let attachMenuCloseTimer = null;
+function closeAttachMenuFromBack(instant) {
+    attachMenuOpen = false;
+    clearTimeout(attachMenuCloseTimer);
+    messageInput.parentElement.classList.remove('menu-open');
+    const finish = () => {
+        if (attachMenuEl) {
+            attachMenuEl.classList.add('hidden');
+            attachMenuEl.style.transition = '';
+            attachMenuEl.style.transform = '';
+            attachMenuEl.style.height = '';
+            attachMenuEl.style.paddingTop = '';
+            attachMenuEl.style.paddingBottom = '';
+        }
+        if (composerWrap) {
+            composerWrap.style.transition = '';
+            composerWrap.style.height = '';
+        }
+    };
+    if (instant === true || !attachMenuEl || attachMenuEl.classList.contains('hidden')) {
+        finish();
+        return;
+    }
+    // Aşağı doğru küçülerek kapanır, mesaj kutusu ve sohbet de aşağı iner
+    attachMenuEl.style.transition = 'height 0.22s ease-out, padding 0.22s ease-out';
+    attachMenuEl.style.height = '0px';
+    attachMenuEl.style.paddingTop = '0px';
+    attachMenuEl.style.paddingBottom = '0px';
+    attachMenuCloseTimer = setTimeout(finish, 240);
+}
+
+// Ekran yüksekliğinin en büyük değerini takip et (klavyesiz tam yükseklik)
+window.__auraMaxVV = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      if (window.visualViewport.height > window.__auraMaxVV) window.__auraMaxVV = window.visualViewport.height;
+        // Klavye yüksekliğini hafızaya al (klavye kapalıyken popup'ın boyu için)
+        const kbNow = window.__auraMaxVV - window.visualViewport.height;
+        if (kbNow > 100) window.__auraKbH = Math.round(kbNow);
+    });
+}
+
+function openAttachMenu() {
+  if (attachMenuOpen) return;
+    const wasNearBottom = isNearBottom();
+    const menu = ensureAttachMenu();
+    clearTimeout(attachMenuCloseTimer);
+    messageInput.parentElement.classList.add('menu-open');
+    const hadFocus = document.activeElement === messageInput ||
+        (!!window.visualViewport && (window.__auraMaxVV - window.visualViewport.height) > 100);
+
+    // Klavye kapanmadan ÖNCE ne kadar yer kapladığını ölç - popup'ı tam o
+    // boşluk kadar açacağız.
+    if (hadFocus) {
+        // Klavye açıkken popup anında geçiyor, ekran yüksekliği yumuşatılmasın
+        document.body.style.transition = 'none';
+        setTimeout(() => { document.body.style.transition = ''; }, 900);
+    }
+    const fullH = Math.max(window.__auraFullViewportHeight || 0, window.__auraMaxVV || 0, window.innerHeight);
+    let kbHeight = 0;
+    if (hadFocus && window.visualViewport && (fullH - window.visualViewport.height) > 100) {
+        // Popup, mesaj kutusunun şu anki tabanından ekranın altına kadar olan boşluğu doldurur
+        const rowBottom = messageInput.parentElement.getBoundingClientRect().bottom;
+        kbHeight = Math.round(fullH - rowBottom);
+    }
+
+    messageInput.blur();
+
+    if (hadFocus) {
+        document.body.style.height = fullH + 'px';
+        document.body.style.top = '0px';
+    }
+
+    // Popup rengini üst barla eşitle - tema değişip üst bar rengi
+    // değişirse popup da otomatik takip etsin diye her açılışta canlı okunuyor
+    const topBar = document.getElementById('chat-top-bar');
+    if (topBar) menu.style.backgroundColor = getComputedStyle(topBar).backgroundColor;
+
+if (kbHeight > 100) window.__auraPopupH = kbHeight;
+    attachMenuTargetHeight = kbHeight > 100
+        ? kbHeight
+        : (window.__auraPopupH || window.__auraKbH || Math.round(fullH * 0.3));
+    const slideUp = !(kbHeight > 100);
+    menu.style.height = attachMenuTargetHeight + 'px';
+
+    // Input çubuğunu, taşıyarak değil GERÇEK YÜKSEKLİĞİNİ sıfırlayarak
+    // gizliyoruz - popup ile aynı sütunda normal akışta oldukları için
+    // aralarında boşluk oluşması imkansız hale geliyor. Sürüklerken
+    // ikisinin yüksekliğini ters orantılı, birebir aynı anda değiştireceğiz.
+    menu.style.transform = '';
+    menu.classList.remove('hidden');
+    if (slideUp) {
+        // Klavye kapalı: menü aşağıdan büyür, mesaj kutusu ve sohbet yukarı itilir
+        menu.style.transition = 'none';
+        menu.style.height = '0px';
+        menu.style.paddingTop = '0px';
+        menu.style.paddingBottom = '0px';
+        void menu.offsetHeight;
+        requestAnimationFrame(() => {
+            menu.style.transition = 'height 0.22s ease-out, padding 0.22s ease-out';
+            menu.style.height = attachMenuTargetHeight + 'px';
+            menu.style.paddingTop = '';
+            menu.style.paddingBottom = '';
+            if (wasNearBottom) {
+                const t0 = performance.now();
+                const pin = () => {
+                    messageContainer.scrollTop = messageContainer.scrollHeight;
+                    if (performance.now() - t0 < 260) requestAnimationFrame(pin);
+                };
+                requestAnimationFrame(pin);
+            }
+        });
+        setTimeout(() => { menu.style.transition = ''; }, 260);
+    } else {
+        // Klavye açık: mesaj kutusu sabit, menü klavyenin yerine anında geçer
+        menu.style.transition = '';
+    }
+    attachMenuOpen = true;
+    pushBackState(closeAttachMenuFromBack);
+    if (wasNearBottom) scrollToBottom();
+}
+
+function closeAttachMenu(instant) {
+    if (!attachMenuOpen) return;
+    closeAttachMenuFromBack(instant);
+    popBackState();
+}
+
+function handleAttachChoice(kind) {
+    closeAttachMenu();
+    if (kind === 'location') {
+        sendCurrentLocation();
+        return;
+    }
+    if (!imageInput) return;
+    if (kind === 'camera') {
+        imageInput.multiple = false;
+        imageInput.setAttribute('capture', 'environment');
+    } else {
+        imageInput.multiple = true;
+        imageInput.removeAttribute('capture');
+    }
+    imageInput.click();
+}
+
+// ------------------------------------------
+// İLET (resim mesajını başka bir kişiye gönder)
+// ------------------------------------------
+let forwardPickerEl = null;
+let forwardPickerOpen = false;
+let forwardSource = null; // { chatId, msgId }
+const forwardTargets = new Map(); // seçilen kişiler: uid -> kullanıcı
+let multiForward = false;
+function closeForwardPickerFromBack() {
+    if (forwardPickerEl) {
+        forwardPickerEl.classList.add('hidden');
+        forwardPickerEl.classList.remove('flex');
+    }
+    forwardPickerOpen = false;
+    pendingShare = null;
+    forwardTargets.clear();
+    refreshForwardBar();
+}
+
+function closeForwardPicker() {
+    if (!forwardPickerOpen) return;
+    closeForwardPickerFromBack();
+    popBackState();
+}
+
+function ensureForwardPicker() {
+    if (forwardPickerEl) return forwardPickerEl;
+    const el = document.createElement('div');
+    el.className = 'fixed inset-0 z-50 bg-[#0b141a] hidden flex-col';
+    el.innerHTML = `
+        <div class="bg-[#202c33] px-4 py-3.5 flex items-center space-x-4 border-b border-gray-800 flex-shrink-0">
+            <button type="button" id="forward-back-btn" class="text-gray-400 hover:text-white transition text-lg px-1">
+                <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <h2 class="text-white font-medium text-base">Şuna ilet</h2>
+        </div>
+          <div id="forward-list" class="flex-1 overflow-y-auto"></div>
+        <div id="forward-send-bar" class="hidden items-center px-4 py-3 bg-[#202c33] flex-shrink-0">
+            <p id="forward-send-names" class="flex-1 min-w-0 text-gray-300 text-sm truncate"></p>
+            <button type="button" id="forward-send-btn" class="ml-3 w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
+    `;
+    document.body.appendChild(el);
+    el.querySelector('#forward-back-btn').addEventListener('click', closeForwardPicker);
+        el.querySelector('#forward-send-btn').addEventListener('click', () => sendToTargets(Array.from(forwardTargets.values())));
+    forwardPickerEl = el;
+    return el;
+}
+
+function openForwardPicker() {
+    const el = ensureForwardPicker();
+    const titleEl = el.querySelector('h2');
+    if (titleEl) titleEl.textContent = pendingShare ? 'Şuna gönder' : 'Şuna ilet';
+    const listEl = el.querySelector('#forward-list');
+    listEl.innerHTML = '';
+        forwardTargets.clear();
+    refreshForwardBar();
+
+    const usersMap = window.__aurachatUsers;
+    const users = usersMap
+        ? Array.from(usersMap.values()).filter((u) => u.uid !== currentUser.uid)
+        : [];
+    users.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+
+    // Üyesi olduğun gruplar (liste özetlerinden)
+    const groupTargets = [];
+    if (window.__aurachatMyChats) {
+        window.__aurachatMyChats.forEach((d, id) => {
+            if (d && d.isGroup && id) groupTargets.push({ uid: id, name: d.groupName || 'Grup', isGroup: true, groupPhoto: d.groupPhoto || '' });
+        });
+        groupTargets.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+    }
+
+    if (!users.length && !groupTargets.length) {
+        listEl.innerHTML = `<p class="text-center text-gray-500 text-xs py-8">İletilecek kişi bulunamadı.</p>`;
+    }
+
+    const addSectionTitle = (label) => {
+        const h = document.createElement('div');
+        h.className = 'px-4 py-2 text-xs font-semibold text-emerald-400 bg-[#0b141a]';
+        h.textContent = label;
+        listEl.appendChild(h);
+    };
+
+    if (groupTargets.length) addSectionTitle('Gruplar');
+    groupTargets.forEach((g) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer border-b border-gray-800/30';
+        const avatarHtml = g.groupPhoto
+            ? `<img src="${g.groupPhoto}" class="w-11 h-11 rounded-full object-cover shadow flex-shrink-0">`
+            : `<div class="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color:${getUserColor(g.name || '?')};">${getInitials(g.name || '?')}</div>`;
+        row.innerHTML = `${avatarHtml}<span class="text-white text-sm font-medium ml-3 truncate">${escapeHtml(g.name || '')}</span><span class="fwd-check ml-auto w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center flex-shrink-0"></span>`;
+        row.addEventListener('click', () => toggleForwardTarget(g, row));
+        listEl.appendChild(row);
+    });
+
+    if (groupTargets.length && users.length) addSectionTitle('Kişiler');
+
+    users.forEach((u) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer border-b border-gray-800/30';
+        const avatarHtml = u.avatar
+            ? `<img src="${u.avatar}" class="w-11 h-11 rounded-full object-cover shadow flex-shrink-0">`
+            : `<div class="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color:${getUserColor(u.name || '?')};">${getInitials(u.name || '?')}</div>`;
+         row.innerHTML = `${avatarHtml}<span class="text-white text-sm font-medium ml-3 truncate">${escapeHtml(u.name || '')}</span><span class="fwd-check ml-auto w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center flex-shrink-0"></span>`;
+                row.addEventListener('click', () => toggleForwardTarget(u, row));
+        listEl.appendChild(row);
+    });
+
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    forwardPickerOpen = true;
+    pushBackState(closeForwardPickerFromBack);
+}
+function toggleForwardTarget(u, row) {
+    const on = !forwardTargets.has(u.uid);
+    if (on) forwardTargets.set(u.uid, u); else forwardTargets.delete(u.uid);
+    const chk = row.querySelector('.fwd-check');
+    if (chk) {
+        chk.classList.toggle('bg-emerald-500', on);
+        chk.classList.toggle('border-emerald-500', on);
+        chk.classList.toggle('border-gray-500', !on);
+        chk.innerHTML = on ? '<i class="fa-solid fa-check text-white text-xs"></i>' : '';
+    }
+    refreshForwardBar();
+}
+
+function refreshForwardBar() {
+    if (!forwardPickerEl) return;
+    const bar = forwardPickerEl.querySelector('#forward-send-bar');
+    if (!bar) return;
+    bar.classList.toggle('hidden', forwardTargets.size === 0);
+    bar.classList.toggle('flex', forwardTargets.size > 0);
+    forwardPickerEl.querySelector('#forward-send-names').textContent = Array.from(forwardTargets.values()).map((x) => x.name || '').join(', ');
+}
+
+async function sendToTargets(targets) {
+    if (!targets.length) return;
+    const files = pendingShare;
+    closeForwardPicker();
+    multiForward = targets.length > 1;
+    try {
+        for (const u of targets) {
+            if (files) pendingShare = files;
+            await forwardImageTo(u);
+        }
+    } finally {
+        multiForward = false;
+        pendingShare = null;
+    }
+}
+// Belirli bir gruba (açık sohbetten bağımsız) mesaj yazıldığında üyelerin liste özetlerini günceller
+async function updateGroupSummariesFor(groupId, lastMessageText) {
+    const gd = await getGroupData(groupId);
+    if (!gd) throw new Error('Grup bulunamadı');
+    await Promise.allSettled((gd.members || []).map((memberUid) => setDoc(doc(db, "users", memberUid, "chats", groupId), {
+        isGroup: true,
+        groupName: gd.name,
+        lastMessage: lastMessageText,
+        lastMessageTime: serverTimestamp(),
+        lastSenderUid: currentUser.uid,
+        lastSenderName: currentUser.name,
+        lastMessageRead: false,
+        unreadCount: memberUid === currentUser.uid ? 0 : increment(1),
+        updatedAt: serverTimestamp()
+    }, { merge: true })));
+    return gd;
+}
+
+function pushToGroupMembersFor(gd, groupId, bodyText) {
+    (gd.members || []).forEach((memberUid) => {
+        if (memberUid === currentUser.uid) return;
+        sendPushToUser(memberUid, gd.name || 'Grup', `${currentUser.name}: ${bodyText}`, {
+            chatId: groupId,
+            otherUid: groupId,
+            otherName: gd.name || 'Grup'
+        });
+    });
+}
+
+// Hedef kişi de olsa grup da olsa mesajı yazar, listeyi günceller, bildirimi yollar. chatId döner.
+async function postToTarget(targetUser, payload, summaryText, pushBody, msgType) {
+    if (targetUser.isGroup) {
+        const groupId = targetUser.uid;
+        await addDoc(collection(db, "chats", groupId, "messages"), payload);
+        const gd = await updateGroupSummariesFor(groupId, summaryText);
+        pushToGroupMembersFor(gd, groupId, pushBody);
+        return groupId;
+    }
+    const targetChatId = getChatId(currentUser.uid, targetUser.uid);
+    await addDoc(collection(db, "chats", targetChatId, "messages"), payload);
+    await updateSummariesForTarget(targetChatId, targetUser.uid, targetUser.name, summaryText);
+    sendPushToUser(targetUser.uid, `${currentUser.name}`, pushBody, {
+        chatId: targetChatId,
+        otherUid: currentUser.uid,
+        otherName: currentUser.name,
+        ...(msgType ? { msgType: msgType } : {})
+    });
+    return targetChatId;
+}
+
+async function updateSummariesForTarget(chatId, otherUid, otherName, lastMessageText) {
+    if (!currentUser || !otherUid) return;
+    try {
+        await setDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
+            otherUid: otherUid,
+            otherName: otherName,
+            lastMessage: lastMessageText,
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: currentUser.uid,
+            lastMessageRead: false,
+            unreadCount: 0,
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        await setDoc(doc(db, "users", otherUid, "chats", chatId), {
+            otherUid: currentUser.uid,
+            otherName: currentUser.name,
+            lastMessage: lastMessageText,
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: currentUser.uid,
+            lastMessageRead: false,
+            typing: false,
+            unreadCount: increment(1),
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+    } catch (err) {
+        console.error("İletilen mesajın özeti güncellenemedi:", err);
+    }
+}
+
+async function forwardImageTo(targetUser) {
+   if (pendingShare) { return sendSharedImagesTo(targetUser); }
+    if (!forwardSource || !currentUser) return;
+    const { chatId: srcChatId, msgId } = forwardSource;
+
+    const session = chatSessions.get(srcChatId);
+        const entry = forwardSource.entry || (session && (
+        session.messages.find((m) => m.id === msgId) ||
+        session.olderMessagesPrepended.find((m) => m.id === msgId)
+    ));
+    if (!entry) { showToast('Mesaj bulunamadı'); return; }
+    const msg = entry.data;
+
+    closeForwardPicker();
+    showToast('İletiliyor...');
+
+    try {
+            if (!msg.type || msg.type === 'text') {
+            await postToTarget(targetUser, {
+                type: 'text',
+                text: msg.text || '',
+                senderUid: currentUser.uid,
+                senderName: currentUser.name,
+                createdAt: serverTimestamp(),
+                read: false,
+                forwarded: true
+            }, (msg.text || '').slice(0, 100), (msg.text || '').slice(0, 200), 'text');
+            showToast(targetUser.isGroup ? `${targetUser.name} grubuna iletildi` : `${targetUser.name} kişisine iletildi`);
+            return;
+        }
+        const payload = {
+            type: 'image',
+            text: '',
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false,
+            forwarded: true
+        };
+
+        const imagesCount = msg.imagesCount || 0;
+        if (imagesCount > 1) {
+            const arr = Array.isArray(msg.images) ? msg.images : [];
+            const images = [];
+            for (let i = 0; i < imagesCount; i++) {
+                const src = await resolveLocalMedia(srcChatId, msgId, arr[i], i);
+                if (src) images.push(src);
+            }
+            if (!images.length) throw new Error('Resimler bulunamadı');
+            payload.images = images;
+            payload.imagesCount = images.length;
+            payload.imagesDelivered = false;
+        } else {
+            const src = await resolveLocalMedia(srcChatId, msgId, msg.imageUrl);
+            if (!src) throw new Error('Resim bulunamadı');
+            payload.imageUrl = src;
+        }
+
+        const isAlbum = payload.imagesCount > 1;
+        await postToTarget(
+            targetUser,
+            payload,
+            isAlbum ? `📷 ${payload.imagesCount} Fotoğraf` : '📷 Fotoğraf',
+            isAlbum ? `📷 ${payload.imagesCount} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi"
+        );
+
+        showToast(targetUser.isGroup ? `${targetUser.name} grubuna iletildi` : `${targetUser.name} kişisine iletildi`);
+    } catch (err) {
+        console.error("İletme hatası:", err);
+        showToast('İletilemedi');
+    }
+}
+
+// ------------------------------------------
+// BAŞKA UYGULAMADAN (galeri vb.) "Paylaş > AuraChat" İLE GELEN RESİMLER
+// MainActivity.java resimleri hazırlar, window.AuraShare.consume() ile verir.
+// Kişi seçme ekranı "ilet" ekranıyla aynı.
+// ------------------------------------------
+let pendingShare = null; // File[]
+let shareCheckTimer = null;
+
+function stopShareCheck() {
+    if (shareCheckTimer) { clearInterval(shareCheckTimer); shareCheckTimer = null; }
+}
+
+function dataUrlToFile(dataUrl, name) {
+    const bin = atob((dataUrl.split(',')[1]) || '');
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new File([bytes], name, { type: 'image/jpeg' });
+}
+
+// { state: 'none' | 'busy' | 'ok', files }
+function consumeSharedImages() {
+    try {
+        if (!window.AuraShare || !window.AuraShare.consume) return { state: 'none' };
+        const raw = window.AuraShare.consume();
+        if (!raw) return { state: 'none' };
+        if (raw === 'busy') return { state: 'busy' };
+        const list = JSON.parse(raw);
+        if (!Array.isArray(list) || !list.length) return { state: 'none' };
+        return { state: 'ok', files: list.map((d, i) => dataUrlToFile(d, `shared_${i}.jpg`)) };
+    } catch (e) {
+        return { state: 'none' };
+    }
+}
+
+function checkPendingShare() {
+    if (shareCheckTimer) return;
+    let tries = 0;
+    shareCheckTimer = setInterval(() => {
+        tries++;
+        if (tries > 60) { stopShareCheck(); return; }
+        if (!currentUser) return; // giriş yapılana kadar bekle (paylaşım native tarafta saklı kalır)
+        if (!pendingShare) {
+            const res = consumeSharedImages();
+            if (res.state === 'none') { stopShareCheck(); return; }
+            if (res.state === 'busy') return;
+            pendingShare = res.files;
+        }
+        // Kişi listesi yüklenene kadar bekle
+        if (!window.__aurachatUsers || window.__aurachatUsers.size === 0) return;
+        stopShareCheck();
+        openForwardPicker();
+    }, 500);
+}
+
+window.addEventListener('aurachat-share', checkPendingShare);
+
+async function sendSharedImagesTo(targetUser) {
+    const files = pendingShare;
+    pendingShare = null;
+    if (!files || !files.length || !currentUser) return;
+
+    closeForwardPicker();
+    showToast('Gönderiliyor...', 3000);
+
+    try {
+        const perImageTarget = files.length > 1 ? 150 * 1024 : 300 * 1024;
+        const maxTotalBytes = 900 * 1024;
+        const compressed = [];
+        let totalBytes = 0;
+
+        for (const file of files) {
+            try {
+                const dataUrl = await compressImageToDataUrl(file, perImageTarget);
+                const approxBytes = dataUrl.length * 0.75;
+                if (totalBytes + approxBytes > maxTotalBytes) break;
+                compressed.push(dataUrl);
+                totalBytes += approxBytes;
+            } catch (innerErr) {}
+        }
+        if (!compressed.length) throw new Error('Resim hazırlanamadı');
+
+        const payload = {
+            type: 'image',
+            text: '',
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false
+        };
+        if (compressed.length === 1) {
+            payload.imageUrl = compressed[0];
+        } else {
+            payload.images = compressed;
+            payload.imagesCount = compressed.length;
+            payload.imagesDelivered = false;
+        }
+        const isAlbum = compressed.length > 1;
+        const targetChatId = await postToTarget(
+            targetUser,
+            payload,
+            isAlbum ? `📷 ${compressed.length} Fotoğraf` : '📷 Fotoğraf',
+            isAlbum ? `📷 ${compressed.length} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi"
+        );
+
+        if (!multiForward && currentChatId !== targetChatId) {
+            selectChat(targetUser.isGroup ? { isGroup: true, groupId: targetUser.uid, name: targetUser.name } : targetUser);
+        }
+        if (compressed.length < files.length) {
+            showToast(`Boyut sınırı yüzünden ${compressed.length}/${files.length} fotoğraf gönderildi`, 4000);
+        }
+    } catch (err) {
+        console.error("Paylaşılan resim gönderilemedi:", err);
+        showToast('Gönderilemedi');
+    }
+}
+
+window.forwardImageMessage = function (msgId) {
+    if (!currentChatId || !currentUser) return;
+        forwardSource = { chatId: currentChatId, msgId: msgId, entry: findMessageEntry(msgId) };
+    openForwardPicker();
+};
+
+// ------------------------------------------
+// MESAJA YANIT VERME (alıntı)
+// Bir mesajın yanıt ikonuna basılınca composer'ın üstünde önizleme
+// çubuğu açılır; gönderilen mesaja replyTo alanı eklenir (msgId,
+// senderName, previewText). Balonda alıntı gösterilir, dokununca
+// orijinal mesaja kaydırılır (hâlâ yüklüyse).
+// ------------------------------------------
+let replyingTo = null; // { msgId, senderName, previewText }
+let replyBarEl = null;
+
+function replyPreviewTextFor(msg) {
+    if (msg.type === 'image') {
+        const n = msg.imagesCount || 0;
+        return n > 1 ? `📷 ${n} Fotoğraf` : '📷 Fotoğraf';
+    }
+    if (msg.type === 'audio') return `🎤 Sesli mesaj (${fmtAudioTime(msg.audioDuration)})`;
+    if (msg.type === 'location') return '📍 Konum';
+    return (msg.text || '').slice(0, 120);
+}
+
+function ensureReplyBar() {
+    if (replyBarEl) return replyBarEl;
+    const el = document.createElement('div');
+    el.className = 'hidden items-start px-3 py-2 bg-[#202c33] border-l-4 border-emerald-500';
+    el.innerHTML = `
+        <div class="flex-1 min-w-0">
+            <p id="reply-bar-name" class="text-emerald-400 text-xs font-semibold truncate"></p>
+            <p id="reply-bar-text" class="text-gray-300 text-xs truncate"></p>
+        </div>
+        <button type="button" id="reply-bar-cancel" class="text-gray-400 hover:text-white px-2 flex-shrink-0"><i class="fa-solid fa-xmark"></i></button>
+    `;
+    messageInput.parentElement.insertAdjacentElement('beforebegin', el);
+    el.querySelector('#reply-bar-cancel').addEventListener('click', cancelReply);
+    replyBarEl = el;
+    return el;
+}
+
+function startReply(msgId, msg, isMine) {
+    replyingTo = {
+        msgId: msgId,
+                senderName: isMine ? 'Sen' : (msg.senderName || ''),
+        senderUid: msg.senderUid || null,
+        previewText: replyPreviewTextFor(msg)
+    };
+    const el = ensureReplyBar();
+    const replyColor = senderColor({ senderUid: msg.senderUid, senderName: msg.senderName }, 78);
+    el.style.borderLeftColor = replyColor;
+    el.querySelector('#reply-bar-name').style.color = replyColor;
+    el.querySelector('#reply-bar-name').textContent = replyingTo.senderName;
+    el.querySelector('#reply-bar-text').textContent = replyingTo.previewText;
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    messageInput.focus();
+}
+
+function cancelReply() {
+    replyingTo = null;
+    if (replyBarEl) {
+        replyBarEl.classList.add('hidden');
+        replyBarEl.classList.remove('flex');
+    }
+}
+
+function consumeReplyPayload() {
+    if (!replyingTo) return null;
+    const r = replyingTo;
+    cancelReply();
+        return { msgId: r.msgId, senderName: r.senderName, senderUid: r.senderUid || null, previewText: r.previewText };
+}
+// ------------------------------------------
+// MESAJ DÜZENLEME (gönderdikten sonra 15 dakika)
+// ------------------------------------------
+const EDIT_WINDOW_MS = 15 * 60 * 1000;
+let editingMsg = null; // { chatId, msgId, originalText, createdMs }
+let editBarEl = null;
+let moreMenuEl = null;
+const selectionMoreBtn = document.getElementById('selection-more-btn');
+
+let editTopEl = null;
+
+function ensureEditBar() {
+    if (editBarEl) return editBarEl;
+
+    // Yazma kutusunun İÇİNDE, üstte çıkan "Mesaj düzenleniyor" çubuğu
+    if (!document.getElementById('aura-editbar-css')) {
+        const st = document.createElement('style');
+        st.id = 'aura-editbar-css';
+        st.textContent = `
+#chat-area .aura-composer.aura-composer > .aura-editbar.aura-editbar { display: none !important; }
+#chat-area .aura-composer.aura-composer.aura-editing.aura-editing > .aura-editbar.aura-editbar {
+    display: flex !important;
+    grid-row: 1 !important;
+    grid-column: 1 !important;
+    align-self: stretch !important;
+    align-items: center;
+    justify-content: space-between;
+        margin: 0 0 4px 0 !important;
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08) !important;
+}
+#chat-area .aura-composer.aura-composer.aura-editing.aura-editing { max-height: 230px !important; }
+#chat-area .aura-composer.aura-editing #attach-btn { display: none !important; }`;
+        document.head.appendChild(st);
+    }
+    const el = document.createElement('div');
+    el.className = 'aura-editbar';
+    el.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0">
+                     <i class="fa-solid fa-pencil text-gray-300 text-sm"></i>
+            <span class="text-gray-200 text-sm truncate">Mesaj düzenleniyor</span>
+        </div>
+             <button type="button" id="edit-bar-cancel" class="text-gray-300 hover:text-white px-2 flex-shrink-0 text-base"><i class="fa-solid fa-xmark"></i></button>
+    `;
+    const row = messageInput.parentElement;
+    row.insertBefore(el, row.firstChild);
+    el.querySelector('#edit-bar-cancel').addEventListener('click', () => cancelEdit(true));
+    editBarEl = el;
+
+    // Sohbetin üst çubuğunun üstüne binen "Mesaj düzenleniyor" çubuğu (mesaj seçme çubuğu gibi)
+    if (selectionToolbar) {
+        const t = document.createElement('div');
+        t.className = 'hidden absolute top-0 left-0 right-0 bg-black px-4 h-[65px] items-center flex-shrink-0 z-20';
+        t.innerHTML = `
+            <div class="flex items-center space-x-4">
+                <button type="button" id="edit-top-cancel" class="text-white text-lg px-1"><i class="fa-solid fa-arrow-left"></i></button>
+                <span class="text-white font-medium text-base">Mesaj düzenleniyor</span>
+            </div>
+        `;
+        selectionToolbar.insertAdjacentElement('afterend', t);
+        t.querySelector('#edit-top-cancel').addEventListener('click', () => cancelEdit(true));
+        editTopEl = t;
+    }
+    return el;
+}
+
+function setEditUI(on) {
+    const row = messageInput.parentElement;
+    if (row) row.classList.toggle('aura-editing', on);
+    if (editTopEl) {
+        editTopEl.classList.toggle('hidden', !on);
+        editTopEl.classList.toggle('flex', on);
+    }
+}
+
+function cancelEdit(clearInput) {
+    if (!editingMsg) return;
+    editingMsg = null;
+    setEditUI(false);
+    if (clearInput) {
+        messageInput.value = '';
+        updateMicToggle();
+    }
+}
+
+function editEligibility(msgId) {
+    const entry = findMessageEntry(msgId);
+    if (!entry || !currentUser || entry.data.senderUid !== currentUser.uid || (entry.data.type && entry.data.type !== 'text')) {
+        return { ok: false, reason: 'Sadece kendi yazı mesajlarını düzenleyebilirsin' };
+    }
+    if (!entry.data.createdAt) return { ok: false, reason: 'Mesaj henüz gönderiliyor' };
+    const ms = entry.data.createdAt.toMillis ? entry.data.createdAt.toMillis() : entry.data.createdAt.toDate().getTime();
+    if (Date.now() - ms > EDIT_WINDOW_MS) return { ok: false, reason: 'Düzenleme süresi (15 dk) doldu' };
+    return { ok: true, entry, createdMs: ms };
+}
+
+function closeMoreMenu() {
+    if (moreMenuEl) moreMenuEl.style.display = 'none';
+}
+
+function startEdit(msgId) {
+    const el = editEligibility(msgId);
+    if (!el.ok) { showToast(el.reason); return; }
+    cancelReply();
+    editingMsg = { chatId: currentChatId, msgId, originalText: el.entry.data.text || '', createdMs: el.createdMs };
+        ensureEditBar();
+    setEditUI(true);
+    messageInput.value = editingMsg.originalText;
+    updateMicToggle();
+    messageInput.focus();
+    try { messageInput.setSelectionRange(messageInput.value.length, messageInput.value.length); } catch (e) {}
+}
+
+async function submitEdit() {
+    const ed = editingMsg;
+    if (!ed) return;
+    const text = messageInput.value.trim();
+    if (!text) { showToast('Mesaj boş olamaz'); return; }
+    if (text === ed.originalText.trim()) { cancelEdit(true); return; }
+    if (Date.now() - ed.createdMs > EDIT_WINDOW_MS) {
+        showToast('Düzenleme süresi (15 dk) doldu');
+        cancelEdit(true);
+        return;
+    }
+    try {
+        await updateDoc(doc(db, "chats", ed.chatId, "messages", ed.msgId), {
+            text: text,
+            edited: true,
+            editedAt: serverTimestamp()
+        });
+    } catch (e) {
+        showToast('Mesaj düzenlenemedi');
+        return;
+    }
+    // Düzenlenen mesaj sohbetin son mesajıysa liste özetini de güncelle (birebir sohbetler)
+    try {
+        const session = chatSessions.get(ed.chatId);
+        const last = session && session.messages.length ? session.messages[session.messages.length - 1] : null;
+        if (last && last.id === ed.msgId && !isGroupChat(ed.chatId) && currentOtherUid && currentUser) {
+            await setDoc(doc(db, "users", currentUser.uid, "chats", ed.chatId), { lastMessage: text }, { merge: true });
+            await setDoc(doc(db, "users", currentOtherUid, "chats", ed.chatId), { lastMessage: text }, { merge: true });
+        }
+    } catch (e) {}
+    cancelEdit(true);
+}
+
+if (selectionMoreBtn) {
+    // Üç noktaya basınca yazma kutusu odağı (klavye) kaybetmesin
+    selectionMoreBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    selectionMoreBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+        if (selectedMessageIds.size !== 1) { showToast('Düzenlemek için tek mesaj seç'); return; }
+        const id = Array.from(selectedMessageIds)[0];
+        const el = editEligibility(id);
+        if (!el.ok) { showToast(el.reason); return; }
+        if (!moreMenuEl) {
+            moreMenuEl = document.createElement('div');
+            moreMenuEl.style.cssText = 'position:fixed;top:58px;right:8px;z-index:60;min-width:160px;background:#233138;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.5);padding:4px 0;display:none;';
+            moreMenuEl.innerHTML = `<button type="button" data-more="edit" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 text-left"><i class="fa-solid fa-pen w-4"></i><span>Düzenle</span></button>`;
+                     moreMenuEl.addEventListener('mousedown', (ev) => ev.preventDefault());
+            moreMenuEl.addEventListener('click', (ev) => {
+                const b = ev.target.closest('[data-more]');
+                if (!b) return;
+                ev.stopPropagation();
+                const mid = Array.from(selectedMessageIds)[0];
+                closeMoreMenu();
+                if (b.dataset.more === 'edit') {
+                    exitSelectionMode();
+                    startEdit(mid);
+                }
+            });
+            document.body.appendChild(moreMenuEl);
+            document.addEventListener('click', closeMoreMenu);
+        }
+        moreMenuEl.style.display = moreMenuEl.style.display === 'block' ? 'none' : 'block';
+    });
+}
+async function scrollToOriginalMessage(msgId) {
+    let el = messageElementsById.get(msgId);
+    if (!el && currentChatId) {
+        // Mesaj henüz yüklenmemiş eski bir mesaj: bulunana kadar eskileri yükle
+        const session = chatSessions.get(currentChatId);
+        if (session) {
+            showToast('Mesaj aranıyor...');
+            let guard = 0;
+            while (!el && guard < 60 && !session.noMoreOlderMessages && session.oldestLoadedCreatedAt) {
+                guard++;
+                const before = session.oldestLoadedCreatedAt;
+                const dummy = document.createElement('div');
+                dummy.innerHTML = '<button type="button"></button>';
+                await loadOlderMessages(session, dummy);
+                el = messageElementsById.get(msgId);
+                if (session.oldestLoadedCreatedAt === before && !session.noMoreOlderMessages) break;
+            }
+        }
+    }
+    if (!el) { showToast('Orijinal mesaj bulunamadı'); return; }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+// Kaydırma bitince şerit belirir, sonra kendiliğinden solar
+    setTimeout(() => {
+        el.classList.remove('msg-flash');
+        void el.offsetWidth;
+        el.classList.add('msg-flash');
+        setTimeout(() => el.classList.remove('msg-flash'), 1900);
+    }, 350);
+}
+
+function buildReplyQuoteHtml(replyTo, isMine) {
+    if (!replyTo) return '';
+    const qColor = senderColor({ senderUid: replyTo.senderUid, senderName: replyTo.senderName }, 78);
+    const qBg = isMine ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.10)';
+    return `<div class="reply-quote rounded-md px-2 py-1.5 mb-1.5 cursor-pointer" style="background:${qBg};border-left:3px solid ${qColor}" onclick="jumpToReply('${replyTo.msgId}', event)">
+        <p class="text-[11px] font-semibold truncate" style="color:${qColor}">${escapeHtml(replyTo.senderName || '')}</p>
+        <p class="text-gray-300 text-[11px] truncate">${escapeHtml(replyTo.previewText || '')}</p>
+    </div>`;
+}
+
+window.replyToMessage = function (msgId) {
+    if (!currentChatId || !currentUser || selectionMode) return;
+    const session = chatSessions.get(currentChatId);
+    const entry = session && (
+        session.messages.find((m) => m.id === msgId) ||
+        session.olderMessagesPrepended.find((m) => m.id === msgId)
+    );
+    if (!entry) { showToast('Mesaj bulunamadı'); return; }
+    const isMine = !!(currentUser && entry.data.senderUid === currentUser.uid);
+    startReply(msgId, entry.data, isMine);
+};
+
+window.jumpToReply = function (msgId, event) {
+    if (event) event.stopPropagation();
+    if (selectionMode) return;
+    scrollToOriginalMessage(msgId);
+};
+
+// ------------------------------------------
+// GÜN ETİKETLERİ, "OKUNMAMIŞ MESAJ" ÇİZGİSİ VE KAYAN TARİH
+// ------------------------------------------
+function dayKeyOf(date) {
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function formatDayLabel(date) {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((startOfToday - startOfDay) / 86400000);
+    if (diffDays === 0) return 'Bugün';
+if (diffDays === 1) return 'Dün';
+    if (diffDays > 1 && diffDays <= 6) return date.toLocaleDateString('tr-TR', { weekday: 'long' });
+    return date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function buildDateChipElement(date) {
+    const el = document.createElement('div');
+    el.dataset.dateChip = '1';
+    el.dataset.label = formatDayLabel(date);
+    el.className = 'flex justify-center';
+    el.innerHTML = `<span class="bg-[#182229] text-gray-300 text-xs px-3 py-1 rounded-lg shadow">${el.dataset.label}</span>`;
+    return el;
+}
+// Geçici balonlar için: gün değiştiyse (ya da hiç etiket yoksa) tarih etiketi üret
+function tempDayChipFor(timeMs, prevLabel) {
+    const d = new Date(timeMs || Date.now());
+    const label = formatDayLabel(d);
+    let last = prevLabel;
+    if (last === undefined) {
+        const chips = messageContainer.querySelectorAll('[data-date-chip]');
+        last = chips.length ? chips[chips.length - 1].dataset.label : null;
+    }
+    if (last === label) return { el: null, label };
+    return { el: buildDateChipElement(d), label };
+}
+function buildUnreadDividerElement(count) {
+    const el = document.createElement('div');
+    el.dataset.unreadDivider = '1';
+    el.className = 'flex justify-center';
+    el.innerHTML = `<span class="bg-[#182229] text-emerald-300 text-xs font-medium px-3 py-1 rounded-lg shadow">${count} okunmamış mesaj</span>`;
+    return el;
+}
+
+// Sohbet açılırken, karşı tarafın okunmamış mesajları varsa ilkinin
+// kimliğini ve sayıyı döndürür. Okundu işaretlenmeden ÖNCE çağrılmalı.
+function findUnreadDivider(session) {
+if (session.chatId === 'global' || !currentUser) return null;
+    const all = session.olderMessagesPrepended.concat(session.messages);
+    let firstId = null;
+    let count = 0;
+    for (const { id, data: msg } of all) {
+        if (Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) continue;
+        const isMine = msg.senderUid === currentUser.uid;
+        const unreadForMe = session.isGroup
+            ? (msg.type !== 'system' && !(Array.isArray(msg.readBy) && msg.readBy.includes(currentUser.uid)))
+            : msg.read === false;
+             const seenWhileHidden = (() => { const t = msgCreatedMs(msg); return t > 0 && t <= getChatLastReadMs(session.chatId); })();
+        if (!isMine && unreadForMe && !seenWhileHidden) {
+            if (!firstId) firstId = id;
+            count++;
+        }
+    }
+    return firstId ? { chatId: session.chatId, msgId: firstId, count: count } : null;
+}
+
+function scrollToUnreadOrBottom() {
+    requestAnimationFrame(() => {
+        const divider = messageContainer.querySelector('[data-unread-divider]');
+        if (divider) {
+            const delta = divider.getBoundingClientRect().top - messageContainer.getBoundingClientRect().top;
+            messageContainer.scrollTop += delta - 60;
+        } else {
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+    });
+}
+
+// Kaydırırken üst barın altında beliren gün etiketi (kaydırma bitince kaybolur)
+let floatingDateEl = null;
+let floatingDateHideTimer = null;
+let lastUserScrollInputAt = 0;
+
+function ensureFloatingDate() {
+    if (floatingDateEl) return floatingDateEl;
+    const el = document.createElement('div');
+    el.style.cssText = 'position:absolute;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:10;opacity:0;transition:opacity .2s;';
+    el.innerHTML = '<span class="bg-[#182229] text-gray-300 text-xs px-3 py-1 rounded-lg shadow"></span>';
+    messageContainer.parentElement.appendChild(el);
+    floatingDateEl = el;
+    return el;
+}
+
+['touchstart', 'touchmove', 'wheel'].forEach((evt) => {
+    messageContainer.addEventListener(evt, () => { lastUserScrollInputAt = Date.now(); }, { passive: true });
+});
+
+messageContainer.addEventListener('scroll', () => {
+    // Sohbet açılırken otomatik kaydırmada etiket görünmesin, sadece parmakla kaydırırken
+    if (Date.now() - lastUserScrollInputAt > 2500) return;
+
+    const chips = messageContainer.querySelectorAll('[data-date-chip]');
+    if (!chips.length) return;
+
+    const topEdge = messageContainer.getBoundingClientRect().top + 4;
+    let label = chips[0].dataset.label;
+    for (const chip of chips) {
+        if (chip.getBoundingClientRect().top <= topEdge) label = chip.dataset.label;
+        else break;
+    }
+
+    const el = ensureFloatingDate();
+    el.style.top = (messageContainer.offsetTop + 8) + 'px';
+    el.firstElementChild.textContent = label;
+    el.style.opacity = '1';
+
+    clearTimeout(floatingDateHideTimer);
+    floatingDateHideTimer = setTimeout(() => { el.style.opacity = '0'; }, 1200);
+}, { passive: true });
+
+function scrollToBottom() {
+    requestAnimationFrame(() => {
+        messageContainer.scrollTop = messageContainer.scrollHeight;
+    });
+}
+
+function isNearBottom() {
+    return (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight) < 150;
+}
+// ------------------------------------------
+// "AŞAĞI GİT" DÜĞMESİ (yukarı kaydırınca sağ altta çıkar)
+// ------------------------------------------
+let jumpBottomBtn = null;
+let jumpBottomBadge = null;
+let jumpBottomUnread = 0;
+let jumpBottomChatId = null;
+
+function updateJumpBottomBtn() {
+    if (jumpBottomChatId !== currentChatId) { jumpBottomChatId = currentChatId; jumpBottomUnread = 0; }
+    if (!jumpBottomBtn) {
+        jumpBottomBtn = document.createElement('button');
+        jumpBottomBtn.type = 'button';
+        jumpBottomBtn.setAttribute('aria-label', 'En alta git');
+                jumpBottomBtn.style.cssText = 'position:fixed;z-index:40;display:none;width:36px;height:36px;border-radius:9999px;background:#202c33;color:#d1d7db;border:1px solid rgba(255,255,255,0.12);box-shadow:0 2px 8px rgba(0,0,0,0.5);align-items:center;justify-content:center;font-size:14px;';
+        jumpBottomBtn.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
+        jumpBottomBadge = document.createElement('span');
+        jumpBottomBadge.style.cssText = 'position:absolute;top:-11px;left:50%;transform:translateX(-50%);min-width:20px;height:20px;padding:0 6px;border-radius:9999px;background:#22c55e;color:#04210f;font-size:12px;font-weight:700;line-height:20px;text-align:center;display:none;box-shadow:0 1px 4px rgba(0,0,0,0.5);';
+        jumpBottomBtn.appendChild(jumpBottomBadge);
+        jumpBottomBtn.addEventListener('mousedown', (e) => e.preventDefault());
+        jumpBottomBtn.addEventListener('click', () => {
+            jumpBottomUnread = 0;
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        });
+        document.body.appendChild(jumpBottomBtn);
+    }
+    const away = messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight;
+    if (away < 150) jumpBottomUnread = 0;
+    const show = !!currentChatId && messageContainer.clientHeight > 0 && (away > 400 || (jumpBottomUnread > 0 && away > 150)) && !selectionMode;
+    if (!show) { jumpBottomBtn.style.display = 'none'; return; }
+    jumpBottomBadge.textContent = jumpBottomUnread > 99 ? '99+' : String(jumpBottomUnread);
+    jumpBottomBadge.style.display = jumpBottomUnread > 0 ? 'block' : 'none';
+    const r = messageContainer.getBoundingClientRect();
+    jumpBottomBtn.style.right = Math.max(8, window.innerWidth - r.right + 14) + 'px';
+    jumpBottomBtn.style.bottom = Math.max(8, window.innerHeight - r.bottom + 14) + 'px';
+    jumpBottomBtn.style.display = 'flex';
+}
+
+messageContainer.addEventListener('scroll', updateJumpBottomBtn, { passive: true });
+window.addEventListener('resize', updateJumpBottomBtn);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', updateJumpBottomBtn);
+try {
+    new MutationObserver(updateJumpBottomBtn).observe(messageContainer, { childList: true });
+    if (window.ResizeObserver) new ResizeObserver(updateJumpBottomBtn).observe(messageContainer);
+} catch (e) {}
+// ------------------------------------------
+// GERİ ARAMA ONAYI (cevapsız/reddedilen arama balonuna basınca çıkar)
+// Doğrudan aramaz, isim + yeşil "Ara" düğmesiyle onay ister.
+// ------------------------------------------
+let callBackSheetEl = null;
+
+function closeCallBackSheetFromBack() {
+    if (callBackSheetEl) {
+        callBackSheetEl.remove();
+        callBackSheetEl = null;
+    }
+}
+
+function closeCallBackSheet() {
+    if (!callBackSheetEl) return;
+    closeCallBackSheetFromBack();
+    popBackState();
+}
+
+function openCallBackConfirm(callType) {
+    closeCallBackSheetFromBack();
+    const isVideo = callType === 'video';
+    const name = currentChatName || '';
+    const avatarHtml = currentOtherAvatar
+        ? `<img src="${currentOtherAvatar}" class="w-16 h-16 rounded-full object-cover mx-auto">`
+        : `<div class="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold mx-auto" style="background-color:${getUserColor(name)};">${getInitials(name)}</div>`;
+
+    const el = document.createElement('div');
+    el.className = 'fixed inset-0 z-[70] bg-black/60 flex items-end';
+    el.innerHTML = `
+        <div class="w-full bg-[#202c33] rounded-t-2xl pb-6 px-5 pt-5 text-center">
+            <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-4"></div>
+            ${avatarHtml}
+            <p class="text-white text-lg font-semibold mt-3">${escapeHtml(name)}</p>
+            <button type="button" id="callback-confirm-btn" class="w-full mt-5 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold py-3.5 rounded-full flex items-center justify-center space-x-2">
+                <i class="fa-solid ${isVideo ? 'fa-video' : 'fa-phone'}"></i>
+                <span>Ara</span>
+            </button>
+        </div>
+    `;
+    document.body.appendChild(el);
+    el.addEventListener('click', (e) => {
+        if (e.target === el) closeCallBackSheet();
+    });
+    el.querySelector('#callback-confirm-btn').addEventListener('click', () => {
+        const uid = currentOtherUid;
+        const cid = currentChatId;
+        closeCallBackSheet();
+        if (isVideo) {
+            startCall(cid, uid);
+        } else {
+            startVoiceCall(cid, uid);
+        }
+    });
+    callBackSheetEl = el;
+    pushBackState(closeCallBackSheetFromBack);
+}
+
+window.callBackFromBubble = function (callType) {
+    if (!currentChatId || currentChatId === 'global' || !currentOtherUid) return;
+    openCallBackConfirm(callType);
+};
+
+window.openImageLightbox = function (src) {
+    const lightbox = document.getElementById('image-lightbox');
+    const lightboxImg = document.getElementById('lightbox-img');
+    if (!lightbox || !lightboxImg) return;
+    albumViewerState = null;
+    hideAlbumViewerControls();
+    lightboxImg.style.transition = 'none';
+    lightboxImg.style.transform = 'translateX(0)';
+    lightboxImg.style.opacity = '1';
+    lightboxImg.src = src;
+    lightbox.classList.remove('hidden');
+    lightbox.classList.add('flex');
+    pushBackState(doCloseLightbox);
+};
+
+// ------------------------------------------
+// ALBÜM GÖRÜNTÜLEYİCİ (WhatsApp tarzı: resimler alt alta akar)
+// Albümdeki tüm resimler dikey bir listede alt alta dizilir, parmakla
+// yukarı/aşağı kaydırılır. Üst ortada, ekranın ortasındaki resmin
+// "kaçıncı / kaç" bilgisi görünür. Sol üstteki ok görüntüleyiciyi kapatır.
+// ------------------------------------------
+let albumViewerState = null;
+let swipeStartX = null; // doCloseLightbox bunları sıfırlıyor, kalsınlar
+let swipeStartY = null;
+
+function findAlbumSourceImage(chatId, msgId, index) {
+    const s = chatSessions.get(chatId);
+    if (!s) return null;
+    const entry = s.messages.find((m) => m.id === msgId) || s.olderMessagesPrepended.find((m) => m.id === msgId);
+    return entry && Array.isArray(entry.data.images) ? (entry.data.images[index] || null) : null;
+}
+
+function updateAlbumViewerCounter() {
+    if (!albumViewerState) return;
+    const scrollEl = document.getElementById('lightbox-album-scroll');
+    const counterEl = document.getElementById('lightbox-album-counter');
+    if (!scrollEl || !counterEl) return;
+
+    // Ekranın tam ortasındaki resmi bul
+    const mid = scrollEl.scrollTop + scrollEl.clientHeight / 2;
+    const slots = scrollEl.children;
+    let current = 0;
+    for (let i = 0; i < slots.length; i++) {
+        if (slots[i].offsetTop <= mid) current = i;
+        else break;
+    }
+    albumViewerState.index = current;
+    counterEl.textContent = `${current + 1} / ${albumViewerState.imagesCount}`;
+}
+
+function ensureAlbumViewerControls() {
+    const lightbox = document.getElementById('image-lightbox');
+    if (!lightbox || document.getElementById('lightbox-album-counter')) return;
+
+    const counter = document.createElement('div');
+    counter.id = 'lightbox-album-counter';
+    counter.className = 'absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-3 py-1 rounded-full z-20';
+
+    const backBtn = document.createElement('button');
+    backBtn.id = 'lightbox-album-back';
+    backBtn.innerHTML = '<i class="fa-solid fa-arrow-left"></i>';
+    backBtn.className = 'absolute top-3 left-3 bg-black/60 text-white w-9 h-9 rounded-full flex items-center justify-center z-20';
+    backBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.closeImageLightboxUI();
+    });
+
+    lightbox.appendChild(counter);
+    lightbox.appendChild(backBtn);
+}
+
+function hideAlbumViewerControls() {
+    ['lightbox-album-counter', 'lightbox-album-back', 'lightbox-album-scroll'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+    });
+    // Tek resim görüntüleyicisi bu elemanı kullanıyor, geri göster
+    const lightboxImg = document.getElementById('lightbox-img');
+    if (lightboxImg) lightboxImg.classList.remove('hidden');
+}
+
+window.openAlbumLightbox = async function (chatId, msgId, imagesCount, startIndex) {
+    const lightbox = document.getElementById('image-lightbox');
+    const lightboxImg = document.getElementById('lightbox-img');
+    if (!lightbox || !lightboxImg) return;
+
+    hideAlbumViewerControls();
+    albumViewerState = { chatId, msgId, imagesCount, index: startIndex };
+    lightboxImg.classList.add('hidden');
+
+    const scrollEl = document.createElement('div');
+    scrollEl.id = 'lightbox-album-scroll';
+    scrollEl.className = 'absolute inset-0 overflow-y-auto';
+    scrollEl.style.overscrollBehavior = 'contain';
+    // Kaydırırken ya da resme dokunurken görüntüleyici kapanmasın
+    scrollEl.addEventListener('click', (e) => e.stopPropagation());
+    scrollEl.addEventListener('scroll', updateAlbumViewerCounter, { passive: true });
+
+    // Resimler gelene kadar yer tutucular
+    for (let i = 0; i < imagesCount; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'flex items-center justify-center py-1';
+        slot.style.minHeight = '40vh';
+        slot.innerHTML = '<i class="fa-solid fa-image text-gray-600 text-2xl"></i>';
+        scrollEl.appendChild(slot);
+    }
+
+    lightbox.appendChild(scrollEl);
+    ensureAlbumViewerControls();
+    updateAlbumViewerCounter();
+
+    lightbox.classList.remove('hidden');
+    lightbox.classList.add('flex');
+    pushBackState(doCloseLightbox);
+
+    const loads = [];
+    for (let i = 0; i < imagesCount; i++) {
+        const slot = scrollEl.children[i];
+        loads.push((async () => {
+            let src = mediaUriCache.get(`${chatId}/${msgId}_${i}`);
+            if (!src) src = await resolveLocalMedia(chatId, msgId, findAlbumSourceImage(chatId, msgId, i), i);
+            if (!src || !slot.isConnected) return;
+
+            const img = new Image();
+            img.className = 'w-full h-auto block mx-auto';
+            img.style.maxWidth = '900px';
+            img.src = src;
+            try { await img.decode(); } catch (e) {}
+            if (!slot.isConnected) return;
+
+            slot.style.minHeight = '';
+            slot.innerHTML = '';
+            slot.appendChild(img);
+        })());
+    }
+    await Promise.all(loads);
+
+    // Dokunulan resmin olduğu yere kaydır
+    if (!scrollEl.isConnected) return;
+    if (startIndex > 0 && scrollEl.children[startIndex]) {
+        scrollEl.scrollTop = scrollEl.children[startIndex].offsetTop;
+    }
+    updateAlbumViewerCounter();
+};
+
+function doCloseLightbox() {
+    const lightbox = document.getElementById('image-lightbox');
+    if (!lightbox) return;
+    lightbox.classList.add('hidden');
+    lightbox.classList.remove('flex');
+    albumViewerState = null;
+    swipeStartX = null;
+    swipeStartY = null;
+    hideAlbumViewerControls();
+}
+
+window.closeImageLightboxUI = function () {
+    doCloseLightbox();
+    popBackState();
+};
+
+// ------------------------------------------
+// YENİ WHATSAPP TARZI GÖRÜNTÜLEYİCİ (image-viewer.js)
+// Yukarıdaki eski lightbox fonksiyonlarını bu tanımlar geçersiz kılar.
+// ------------------------------------------
+let viewerBackActive = false;
+
+function openViewer(o) {
+    viewerBackActive = true;
+    pushBackState(() => { viewerBackActive = false; window.closeImageViewer(); });
+    o.onClose = () => {
+        if (viewerBackActive) { viewerBackActive = false; popBackState(); }
+    };
+    o.onDownload = (it) => {
+        if (getFilesystemPlugin()) { showToast('Resim galerine kaydedildi (Pictures/AuraChat)'); return; }
+        const a = document.createElement('a');
+        a.href = it.src;
+        a.download = 'AuraChat_' + Date.now() + '.jpg';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    };
+    o.onForward = (it) => {
+        window.closeImageViewer();
+        setTimeout(() => window.forwardImageMessage(it.id), 200);
+    };
+    o.onReply = (it) => {
+        setTimeout(() => window.replyToMessage(it.id), 100);
+    };
+    window.openImageViewer(o);
+}
+
+function findMsgEntry(chatId, msgId) {
+    const s = chatSessions.get(chatId);
+    if (!s) return null;
+    return s.messages.find((m) => m.id === msgId) || s.olderMessagesPrepended.find((m) => m.id === msgId) || null;
+}
+
+function makeViewerItem(entry, msgId, src) {
+    const d = entry ? entry.data : null;
+    const mine = !!(d && currentUser && d.senderUid === currentUser.uid);
+    return {
+        id: msgId,
+        src: src,
+        time: d && d.createdAt ? d.createdAt.toMillis() : Date.now(),
+        senderName: mine ? 'Sen' : ((d && d.senderName) || currentChatName || '')
+    };
+}
+
+window.openImageLightbox = function (src) {
+    let msgId = null;
+    try {
+        const t = window.event && window.event.target;
+        const row = t && t.closest ? t.closest('[data-msg-id]') : null;
+        if (row) msgId = row.dataset.msgId;
+    } catch (e) {}
+    const entry = msgId ? findMsgEntry(currentChatId, msgId) : null;
+    openViewer({ items: [makeViewerItem(entry, msgId, src)], index: 0, album: false });
+};
+
+window.openAlbumLightbox = async function (chatId, msgId, imagesCount, startIndex) {
+    const entry = findMsgEntry(chatId, msgId);
+    const srcs = await Promise.all(Array.from({ length: imagesCount }, async (_, i) => {
+        let src = mediaUriCache.get(`${chatId}/${msgId}_${i}`);
+        if (!src) src = await resolveLocalMedia(chatId, msgId, findAlbumSourceImage(chatId, msgId, i), i);
+        return src || null;
+    }));
+    const items = [];
+    let startPos = 0;
+    srcs.forEach((src, i) => {
+        if (!src) return;
+        if (i <= startIndex) startPos = items.length;
+        items.push(makeViewerItem(entry, msgId, src));
+    });
+    if (!items.length) return;
+    openViewer({ items: items, index: startPos, album: items.length > 1 });
+};
+
+// ------------------------------------------
+// MESAJ GÖNDERME
+// ------------------------------------------
+// ------------------------------------------
+// LİNKLER + LİNK ÖNİZLEME KARTI
+// Mesajdaki link tıklanabilir olur; gönderen, ilk linkin başlık/resim bilgisini bir kez alıp mesaja yazar.
+// ------------------------------------------
+const URL_RE = /https?:\/\/[^\s<>"']+/i;
+
+function extractFirstUrl(text) {
+    const m = String(text || '').match(URL_RE);
+    if (!m) return '';
+    return m[0].replace(/[.,;:!?)\]]+$/, '');
+}
+
+function linkifyText(text) {
+    return escapeHtml(text).replace(/https?:\/\/[^\s<]+/gi, (raw) => {
+        const trail = (raw.match(/[.,;:!?)\]]+$/) || [''])[0];
+        const url = trail ? raw.slice(0, raw.length - trail.length) : raw;
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:#7dd3fc;text-decoration:underline;word-break:break-all;">${url}</a>${trail}`;
+    });
+}
+
+function buildLinkPreviewHtml(lp) {
+    if (!lp || !lp.url || (!lp.title && !lp.image && !lp.description)) return '';
+    let host = '';
+    try { host = new URL(lp.url).hostname.replace(/^www\./, ''); } catch (e) { return ''; }
+    const safeUrl = escapeHtml(lp.url).replace(/"/g, '&quot;');
+    const img = lp.image
+        ? `<img src="${escapeHtml(lp.image).replace(/"/g, '&quot;')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()" style="display:block;width:100%;max-height:150px;object-fit:cover;">`
+        : '';
+    const title = lp.title ? `<p style="font-size:13px;font-weight:600;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${escapeHtml(lp.title)}</p>` : '';
+    const desc = lp.description ? `<p style="font-size:11.5px;color:#d1d7db;margin-top:2px;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${escapeHtml(lp.description)}</p>` : '';
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="display:block;margin-top:6px;border-radius:10px;overflow:hidden;background:rgba(0,0,0,0.25);color:inherit;text-decoration:none;min-width:200px;max-width:100%;">${img}<div style="padding:8px 10px;">${title}${desc}<p style="font-size:10.5px;color:#9aa5ab;margin-top:3px;">${escapeHtml(host)}</p></div></a>`;
+}
+
+async function attachLinkPreview(msgRef, text) {
+    const url = extractFirstUrl(text);
+    if (!url || !msgRef) return;
+    try {
+        const idToken = await getAuth().currentUser.getIdToken();
+        const resp = await fetch('https://aurachat-amber.vercel.app/api/link-preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+            body: JSON.stringify({ url })
+        });
+        const data = await resp.json();
+        if (data && data.success && data.preview) {
+            await updateDoc(msgRef, { linkPreview: data.preview });
+        }
+    } catch (e) {}
+}
+
+async function sendMessage() {
+    const text = messageInput.value.trim();
+    if (!text || !currentUser || !currentChatId) return;
+
+    const replyPayload = consumeReplyPayload();
+
+    try {
+   if (currentChatId !== 'global') {
+            await setDoc(doc(db, "chats", currentChatId), {
+                [`typing_${currentUser.uid}`]: false
+            }, { merge: true });
+        }
+
+        messageInput.value = '';
+        updateMicToggle();
+
+        const sentRef = await addDoc(collection(db, "chats", currentChatId, "messages"), {
+            text: text,
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false,
+            ...(replyPayload ? { replyTo: replyPayload } : {})
+        });
+        attachLinkPreview(sentRef, text);
+
+        await updateChatSummaries(text);
+        pushToGroupMembers(text);
+
+        if (currentChatId !== 'global' && currentOtherUid) {
+            sendPushToUser(currentOtherUid, `${currentUser.name}`, text, {
+                chatId: currentChatId,
+                otherUid: currentUser.uid,
+                otherName: currentUser.name,
+                msgType: 'text'
+            });
+        }
+
+        scrollToBottom();
+    } catch (e) {
+        console.error("Mesaj gönderilemedi: ", e);
+        alert("Mesaj gönderilirken hata oluştu!");
+    }
+}
+
+// Önce bekleyen resimler, sonra yazı gider
+async function sendFromComposer() {
+    if (editingMsg) { await submitEdit(); return; }
+    const files = composer.takeImages();
+    if (files.length) {
+        const caption = messageInput.value.trim();
+        messageInput.value = '';
+        await sendPendingImages(files, caption);
+    } else if (messageInput.value.trim()) {
+        await sendMessage();
+    }
+    updateMicToggle();
+}
+
+sendBtn.addEventListener('click', sendFromComposer);
+messageInput.addEventListener('keydown', (e) => {
+    // Telefonda Enter alt satıra geçer, gönderme sadece butonla.
+    // Bilgisayarda (fare varsa) Enter gönderir, Shift+Enter alt satıra geçer.
+    if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(pointer: fine)').matches) {
+        e.preventDefault();
+        sendFromComposer();
+    }
+});
+// Birebir sohbette "yazıyor..." bilgisini karşı tarafın sohbet listesi satırına da yaz
+function writeTypingSummary(typing) {
+    if (!currentUser || !currentChatId || currentChatId === 'global' || currentIsGroup || !currentOtherUid) return;
+    updateDoc(doc(db, "users", currentOtherUid, "chats", currentChatId), { typing: typing, typingAt: Date.now() }).catch(() => {});
+}
+messageInput.addEventListener('input', () => {
+if (!currentChatId || currentChatId === 'global' || !currentUser) return;
+
+    if (Date.now() - lastTypingWriteAt > 1500) {
+        lastTypingWriteAt = Date.now();
+                setDoc(doc(db, "chats", currentChatId), {
+            [`typing_${currentUser.uid}`]: true
+        }, { merge: true });
+        writeTypingSummary(true);
+    }
+
+    if (typingTimeout) clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+        if (currentChatId && currentChatId !== 'global') {
+                setDoc(doc(db, "chats", currentChatId), {
+                [`typing_${currentUser.uid}`]: false
+            }, { merge: true });
+            writeTypingSummary(false);
+        }
+    }, 2000);
+});
+
+// ------------------------------------------
+// GÖRSEL GÖNDERME (tek resim = tam boyut / birden fazla resim = tek albüm mesajı)
+// ------------------------------------------
+function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const dimensionSteps = [900, 700, 500];
+                const qualitySteps = [0.7, 0.55, 0.4, 0.3];
+                let bestResult = null;
+
+                outer:
+                for (const maxDim of dimensionSteps) {
+                    let { width, height } = img;
+                    if (width > maxDim || height > maxDim) {
+                        if (width > height) {
+                            height = Math.round(height * (maxDim / width));
+                            width = maxDim;
+                        } else {
+                            width = Math.round(width * (maxDim / height));
+                            height = maxDim;
+                        }
+                    } else if (maxDim !== dimensionSteps[0]) {
+                        break;
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    for (const q of qualitySteps) {
+                        const dataUrl = canvas.toDataURL('image/jpeg', q);
+                        bestResult = dataUrl;
+                        const approxBytes = dataUrl.length * 0.75;
+                        if (approxBytes <= targetBytes) {
+                            resolve(dataUrl);
+                            break outer;
+                        }
+                    }
+                }
+
+                if (bestResult) resolve(bestResult);
+                else reject(new Error('Görsel sıkıştırılamadı'));
+            };
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+if (attachBtn && imageInput) {
+    imageInput.multiple = true;
+ ensureAttachMenu(); // menüyü önceden hazırla, ilk açılış takılmasın
+    // Düğmeye basınca mesaj kutusu odağı (klavye) kaybetmesin
+    attachBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    attachBtn.addEventListener('click', () => {
+        if (attachMenuOpen) closeAttachMenu(); else openAttachMenu();
+    });
+    // Input'a dokununca popup, klavye gerçekten açılana kadar yerinde kalır; klavye gelince anında kalkar
+    messageInput.addEventListener('focus', () => {
+        if (!attachMenuOpen) return;
+        // Popup'tan klavyeye geçerken de ekran yüksekliği yumuşatılmasın
+        document.body.style.transition = 'none';
+        setTimeout(() => { document.body.style.transition = ''; }, 900);
+        const vv = window.visualViewport;
+        if (!vv) { closeAttachMenu(true); return; }
+        let done = false;
+        let fallbackTimer = null;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            vv.removeEventListener('resize', onResize);
+            clearTimeout(fallbackTimer);
+            closeAttachMenu(true);
+        };
+        const onResize = () => {
+            const kb = window.__auraMaxVV - vv.height;
+            const need = window.__auraKbH ? window.__auraKbH - 30 : 100;
+            if (kb > need) finish();
+        };
+        vv.addEventListener('resize', onResize);
+        fallbackTimer = setTimeout(finish, 700);
+    });
+    messageContainer.addEventListener('click', closeAttachMenu);
+
+    // Seçilen resimler hemen gitmez: kutunun üstünde önizleme olarak bekler, gönder tuşuyla gider
+    imageInput.addEventListener('change', (e) => {
+        const picked = Array.from(e.target.files || []).filter((f) => f.type.startsWith('image/'));
+        imageInput.value = '';
+        if (!picked.length) {
+            alert("Lütfen bir görsel dosyası seç kanka!");
+            return;
+        }
+        composer.addImages(picked);
+        messageInput.focus();
+    });
+
+    sendPendingImages = async (files, caption = '') => {
+        if (!files.length || !currentUser || !currentChatId) return;
+        const replyPayload = consumeReplyPayload();
+        if (currentChatId !== 'global') {
+            setDoc(doc(db, "chats", currentChatId), { [`typing_${currentUser.uid}`]: false }, { merge: true }).catch(() => {});
+        }
+
+        const validFiles = files.filter((f) => f.type.startsWith('image/'));
+        if (!validFiles.length) {
+            alert("Lütfen bir görsel dosyası seç kanka!");
+            return;
+        }
+
+        attachBtn.classList.add('opacity-40', 'pointer-events-none');
+        const originalIcon = attachBtn.className;
+        attachBtn.className = attachBtn.className.replace('fa-plus', 'fa-spinner fa-spin');
+
+        // Birden fazla resim tek Firestore belgesine (max ~1MB) sığmalı,
+        // o yüzden çoklu seçimde resim başına hedef boyutu düşürüyoruz.
+        const perImageTarget = validFiles.length > 1 ? 150 * 1024 : 300 * 1024;
+        const maxTotalBytes = 900 * 1024;
+
+        try {
+            const compressed = [];
+            let totalBytes = 0;
+            let skippedForSize = false;
+
+            let processedCount = 0;
+            for (const file of validFiles) {
+                processedCount++;
+                if (activeChatStatus && validFiles.length > 1) {
+                    activeChatStatus.innerHTML = `<span class="text-emerald-400">${processedCount}/${validFiles.length} fotoğraf hazırlanıyor...</span>`;
+                }
+                try {
+                    const dataUrl = await compressImageToDataUrl(file, perImageTarget);
+                    const approxBytes = dataUrl.length * 0.75;
+
+                    if (totalBytes + approxBytes > maxTotalBytes) {
+                        skippedForSize = true;
+                        break;
+                    }
+
+                    compressed.push(dataUrl);
+                    totalBytes += approxBytes;
+                } catch (innerErr) {
+                    console.warn(`Görsel sıkıştırılamadı (${file.name}):`, innerErr);
+                }
+            }
+
+            if (activeChatStatus && validFiles.length > 1) {
+                activeChatStatus.innerHTML = `<span class="text-emerald-400">Gönderiliyor...</span>`;
+            }
+
+            if (!compressed.length) {
+                alert("Görseller gönderilemedi, dene tekrar kanka.");
+                return;
+            }
+
+       if (compressed.length === 1) {
+                await addDoc(collection(db, "chats", currentChatId, "messages"), {
+                    type: 'image',
+                    imageUrl: compressed[0],
+                    text: caption,
+                    senderUid: currentUser.uid,
+                    senderName: currentUser.name,
+                    createdAt: serverTimestamp(),
+                    read: false,
+                    ...(replyPayload ? { replyTo: replyPayload } : {})
+                });
+            } else {
+                await addDoc(collection(db, "chats", currentChatId, "messages"), {
+                    type: 'image',
+                    images: compressed,
+                    imagesCount: compressed.length,
+                    imagesDelivered: false,
+                    text: caption,
+                    senderUid: currentUser.uid,
+                    senderName: currentUser.name,
+                    createdAt: serverTimestamp(),
+                    read: false,
+                    ...(replyPayload ? { replyTo: replyPayload } : {})
+                });
+            }
+
+            const photoLabel = compressed.length > 1 ? `📷 ${compressed.length} Fotoğraf` : '📷 Fotoğraf';
+            const summaryText = caption ? `${photoLabel} ${caption}` : photoLabel;
+            await updateChatSummaries(summaryText);
+            pushToGroupMembers(summaryText);
+
+            if (currentChatId !== 'global' && currentOtherUid) {
+                sendPushToUser(currentOtherUid, `${currentUser.name}`, summaryText, {
+                    chatId: currentChatId,
+                    otherUid: currentUser.uid,
+                    otherName: currentUser.name
+                });
+            }
+
+            if (skippedForSize) {
+                alert(`Boyut sınırı yüzünden sadece ${compressed.length} fotoğraf gönderildi, kalanları ayrı bir mesajda gönder kanka.`);
+            }
+
+            scrollToBottom();
+        } catch (err) {
+            console.error("Görseller gönderilemedi:", err);
+            alert("Görseller gönderilirken hata oluştu!");
+        } finally {
+            attachBtn.className = originalIcon;
+            attachBtn.classList.remove('opacity-40', 'pointer-events-none');
+            if (activeChatStatus && validFiles.length > 1) {
+                activeChatStatus.textContent = '';
+            }
+        }
+};
+}
+
+// ------------------------------------------
+// SESLİ MESAJ
+// Mikrofon düğmesine basılı tut, konuş, bırakınca gider. Sola kaydırıp bırakırsan iptal.
+// Ses base64 olarak mesajın içinde gider (en fazla 2 dk: Firestore belge sınırı 1 MB).
+// Yazı yazılmıyorken gönder düğmesinin yerinde mikrofon görünür.
+// ------------------------------------------
+const VOICE_MAX_SECONDS = 120;
+const VOICE_MIN_SECONDS = 1;
+let micBtn = null;
+let recInfoEl = null;
+let recState = null; // { recorder, stream, chunks, startMs, timerId, cancelled, released, startX, durationSec }
+
+function fmtAudioTime(sec) {
+    const s = Math.max(0, Math.floor(Number(sec) || 0));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// Yazı varsa gönder, yoksa mikrofon düğmesi görünsün
+function updateMicToggle() {
+    if (!micBtn || !sendBtn || !messageInput) return;
+    const hasText = messageInput.value.trim().length > 0 || composer.hasImages();
+    sendBtn.style.display = hasText ? '' : 'none';
+    micBtn.style.display = hasText ? 'none' : '';
+}
+
+function pickVoiceMime() {
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+    for (const m of candidates) {
+        try { if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; } catch (e) {}
+    }
+    return '';
+}
+
+function ensureRecInfo() {
+    if (recInfoEl) return recInfoEl;
+    const el = document.createElement('div');
+    el.className = 'hidden flex-1 items-center px-4 py-2.5 rounded-full bg-[#202c33] text-white text-sm';
+    el.innerHTML = `
+        <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse mr-2 flex-shrink-0"></span>
+        <span id="rec-time" class="font-mono">0:00</span>
+        <span id="rec-hint" class="ml-auto pl-3 text-gray-400 text-xs truncate">‹ Sola kaydır: iptal</span>
+    `;
+    messageInput.insertAdjacentElement('beforebegin', el);
+    recInfoEl = el;
+    return el;
+}
+
+function setRecHint(cancelling) {
+    const h = document.getElementById('rec-hint');
+    if (!h) return;
+    h.textContent = cancelling ? 'Bırakınca iptal edilir' : '‹ Sola kaydır: iptal';
+    h.className = 'ml-auto pl-3 text-xs truncate ' + (cancelling ? 'text-rose-400' : 'text-gray-400');
+}
+
+function showRecordingUI() {
+    const el = ensureRecInfo();
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+    messageInput.style.display = 'none';
+    if (attachBtn) attachBtn.style.display = 'none';
+    if (micBtn) micBtn.style.transform = 'scale(1.25)';
+    const t = document.getElementById('rec-time');
+    if (t) t.textContent = '0:00';
+    setRecHint(false);
+}
+
+function hideRecordingUI() {
+    if (recInfoEl) {
+        recInfoEl.classList.add('hidden');
+        recInfoEl.classList.remove('flex');
+    }
+    messageInput.style.display = '';
+    if (attachBtn) attachBtn.style.display = '';
+    if (micBtn) micBtn.style.transform = '';
+}
+
+async function startVoiceRecording(e) {
+    if (recState || !currentUser || !currentChatId) return;
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+        showToast('Bu cihaz ses kaydını desteklemiyor');
+        return;
+    }
+    if (window.__aurachatCallActive) {
+        showToast('Arama sırasında ses kaydedilemez');
+        return;
+    }
+    try { micBtn.setPointerCapture(e.pointerId); } catch (err) {}
+
+    const st = {
+        recorder: null, stream: null, chunks: [], startMs: 0, timerId: null,
+        cancelled: false, released: false, startX: e.clientX, durationSec: 0, mime: ''
+    };
+    recState = st;
+
+    let stream;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+        recState = null;
+        showToast('Mikrofon izni verilmedi');
+        return;
+    }
+
+    // İzin penceresi açıkken parmak kalkmışsa kaydı başlatma
+    if (st.released) {
+        stream.getTracks().forEach((t) => t.stop());
+        recState = null;
+        return;
+    }
+
+    const mime = pickVoiceMime();
+    let recorder;
+    try {
+        recorder = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : { audioBitsPerSecond: 24000 });
+    } catch (err) {
+        stream.getTracks().forEach((t) => t.stop());
+        recState = null;
+        showToast('Ses kaydı başlatılamadı');
+        return;
+    }
+
+    st.recorder = recorder;
+    st.stream = stream;
+    st.mime = mime || recorder.mimeType || 'audio/webm';
+    recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) st.chunks.push(ev.data); };
+    recorder.onstop = () => onVoiceStopped(st);
+    recorder.start(1000);
+    st.startMs = Date.now();
+
+    showRecordingUI();
+    st.timerId = setInterval(() => {
+        const sec = (Date.now() - st.startMs) / 1000;
+        const t = document.getElementById('rec-time');
+        if (t) t.textContent = fmtAudioTime(sec);
+        if (sec >= VOICE_MAX_SECONDS) finishVoiceRecording(false);
+    }, 250);
+    if (navigator.vibrate) navigator.vibrate(20);
+}
+
+function onVoiceMove(e) {
+    if (!recState || !recState.recorder) return;
+    const cancelling = (e.clientX - recState.startX) < -90;
+    if (cancelling !== recState.cancelled) {
+        recState.cancelled = cancelling;
+        setRecHint(cancelling);
+    }
+}
+
+function finishVoiceRecording(cancel) {
+    const st = recState;
+    if (!st) return;
+    st.released = true;
+    if (!st.recorder) return; // kayıt henüz başlamadı, başlatan taraf temizler
+    if (cancel) st.cancelled = true;
+    if (st.timerId) { clearInterval(st.timerId); st.timerId = null; }
+    st.durationSec = Math.round((Date.now() - st.startMs) / 1000);
+    hideRecordingUI();
+    try {
+        if (st.recorder.state !== 'inactive') st.recorder.stop();
+        else onVoiceStopped(st);
+    } catch (err) {
+        onVoiceStopped(st);
+    }
+}
+
+function onVoiceStopped(st) {
+    if (st.stream) st.stream.getTracks().forEach((t) => t.stop());
+    st.stream = null;
+    if (recState === st) recState = null;
+    if (st.cancelled || st.done) return;
+    st.done = true;
+    if (st.durationSec < VOICE_MIN_SECONDS) {
+        showToast('Konuşmak için basılı tut');
+        return;
+    }
+    if (!st.chunks.length) return;
+
+    const blob = new Blob(st.chunks, { type: st.mime });
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        if (typeof reader.result === 'string') sendVoiceMessage(reader.result, Math.min(st.durationSec, VOICE_MAX_SECONDS));
+    };
+    reader.readAsDataURL(blob);
+}
+
+async function sendVoiceMessage(dataUrl, durationSec) {
+    if (!currentUser || !currentChatId) return;
+    // Firestore belgesi 1 MB'ı geçemez
+    if (dataUrl.length > 950000) {
+        showToast('Ses çok uzun, daha kısa kaydet');
+        return;
+    }
+    const replyPayload = consumeReplyPayload();
+    try {
+        await addDoc(collection(db, "chats", currentChatId, "messages"), {
+            type: 'audio',
+            audio: dataUrl,
+            audioDuration: durationSec,
+            text: '',
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false,
+            ...(replyPayload ? { replyTo: replyPayload } : {})
+        });
+
+        await updateChatSummaries(`🎤 Sesli mesaj (${fmtAudioTime(durationSec)})`);
+        pushToGroupMembers("🎤 Sesli mesaj gönderdi");
+
+        if (currentChatId !== 'global' && currentOtherUid) {
+            sendPushToUser(currentOtherUid, `${currentUser.name}`, "🎤 Sesli mesaj", {
+                chatId: currentChatId,
+                otherUid: currentUser.uid,
+                otherName: currentUser.name
+            });
+        }
+        scrollToBottom();
+    } catch (err) {
+        console.error("Sesli mesaj gönderilemedi:", err);
+        showToast('Sesli mesaj gönderilemedi');
+    }
+}
+
+(function setupMicButton() {
+    if (!sendBtn || !sendBtn.parentElement || !messageInput) return;
+
+    micBtn = sendBtn.cloneNode(false);
+    micBtn.id = 'mic-btn';
+    micBtn.type = 'button';
+    const sendIcon = sendBtn.querySelector('i');
+    const iconClass = sendIcon ? sendIcon.className.replace('fa-paper-plane', 'fa-microphone') : 'fa-solid fa-microphone';
+    micBtn.innerHTML = `<i class="${iconClass}"></i>`;
+    micBtn.style.touchAction = 'none';
+    micBtn.style.userSelect = 'none';
+    micBtn.style.webkitUserSelect = 'none';
+    sendBtn.insertAdjacentElement('afterend', micBtn);
+
+    micBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); startVoiceRecording(e); });
+    micBtn.addEventListener('pointermove', onVoiceMove);
+    micBtn.addEventListener('pointerup', () => finishVoiceRecording(false));
+    micBtn.addEventListener('pointercancel', () => finishVoiceRecording(true));
+    micBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    messageInput.addEventListener('input', updateMicToggle);
+    composer.onChange(updateMicToggle);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && recState) finishVoiceRecording(true);
+    });
+    updateMicToggle();
+})();
+
+// ------------------------------------------
+// SESLİ MESAJ BALONU (oynat / durdur + ilerleme çubuğu)
+// ------------------------------------------
+const audioPlayers = new Map(); // msgId -> { audio, ui }
+let currentPlayingPlayer = null;
+
+function buildAudioBubbleHtml(msgId, msg) {
+    const dur = Math.max(0, Math.round(Number(msg.audioDuration) || 0));
+    return `
+        <div class="flex items-center space-x-2.5" style="min-width:190px;" data-audio-msg="${msgId}">
+            <button type="button" class="audio-play-btn w-9 h-9 rounded-full bg-black/25 hover:bg-black/40 text-white flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-play text-sm"></i></button>
+            <div class="flex-1 min-w-0">
+                <div class="h-1 rounded-full bg-white/25 overflow-hidden"><div class="audio-progress h-full bg-white/80" style="width:0%"></div></div>
+                <p class="audio-time text-[11px] text-gray-300 mt-1">${fmtAudioTime(dur)}</p>
+            </div>
+            <i class="fa-solid fa-microphone text-gray-300 text-sm flex-shrink-0"></i>
+        </div>`;
+}
+
+function paintAudio(player) {
+    const ui = player.ui;
+    if (!ui) return;
+    const a = player.audio;
+    const playing = !!(a && !a.paused);
+    const t = a ? a.currentTime : 0;
+    ui.icon.className = playing ? 'fa-solid fa-pause text-sm' : 'fa-solid fa-play text-sm';
+    ui.bar.style.width = (ui.total > 0 && t > 0) ? Math.min(100, (t / ui.total) * 100) + '%' : '0%';
+    ui.timeEl.textContent = fmtAudioTime(t > 0 ? t : ui.total);
+}
+
+function bindAudioPlayer(msgDiv, msgId, msg) {
+    const wrap = msgDiv.querySelector(`[data-audio-msg="${msgId}"]`);
+    if (!wrap) return;
+    const btn = wrap.querySelector('.audio-play-btn');
+
+    let player = audioPlayers.get(msgId);
+    if (!player) {
+        player = { audio: null, ui: null };
+        audioPlayers.set(msgId, player);
+    }
+    // Liste yeniden çizilince arayüz elemanları değişir, çalan ses varsa yeni balona bağla
+    player.ui = {
+        icon: btn.querySelector('i'),
+        bar: wrap.querySelector('.audio-progress'),
+        timeEl: wrap.querySelector('.audio-time'),
+        total: Math.max(0, Math.round(Number(msg.audioDuration) || 0))
+    };
+    paintAudio(player);
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (selectionMode) return;
+        if (!msg.audio) { showToast('Sesli mesaj bulunamadı'); return; }
+
+        if (currentPlayingPlayer && currentPlayingPlayer !== player && currentPlayingPlayer.audio) {
+            currentPlayingPlayer.audio.pause();
+        }
+
+        if (!player.audio) {
+            const a = new Audio(msg.audio);
+            a.addEventListener('timeupdate', () => paintAudio(player));
+            a.addEventListener('play', () => paintAudio(player));
+            a.addEventListener('pause', () => paintAudio(player));
+            a.addEventListener('ended', () => {
+                a.currentTime = 0;
+                paintAudio(player);
+                if (currentPlayingPlayer === player) currentPlayingPlayer = null;
+            });
+            player.audio = a;
+        }
+
+        if (player.audio.paused) {
+            player.audio.play().catch(() => showToast('Ses oynatılamadı'));
+            currentPlayingPlayer = player;
+        } else {
+            player.audio.pause();
+        }
+    });
+}
+// Boşluğa ya da sağ üstteki üç noktaya dokununca klavye kapanmasın
+// (klavye geri tuşuyla kapandıysa kutunun odağı da bırakılır, boşluğa dokununca tekrar açılmaz)
+(function keepKeyboardOpen() {
+    const vv = window.visualViewport;
+    let maxH = vv ? vv.height : window.innerHeight;
+    const keyboardOpen = () => (vv ? (maxH - vv.height) > 120 : true);
+
+    // Uygulama arka plana gidip dönerken ekran boyutu geçici oynar, bu sırada kutuyu bırakma
+    document.addEventListener('visibilitychange', () => {
+        window.__auraIgnoreResizeUntil = Date.now() + 2000;
+    });
+    
+
+    // Mesaja basılı tutulurken odak kaybolmaya çalışırsa hemen geri ver (klavye kapanıp açılmasın)
+    let refocusing = false;
+    messageInput.addEventListener('blur', () => {
+        if (refocusing) return;
+        if ((window.__auraKeepFocusUntil || 0) > Date.now()) {
+            refocusing = true;
+            messageInput.focus({ preventScroll: true });
+            setTimeout(() => { refocusing = false; }, 400);
+        }
+    });
+
+    if (vv) {
+        vv.addEventListener('resize', () => {
+            if (vv.height > maxH) maxH = vv.height;
+         if ((window.__auraKeepFocusUntil || 0) > Date.now()) return;
+       if (Date.now() < (window.__auraIgnoreResizeUntil || 0)) return;
+            if (!keyboardOpen() && document.activeElement === messageInput) messageInput.blur();
+        });
+    }
+
+    const keepFocus = (e) => {
+        if (document.activeElement === messageInput && keyboardOpen()) e.preventDefault();
+    };
+    messageContainer.addEventListener('mousedown', keepFocus);
+    const menuBtn = document.getElementById('chat-menu-btn');
+    if (menuBtn) menuBtn.addEventListener('mousedown', keepFocus);
+})();
+// İşaretleme editörü geri tuşunu bizim sistemle paylaşsın, kapanınca klavye geri gelsin
+window.isrtPushBack = pushBackState;
+window.isrtPopBack = popBackState;
+
+
+window.openLocation = function (lat, lng) {
+    window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
+};
+
+async function sendCurrentLocation() {
+    if (!currentUser || !currentChatId) return;
+    const chatIdAtStart = currentChatId;
+    const replyPayload = consumeReplyPayload();
+    showToast('Konum alınıyor...', 4000);
+
+    try {
+        const Geo = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Geolocation;
+        let pos;
+        if (Geo) {
+            pos = await Geo.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 });
+        } else {
+            pos = await new Promise((resolve, reject) => {
+                if (!navigator.geolocation) { reject(new Error('Bu cihaz konumu desteklemiyor')); return; }
+                navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000 });
+            });
+        }
+
+        if (currentChatId !== chatIdAtStart) return;
+
+        await addDoc(collection(db, "chats", chatIdAtStart, "messages"), {
+            type: 'location',
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            text: '',
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false,
+            ...(replyPayload ? { replyTo: replyPayload } : {})
+        });
+
+        await updateChatSummaries('📍 Konum');
+        pushToGroupMembers("📍 Konum gönderdi");
+
+        if (chatIdAtStart !== 'global' && currentOtherUid) {
+            sendPushToUser(currentOtherUid, `${currentUser.name}`, "📍 Konum gönderdi", {
+                chatId: chatIdAtStart,
+                otherUid: currentUser.uid,
+                otherName: currentUser.name
+            });
+        }
+
+        scrollToBottom();
+    } catch (err) {
+        showToast('Konum alınamadı: ' + ((err && err.message) ? err.message : 'izni ve GPS\'i kontrol et'), 3500);
+    }
+}
+
+// ------------------------------------------
+// GRUP YARDIMCILARI
+// ------------------------------------------
+function toggleCallButtonsForGroup(isGroup) {
+    ['voice-call-btn', 'video-call-btn'].forEach((id) => {
+        const el = document.getElementById(id);
+      if (el) el.style.display = ''; // grupta da sesli/görüntülü arama açık
+    });
+}
+
+function isGroupChat(chatId) {
+    if (window.__aurachatGroupIds && window.__aurachatGroupIds.has(chatId)) return true;
+    const s = chatSessions.get(chatId);
+    return !!(s && s.isGroup);
+}
+
+async function getGroupData(chatId) {
+    const s = chatSessions.get(chatId);
+    if (s && s.groupData) return s.groupData;
+    const snap = await getDoc(doc(db, "groups", chatId));
+    return snap.exists() ? snap.data() : null;
+}
+
+// Grupta her üyenin liste özetini günceller (son mesaj + okunmamış sayacı)
+async function updateGroupSummaries(lastMessageText) {
+    if (!currentUser || !currentChatId) return;
+    const groupId = currentChatId;
+
+    let gd = null;
+    try {
+        gd = await getGroupData(groupId);
+    } catch (err) {
+        showToast('Grup bilgisi okunamadı: ' + (err.message || err), 4000);
+        return;
+    }
+    if (!gd) {
+        showToast('Grup bulunamadı', 3000);
+        return;
+    }
+
+    const results = await Promise.allSettled((gd.members || []).map((memberUid) => setDoc(doc(db, "users", memberUid, "chats", groupId), {
+        isGroup: true,
+        groupName: gd.name,
+        lastMessage: lastMessageText,
+        lastMessageTime: serverTimestamp(),
+        lastSenderUid: currentUser.uid,
+        lastSenderName: currentUser.name,
+        lastMessageRead: false,
+        unreadCount: memberUid === currentUser.uid ? 0 : increment(1),
+        updatedAt: serverTimestamp()
+    }, { merge: true })));
+
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length) {
+        const reason = failed[0].reason;
+        showToast(`Liste güncellenemedi (${failed.length} üye): ` + ((reason && reason.message) || reason), 6000);
+    }
+}
+
+// Grup mesajında gönderen hariç herkese bildirim
+async function pushToGroupMembers(bodyText) {
+if (!currentChatId || !isGroupChat(currentChatId) || !currentUser) return;
+    const groupId = currentChatId;
+    try {
+        const gd = await getGroupData(groupId);
+        if (!gd) return;
+        (gd.members || []).forEach((memberUid) => {
+            if (memberUid === currentUser.uid) return;
+            sendPushToUser(memberUid, gd.name || 'Grup', `${currentUser.name}: ${bodyText}`, {
+                chatId: groupId,
+                otherUid: groupId,
+                otherName: gd.name || 'Grup'
+            });
+        });
+    } catch (err) {
+        console.warn("Grup bildirimi gönderilemedi:", err);
+    }
+}
+
+export async function leaveGroup(groupId) {
+    if (!currentUser || !groupId) return;
+
+    // Ayrılmadan ÖNCE (hâlâ üyeyken): gruba "ayrıldı" mesajı yaz, diğer üyelerin listesini ve bildirimini güncelle
+    try {
+        const gd = await getGroupData(groupId);
+        if (gd) {
+            const leaveText = `${currentUser.name} gruptan ayrıldı`;
+
+            await addDoc(collection(db, "chats", groupId, "messages"), {
+                type: 'system',
+                text: leaveText,
+                senderUid: currentUser.uid,
+                senderName: currentUser.name,
+                createdAt: serverTimestamp(),
+                read: false
+            });
+
+            const others = (gd.members || []).filter((uid) => uid !== currentUser.uid);
+
+            await Promise.allSettled(others.map((memberUid) => setDoc(doc(db, "users", memberUid, "chats", groupId), {
+                isGroup: true,
+                groupName: gd.name,
+                lastMessage: leaveText,
+                lastMessageTime: serverTimestamp(),
+                lastSenderUid: currentUser.uid,
+                lastSenderName: '',
+                lastMessageRead: false,
+                unreadCount: increment(1),
+                updatedAt: serverTimestamp()
+            }, { merge: true })));
+
+            others.forEach((memberUid) => {
+                sendPushToUser(memberUid, gd.name || 'Grup', leaveText, {
+                    chatId: groupId,
+                    otherUid: groupId,
+                    otherName: gd.name || 'Grup'
+                });
+            });
+        }
+    } catch (err) {
+        console.warn("Ayrılma mesajı yazılamadı:", err);
+    }
+
+    const session = chatSessions.get(groupId);
+    if (session) {
+   if (session.unsubscribeMessages) session.unsubscribeMessages();
+        if (session.unsubscribeChatDoc) session.unsubscribeChatDoc();
+        if (session.unsubscribeGroupDoc) session.unsubscribeGroupDoc();
+        chatSessions.delete(groupId);
+    }
+
+    // Yönetici çıkıyorsa ve başka yönetici kalmıyorsa, kalan ilk üyeyi yönetici yap
+    const groupUpdate = { members: arrayRemove(currentUser.uid) };
+    try {
+        const gd2 = await getGroupData(groupId);
+        if (gd2) {
+            const curAdmins = (Array.isArray(gd2.admins) && gd2.admins.length) ? gd2.admins : (gd2.createdBy ? [gd2.createdBy] : []);
+            if (curAdmins.includes(currentUser.uid)) {
+                const remainingMembers = (gd2.members || []).filter((u) => u !== currentUser.uid);
+                let nextAdmins = curAdmins.filter((u) => u !== currentUser.uid && remainingMembers.includes(u));
+                if (!nextAdmins.length && remainingMembers.length) nextAdmins = [remainingMembers[0]];
+                groupUpdate.admins = nextAdmins;
+            }
+        }
+    } catch (e) {}
+    await updateDoc(doc(db, "groups", groupId), groupUpdate);
+    await deleteDoc(doc(db, "users", currentUser.uid, "chats", groupId));
+    await deleteChatDiskCache(groupId);
+    if (window.__aurachatGroupIds) window.__aurachatGroupIds.delete(groupId);
+
+    if (currentChatId === groupId) {
+        const wasMobile = window.innerWidth < 1024;
+        doCloseChatView();
+        if (wasMobile) popBackState();
+    }
+}
+
+function groupMessageReadByAll(msg) {
+    const s = chatSessions.get(currentChatId);
+    const members = s && s.groupData && Array.isArray(s.groupData.members) ? s.groupData.members : [];
+    const readBy = Array.isArray(msg.readBy) ? msg.readBy : [];
+    const others = members.filter((uid) => uid !== msg.senderUid);
+    return others.length > 0 && others.every((uid) => readBy.includes(uid));
+}
