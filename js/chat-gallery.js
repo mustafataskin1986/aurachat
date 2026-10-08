@@ -193,7 +193,7 @@ export function mountGallery(host, onPick, onSelect) {
 
     root = document.createElement('div');
     root.className = 'aura-gal-grid';
-    root.style.cssText = 'flex:1;min-height:0;overflow-y:hidden;overflow-x:hidden;position:relative;margin-top:10px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;';
+    root.style.cssText = 'flex:1;min-height:0;overflow-y:hidden;overflow-x:hidden;position:relative;margin-top:6px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;';
 
     gridEl = document.createElement('div');
     gridEl.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:2px;';
