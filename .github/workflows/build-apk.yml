@@ -810,7 +810,7 @@ jobs:
                           o.put("text", text);
                           o.put("raw", body);
                           o.put("sender", sender);
-                          String suid = group ? "" : d.get("senderUid");
+                          String suid = d.get("senderUid");
                           o.put("senderUid", suid == null ? "" : suid);
                           o.put("t", System.currentTimeMillis());
                           o.put("me", false);
@@ -836,7 +836,8 @@ jobs:
                       m.put("msgType", d.get("msgType") == null ? "" : d.get("msgType"));
                       sp(c).edit().putString("meta_" + chatId, m.toString()).apply();
 
-                      if (!group) ensureAvatar(c, chatId);
+                      ensureAvatar(c, chatId);
+                      if (group) ensureAvatarFor(c, chatId, d.get("senderUid"));
                       post(c, chatId, false);
                   } catch (Exception e) {}
               }
@@ -909,7 +910,7 @@ jobs:
                           style.setGroupConversation(true);
                       }
 
-                      Bitmap avatar = group ? null : cachedAvatar(c, chatId);
+                      Bitmap avatar = cachedAvatar(c, chatId);
                       Map<String, Person> people = new HashMap<>();
                       long lastT = System.currentTimeMillis();
                       String lastText = "";
@@ -928,10 +929,11 @@ jobs:
                               if (key.isEmpty()) key = "n:" + name;
                               Person p = people.get(key);
                               if (p == null) {
+                                  Bitmap personAv = group ? cachedAvatar(c, chatId + "|" + key) : avatar;
                                   p = new Person.Builder()
                                           .setName(name)
                                           .setKey(key)
-                                          .setIcon(IconCompat.createWithBitmap(avatar != null ? avatar : initialsBitmap(name, 128)))
+                                          .setIcon(IconCompat.createWithBitmap(personAv != null ? personAv : initialsBitmap(name, 128)))
                                           .build();
                                   people.put(key, p);
                               }
@@ -1125,11 +1127,14 @@ jobs:
               }
 
               // Önbellekte yoksa ya da 12 saatten eskiyse sunucudan indirir (kısa zaman aşımı)
-              static void ensureAvatar(Context c, String chatId) {
+              static void ensureAvatar(Context c, String chatId) { ensureAvatarFor(c, chatId, null); }
+
+              static void ensureAvatarFor(Context c, String chatId, String uid) {
                   try {
-                      File f = avatarFile(c, chatId);
+                      String key = (uid == null || uid.isEmpty()) ? chatId : chatId + "|" + uid;
+                      File f = avatarFile(c, key);
                       if (f.exists() && System.currentTimeMillis() - f.lastModified() < 12L * 3600 * 1000) return;
-                      String resp = callServerRaw(c, "avatar", chatId, null, 3500);
+                      String resp = callServerRaw(c, "avatar", chatId, (uid == null || uid.isEmpty()) ? null : uid, 3500);
                       if (resp == null) return;
                       String av = new JSONObject(resp).optString("avatar", "");
                       if (av.isEmpty()) return;
