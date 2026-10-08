@@ -1002,7 +1002,7 @@ jobs:
                       Intent i = new Intent(c, MainActivity.class).setAction(Intent.ACTION_VIEW);
                       ShortcutInfoCompat sc = new ShortcutInfoCompat.Builder(c, sid)
                               .setShortLabel(title)
-                              .                              .setLongLived(true)
+                              .setLongLived(true)
                               .setCategories(new java.util.HashSet<String>(java.util.Arrays.asList("com.aurachat.sharetarget")))
                               .setIntent(i)
                               .setPerson(target)
