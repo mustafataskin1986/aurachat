@@ -3667,6 +3667,7 @@ async function forwardImageTo(targetUser) {
 // Kişi seçme ekranı "ilet" ekranıyla aynı.
 // ------------------------------------------
 let pendingShare = null; // File[]
+let pendingShareTarget = ''; // Paylaş menüsünde doğrudan seçilen sohbetin kimliği
 let shareCheckTimer = null;
 
 function stopShareCheck() {
@@ -3689,12 +3690,35 @@ function consumeSharedImages() {
         if (raw === 'busy') return { state: 'busy' };
         const list = JSON.parse(raw);
         if (!Array.isArray(list) || !list.length) return { state: 'none' };
-        return { state: 'ok', files: list.map((d, i) => dataUrlToFile(d, `shared_${i}.jpg`)) };
+                let target = '';
+        try { target = (window.AuraShare.target && window.AuraShare.target()) || ''; } catch (e) {}
+        return { state: 'ok', files: list.map((d, i) => dataUrlToFile(d, `shared_${i}.jpg`)), target: target };
     } catch (e) {
         return { state: 'none' };
     }
 }
+// Paylaş menüsünde doğrudan bir sohbete dokunulduysa o sohbetin hedef nesnesi
+function resolveShareTarget(chatId) {
+    if (!chatId || !currentUser) return null;
+    if (window.__aurachatGroupIds && window.__aurachatGroupIds.has(chatId)) {
+        const d = window.__aurachatMyChats && window.__aurachatMyChats.get(chatId);
+        return { isGroup: true, groupId: chatId, name: (d && d.groupName) || 'Grup' };
+    }
+    const otherUid = chatId.split('_').find((p) => p !== currentUser.uid);
+    const um = window.__aurachatUsers;
+    if (!otherUid || !um) return null;
+    return Array.from(um.values()).find((u) => u.uid === otherUid) || null;
+}
 
+// Sohbeti açar, paylaşılan resimleri yazı kutusunun üstüne koyar; kullanıcı istersen not yazıp gönderir
+async function openChatWithSharedImages(target) {
+    const files = pendingShare;
+    pendingShare = null;
+    if (!files || !files.length) return;
+    await selectChat(target);
+    composer.addImages(files);
+    showToast('Resimler hazır, göndermek için yeşil düğmeye bas', 3000);
+}
 function checkPendingShare() {
     if (shareCheckTimer) return;
     let tries = 0;
@@ -3706,11 +3730,15 @@ function checkPendingShare() {
             const res = consumeSharedImages();
             if (res.state === 'none') { stopShareCheck(); return; }
             if (res.state === 'busy') return;
-            pendingShare = res.files;
+                        pendingShare = res.files;
+            pendingShareTarget = res.target || '';
         }
         // Kişi listesi yüklenene kadar bekle
         if (!window.__aurachatUsers || window.__aurachatUsers.size === 0) return;
-        stopShareCheck();
+                stopShareCheck();
+        const directTarget = resolveShareTarget(pendingShareTarget);
+        pendingShareTarget = '';
+        if (directTarget) { openChatWithSharedImages(directTarget); return; }
         openForwardPicker();
     }, 500);
 }
