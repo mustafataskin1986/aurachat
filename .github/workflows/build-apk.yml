@@ -1413,7 +1413,7 @@ jobs:
             if ! grep -q "ShareSlot0" "$MANIFEST_PATH"; then
               ALIASES=""
               for n in 0 1 2 3 4 5; do
-                ALIASES="$ALIASES    <activity-alias android:name=\".ShareSlot$n\" android:targetActivity=\".MainActivity\" android:exported=\"true\" android:label=\"AuraChat\">\n        <intent-filter>\n            <action android:name=\"android.intent.action.SEND\" />\n            <category android:name=\"android.intent.category.DEFAULT\" />\n            <data android:mimeType=\"image/*\" />\n        </intent-filter>\n    </activity-alias>\n"
+                ALIASES="$ALIASES    <activity-alias android:name=\".ShareSlot$n\" android:targetActivity=\".MainActivity\" android:exported=\"true\" android:label=\"AuraChat\" />\n"
               done
               sed -i "s#</application>#${ALIASES}</application>#" "$MANIFEST_PATH"
             fi
@@ -1895,4 +1895,4 @@ jobs:
               echo "SILINEMEDI: $id"
             fi
           done
-          exit 0 
+          exit 0
