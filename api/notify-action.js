@@ -114,6 +114,14 @@ export default async function handler(req, res) {
 
     const msgText = typeof text === 'string' ? text.trim().slice(0, MAX_TEXT) : '';
     if (!msgText) return res.status(400).json({ error: 'Boş mesaj.' });
+        if (!isGroup) {
+      const oSnap = await db.doc(`users/${otherUid}`).get();
+      const oBlocked = oSnap.exists && Array.isArray(oSnap.data().blockedUids) ? oSnap.data().blockedUids : [];
+      const myBlocked = Array.isArray(me.blockedUids) ? me.blockedUids : [];
+      if (oBlocked.includes(uid) || myBlocked.includes(otherUid)) {
+        return res.status(403).json({ error: 'Engelli.' });
+      }
+    }
 
     const msgRef = await db.collection(`chats/${chatId}/messages`).add({
       text: msgText,
