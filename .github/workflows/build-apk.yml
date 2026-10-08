@@ -193,6 +193,7 @@ jobs:
               private volatile String pendingSharedJson = null;
               private volatile boolean shareBusy = false;
                             private volatile String pendingShareTarget = "";
+                                          private volatile String pendingShareDiag = "";
               private volatile String launchChatJson = "";
 
             // JS, sohbet temasının rengini bildirir; seçim tutamakları bu renge boyanır
@@ -350,8 +351,14 @@ jobs:
                   @JavascriptInterface
                   public String target() {
                       String t = pendingShareTarget;
-                      pendingShareTarget = "";
+                                            pendingShareTarget = "";
                       return t == null ? "" : t;
+                  }
+
+                  // Geçici: paylaşımla telefonun hangi bilgileri verdiğini gösterir
+                  @JavascriptInterface
+                  public String diag() {
+                      return pendingShareDiag == null ? "" : pendingShareDiag;
                   }
               }
 
@@ -377,8 +384,22 @@ jobs:
                   if (intent == null) return;
                   String action = intent.getAction();
                   if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) return;
-                                    String scId = intent.getStringExtra("android.intent.extra.shortcut.ID");
+                                         String scId = intent.getStringExtra("android.intent.extra.shortcut.ID");
+                  String scKeys = "";
+                  try {
+                      android.os.Bundle ex = intent.getExtras();
+                      if (ex != null) {
+                          scKeys = ex.keySet().toString();
+                          if (scId == null) {
+                              for (String k : ex.keySet()) {
+                                  Object v = ex.get(k);
+                                  if (v instanceof String && ((String) v).startsWith("chat_")) { scId = (String) v; break; }
+                              }
+                          }
+                      }
+                  } catch (Throwable t) {}
                   pendingShareTarget = (scId != null && scId.startsWith("chat_")) ? scId.substring(5) : "";
+                  pendingShareDiag = "id=" + scId + " anahtarlar=" + scKeys;
 
                   final ArrayList<Uri> uris = new ArrayList<>();
                   if (Intent.ACTION_SEND.equals(action)) {
