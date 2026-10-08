@@ -3243,21 +3243,36 @@ let attachGestureDone = false;
 function expandAttachMenu() {
     if (!attachMenuEl || attachExpanded || !galleryAvailable()) return;
     const row = messageInput.parentElement;
-    const cs = getComputedStyle(messageContainer);
-    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-    const total = messageContainer.clientHeight + attachMenuEl.offsetHeight + row.offsetHeight - pad;
+    const total = messageContainer.clientHeight + attachMenuEl.offsetHeight + row.offsetHeight;
     attachExpanded = true;
     row.style.display = 'none';
+    messageContainer.style.paddingTop = '0px';
+    messageContainer.style.paddingBottom = '0px';
     attachMenuEl.style.transition = 'height 0.2s ease-out';
     attachMenuEl.style.height = Math.max(attachMenuTargetHeight, Math.round(total)) + 'px';
     setGalleryExpanded(true);
     setTimeout(() => { if (attachMenuEl) attachMenuEl.style.transition = ''; }, 230);
+    // Geri tuşu önce tam ekrandan yarım boya döndürsün
+    attachExpandEntry = true;
+    pushBackState(collapseFromBack);
 }
 
-function collapseAttachMenu() {
+let attachExpandEntry = false;
+function collapseFromBack() {
+    attachExpandEntry = false;
+    collapseAttachMenu(true);
+}
+
+function collapseAttachMenu(fromBack) {
     if (!attachMenuEl || !attachExpanded) return;
+    if (attachExpandEntry && fromBack !== true) {
+        attachExpandEntry = false;
+        popBackState();
+    }
     attachExpanded = false;
     messageInput.parentElement.style.display = '';
+    messageContainer.style.paddingTop = '';
+    messageContainer.style.paddingBottom = '';
     setGalleryExpanded(false);
     attachMenuEl.style.transition = 'height 0.2s ease-out';
     attachMenuEl.style.height = attachMenuTargetHeight + 'px';
@@ -3269,6 +3284,8 @@ function closeAttachMenuFromBack(instant) {
     if (attachExpanded) {
         attachExpanded = false;
         messageInput.parentElement.style.display = '';
+        messageContainer.style.paddingTop = '';
+        messageContainer.style.paddingBottom = '';
         instant = true;
     }
     try { closeGallery(); } catch (e) {}
@@ -3395,7 +3412,9 @@ if (kbHeight > 100) window.__auraPopupH = kbHeight;
 
 function closeAttachMenu(instant) {
     if (!attachMenuOpen) return;
+    const hadExpandEntry = attachExpandEntry;
     closeAttachMenuFromBack(instant);
+    if (hadExpandEntry) { attachExpandEntry = false; popBackState(); }
     popBackState();
 }
 
