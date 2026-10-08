@@ -393,7 +393,6 @@ jobs:
                   try {
                       android.os.Bundle ex = intent.getExtras();
                       if (ex != null) {
-                          scKeys = ex.keySet().toString();
                           if (scId == null) {
                               for (String k : ex.keySet()) {
                                   Object v = ex.get(k);
@@ -403,7 +402,16 @@ jobs:
                       }
                   } catch (Throwable t) {}
                   pendingShareTarget = (scId != null && scId.startsWith("chat_")) ? scId.substring(5) : "";
-                  pendingShareDiag = "id=" + scId + " anahtarlar=" + scKeys;
+                  StringBuilder kb = new StringBuilder();
+for (String k : ex.keySet()) {
+    Object v = ex.get(k);
+    String vs = String.valueOf(v);
+    if (vs.length() > 40) vs = vs.substring(0, 40);
+    kb.append(k).append("=").append(vs).append("; ");
+    if (v instanceof String && ((String) v).startsWith("chat_")) scId = (String) v;
+}
+scKeys = kb.toString();
+pendingShareDiag = "id=" + scId + " bilesen=" + intent.getComponent() + " kategori=" + intent.getCategories() + " anahtarlar=" + scKeys;
 
                   final ArrayList<Uri> uris = new ArrayList<>();
                   if (Intent.ACTION_SEND.equals(action)) {
@@ -1837,11 +1845,19 @@ jobs:
           retention-days: 1
 
       - name: Eski APK Çıktılarını Temizle
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set +e
+          echo "Mevcut çıktılar:"
+          gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | "\(.id) run=\(.workflow_run.id) \(.name)"' | head -n 20
           gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
             --jq '.artifacts[] | select(.workflow_run.id != ${{ github.run_id }}) | .id' | while read id; do
-            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" > /dev/null && echo "silindi: $id"
+            if gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"; then
+              echo "silindi: $id"
+            else
+              echo "SILINEMEDI: $id"
+            fi
           done
+          exit 0
