@@ -1879,20 +1879,18 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
 
-      - name: Eski APK Çıktılarını Temizle
+      - name: Eski Çıktıları ve Kayıtları Temizle
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
-          echo "Mevcut çıktılar:"
-          gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
-            --jq '.artifacts[] | "\(.id) run=\(.workflow_run.id) \(.name)"' | head -n 20
           gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
             --jq '.artifacts[] | select(.workflow_run.id != ${{ github.run_id }}) | .id' | while read id; do
-            if gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"; then
-              echo "silindi: $id"
-            else
-              echo "SILINEMEDI: $id"
-            fi
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" > /dev/null || echo "SILINEMEDI artifact: $id"
+          done
+          gh api --paginate "repos/${{ github.repository }}/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | select(.status=="completed") | .id' \
+            | grep -v "^${{ github.run_id }}$" | tail -n +3 | while read id; do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$id" > /dev/null || echo "SILINEMEDI kayit: $id"
           done
           exit 0
