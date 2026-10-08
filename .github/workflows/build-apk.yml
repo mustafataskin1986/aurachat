@@ -192,6 +192,7 @@ jobs:
 
               private volatile String pendingSharedJson = null;
               private volatile boolean shareBusy = false;
+                            private volatile String pendingShareTarget = "";
               private volatile String launchChatJson = "";
 
             // JS, sohbet temasının rengini bildirir; seçim tutamakları bu renge boyanır
@@ -207,6 +208,21 @@ jobs:
                   @JavascriptInterface
                   public void clearChat(String chatId) {
                       AuraNotif.clearChat(getApplicationContext(), chatId);
+                  }
+                                    // Paylaş menüsünde son sohbetler kişi olarak çıksın (Direct Share)
+                  @JavascriptInterface
+                  public void publishShortcut(String chatId, String title, String avatarDataUrl) {
+                      try {
+                          Bitmap bmp = null;
+                          if (avatarDataUrl != null && avatarDataUrl.indexOf(",") > 0) {
+                              byte[] raw = android.util.Base64.decode(avatarDataUrl.substring(avatarDataUrl.indexOf(",") + 1), android.util.Base64.DEFAULT);
+                              bmp = BitmapFactory.decodeByteArray(raw, 0, raw.length);
+                              if (bmp != null && (bmp.getWidth() > 192 || bmp.getHeight() > 192)) {
+                                  bmp = Bitmap.createScaledBitmap(bmp, 192, 192, true);
+                              }
+                          }
+                          AuraNotif.publishShortcut(getApplicationContext(), "chat_" + chatId, title == null ? "" : title, bmp);
+                      } catch (Throwable t) {}
                   }
               }
 
@@ -321,13 +337,21 @@ jobs:
               }
 
               // JS buradan bekleyen paylaşımı alır: "" = yok, "busy" = hazırlanıyor, aksi halde resim listesi (JSON)
-              public class ShareBridge {
+                            public class ShareBridge {
                   @JavascriptInterface
                   public String consume() {
                       if (shareBusy) return "busy";
                       String s = pendingSharedJson;
                       pendingSharedJson = null;
                       return s == null ? "" : s;
+                  }
+
+                  // Paylaşım menüsünde doğrudan bir sohbete dokunulduysa o sohbetin kimliği (yoksa "")
+                  @JavascriptInterface
+                  public String target() {
+                      String t = pendingShareTarget;
+                      pendingShareTarget = "";
+                      return t == null ? "" : t;
                   }
               }
 
@@ -353,6 +377,8 @@ jobs:
                   if (intent == null) return;
                   String action = intent.getAction();
                   if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) return;
+                                    String scId = intent.getStringExtra("android.intent.extra.shortcut.ID");
+                  pendingShareTarget = (scId != null && scId.startsWith("chat_")) ? scId.substring(5) : "";
 
                   final ArrayList<Uri> uris = new ArrayList<>();
                   if (Intent.ACTION_SEND.equals(action)) {
@@ -969,14 +995,15 @@ jobs:
                   } catch (Exception e) {}
               }
 
-              private static void publishShortcut(Context c, String sid, String title, Bitmap avatar) {
+                            static void publishShortcut(Context c, String sid, String title, Bitmap avatar) {
                   try {
                       IconCompat icon = IconCompat.createWithBitmap(avatar != null ? avatar : initialsBitmap(title, 128));
                       Person target = new Person.Builder().setName(title).setKey(sid).setIcon(icon).build();
                       Intent i = new Intent(c, MainActivity.class).setAction(Intent.ACTION_VIEW);
                       ShortcutInfoCompat sc = new ShortcutInfoCompat.Builder(c, sid)
                               .setShortLabel(title)
-                              .setLongLived(true)
+                              .                              .setLongLived(true)
+                              .setCategories(new java.util.HashSet<String>(java.util.Arrays.asList("com.aurachat.sharetarget")))
                               .setIntent(i)
                               .setPerson(target)
                               .setIcon(icon)
@@ -1311,6 +1338,12 @@ jobs:
             if ! grep -q "android.intent.action.SEND" "$MANIFEST_PATH"; then
               sed -i 's#</activity>#    <intent-filter>\n        <action android:name="android.intent.action.SEND" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <data android:mimeType="image/*" />\n    </intent-filter>\n    <intent-filter>\n        <action android:name="android.intent.action.SEND_MULTIPLE" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <data android:mimeType="image/*" />\n    </intent-filter>\n</activity>#' "$MANIFEST_PATH"
             fi
+                        # Direct Share: Paylaş menüsünde son sohbetler kişi olarak görünsün
+            if ! grep -q "android.app.shortcuts" "$MANIFEST_PATH"; then
+              sed -i 's#</activity>#    <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />\n</activity>#' "$MANIFEST_PATH"
+            fi
+            mkdir -p android/app/src/main/res/xml
+            printf '<?xml version="1.0" encoding="utf-8"?>\n<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">\n    <share-target android:targetClass="com.aurachat.app.MainActivity">\n        <data android:mimeType="image/*" />\n        <category android:name="com.aurachat.sharetarget" />\n    </share-target>\n</shortcuts>\n' > android/app/src/main/res/xml/shortcuts.xml
             add_perm "android.permission.ACCESS_FINE_LOCATION"
             add_perm "android.permission.ACCESS_COARSE_LOCATION"
           fi
