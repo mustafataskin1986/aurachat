@@ -163,7 +163,7 @@ export function setupComposer() {
     display: flex;
     align-items: center;
     gap: 18px;
-    margin: 0 8px 4px 0 !important;
+        margin: 0 8px 0 0 !important;
 }
 .aura-composer.aura-multi > .aura-actions {
     grid-row: 3;
