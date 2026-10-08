@@ -66,7 +66,7 @@ import { watchVoiceCallForChat, startVoiceCall } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
 import "./image-viewer.js";
 import { setupComposer } from "./chat-composer.js";
-import { mountGallery, openGallery, closeGallery, setGalleryExpanded, galleryAvailable } from "./chat-gallery.js";
+import { mountGallery, openGallery, closeGallery, setGalleryExpanded, galleryAvailable, gallerySelectedCount } from "./chat-gallery.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
@@ -3140,7 +3140,7 @@ function ensureAttachMenu() {
 el.innerHTML = `
         <div class="aura-attach-inner" style="display:flex;flex-direction:column;height:100%;">
         <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5 flex-shrink-0"></div>
-        <div class="grid grid-cols-4 gap-x-3 px-3 pb-1 flex-shrink-0">
+        <div class="aura-attach-btns grid grid-cols-4 gap-x-3 px-3 pb-1 flex-shrink-0">
             <button type="button" data-attach="gallery" class="w-full flex flex-col items-center gap-2 active:scale-95 transition">
                 <span class="w-full h-14 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
                     <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#3b9eff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
@@ -3168,7 +3168,7 @@ el.innerHTML = `
             composer.addImages(files);
             closeAttachMenu(true);
             messageInput.focus();
-        });
+        }, (count) => applySelectionLayout(count));
     }
 
     el.addEventListener('click', (e) => {
@@ -3205,7 +3205,7 @@ el.innerHTML = `
             return;
         }
         const dy = Math.max(0, raw);
-        el.style.height = Math.max(0, attachMenuTargetHeight - dy) + 'px';
+        el.style.height = Math.max(0, attachRestHeight() - dy) + 'px';
     }, { passive: true });
 
     el.addEventListener('touchend', (e) => {
@@ -3219,7 +3219,7 @@ el.innerHTML = `
             closeAttachMenu();
         } else {
             el.style.transition = 'height 0.15s ease-out';
-            el.style.height = attachMenuTargetHeight + 'px';
+            el.style.height = attachRestHeight() + 'px';
             setTimeout(() => { el.style.transition = ''; }, 160);
         }
     });
@@ -3228,7 +3228,7 @@ el.innerHTML = `
         attachDragStartY = null;
         if (attachExpanded) return;
         el.style.transition = 'height 0.15s ease-out';
-        el.style.height = attachMenuTargetHeight + 'px';
+        el.style.height = attachRestHeight() + 'px';
     });
 
     attachMenuEl = el;
@@ -3239,15 +3239,40 @@ let attachExpanded = false;
 let attachDragZone = 'top';
 let attachGestureDone = false;
 
-// Sohbetin alt kenarındaki mesajlar menü büyürken / küçülürken yerinde dursun
+// Menü büyürken / küçülürken arkadaki sohbet yerinde dursun (sadece "+" ile açılırken yukarı kalkar)
 function pinChatBottom(ms) {
-    const dist = messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight;
+    const keep = messageContainer.scrollTop;
     const t0 = performance.now();
     const step = () => {
-        messageContainer.scrollTop = Math.max(0, messageContainer.scrollHeight - messageContainer.clientHeight - dist);
+        messageContainer.scrollTop = keep;
         if (performance.now() - t0 < ms) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
+}
+
+// Resim seçilmediyse menü ilk boyunda, seçim başladıysa sayfanın ortasına kadar yükselir
+function attachRestHeight() {
+    if (galleryAvailable() && gallerySelectedCount() > 0) {
+        const mid = Math.round((window.__auraMaxVV || window.innerHeight) * 0.55);
+        return Math.max(attachMenuTargetHeight, mid);
+    }
+    return attachMenuTargetHeight;
+}
+
+function setAttachButtonsHidden(hide) {
+    if (!attachMenuEl) return;
+    const btns = attachMenuEl.querySelector('.aura-attach-btns');
+    if (btns) btns.style.display = hide ? 'none' : '';
+}
+
+function applySelectionLayout(count) {
+    if (!attachMenuEl || !attachMenuOpen) return;
+    setAttachButtonsHidden(count > 0 || attachExpanded);
+    if (attachExpanded) return;
+    pinChatBottom(260);
+    attachMenuEl.style.transition = 'height 0.2s ease-out';
+    attachMenuEl.style.height = attachRestHeight() + 'px';
+    setTimeout(() => { if (attachMenuEl && !attachExpanded) attachMenuEl.style.transition = ''; }, 230);
 }
 
 function clearExpandedLayout() {
@@ -3272,6 +3297,7 @@ function expandAttachMenu() {
     const total = messageContainer.clientHeight + attachMenuEl.offsetHeight + rowFull;
     attachExpanded = true;
     pinChatBottom(260);
+    setAttachButtonsHidden(true);
     row.style.display = 'none';
     messageContainer.style.paddingTop = '0px';
     messageContainer.style.paddingBottom = '0px';
@@ -3313,16 +3339,18 @@ function collapseAttachMenu(fromBack) {
     attachMenuEl.style.height = curH + 'px';
     void attachMenuEl.offsetHeight;
     setGalleryExpanded(false);
+    setAttachButtonsHidden(gallerySelectedCount() > 0);
     pinChatBottom(260);
     requestAnimationFrame(() => {
         attachMenuEl.style.transition = 'height 0.2s ease-out';
-        attachMenuEl.style.height = attachMenuTargetHeight + 'px';
+        attachMenuEl.style.height = attachRestHeight() + 'px';
     });
     setTimeout(() => { if (attachMenuEl) attachMenuEl.style.transition = ''; }, 260);
 }
 
 let attachMenuCloseTimer = null;
 function closeAttachMenuFromBack(instant) {
+    setAttachButtonsHidden(false);
     if (attachExpanded) {
         attachExpanded = false;
         clearExpandedLayout();
@@ -3445,6 +3473,7 @@ if (kbHeight > 100) window.__auraPopupH = kbHeight;
         menu.style.transition = '';
     }
     attachMenuOpen = true;
+    setAttachButtonsHidden(false);
     try { openGallery(); } catch (e) {}
     pushBackState(closeAttachMenuFromBack);
     if (wasNearBottom) scrollToBottom();
