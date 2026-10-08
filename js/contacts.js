@@ -360,6 +360,84 @@ export async function loadContacts() {
         btn.disabled = false;
     });
 
+    // ------------------------------------------
+    // BİLDİRİM İZNİ UYARISI: izin kapalıysa listenin üstünde şık bir kart, izin verilince kendiliğinden kalkar
+    // ------------------------------------------
+    let notifState = 'granted'; // 'granted' | 'prompt' | 'denied'
+    const notifBanner = document.createElement('div');
+    notifBanner.style.cssText = 'display:none;align-items:center;gap:12px;margin:10px 12px 4px;padding:12px 14px;border-radius:16px;background:linear-gradient(135deg,rgba(245,158,11,0.16),rgba(245,158,11,0.06));border:1px solid rgba(245,158,11,0.35);';
+    notifBanner.innerHTML = `
+        <div style="width:38px;height:38px;border-radius:9999px;background:rgba(245,158,11,0.2);color:#fbbf24;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;"><i class="fa-solid fa-bell-slash"></i></div>
+        <div style="flex:1;min-width:0;">
+            <p style="color:#fde68a;font-size:13px;font-weight:600;">Bildirimler kapalı</p>
+            <p data-notif-text style="color:#d6c9a5;font-size:11.5px;margin-top:2px;line-height:1.35;"></p>
+        </div>
+        <button type="button" data-notif-btn style="background:#f59e0b;color:#1f1300;font-size:12px;font-weight:700;padding:8px 16px;border-radius:9999px;flex-shrink:0;">Aç</button>
+    `;
+    const notifTextEl = notifBanner.querySelector('[data-notif-text]');
+    const notifBtnEl = notifBanner.querySelector('[data-notif-btn]');
+
+    function notifIsNative() {
+        const C = window.Capacitor;
+        return !!(C && typeof C.isNativePlatform === 'function' && C.isNativePlatform());
+    }
+
+    async function refreshNotifState() {
+        try {
+            if (notifIsNative()) {
+                const PN = window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+                if (!PN) { notifState = 'granted'; return; }
+                const p = await PN.checkPermissions();
+                notifState = p.receive === 'granted' ? 'granted' : (p.receive === 'denied' ? 'denied' : 'prompt');
+            } else if ('Notification' in window) {
+                notifState = Notification.permission === 'granted' ? 'granted' : (Notification.permission === 'denied' ? 'denied' : 'prompt');
+            } else {
+                notifState = 'granted'; // bildirim desteği olmayan ortamda uyarı gösterme
+            }
+        } catch (e) {
+            notifState = 'granted';
+        }
+        renderNotifBanner();
+    }
+
+    function renderNotifBanner() {
+        if (notifState === 'granted') { notifBanner.style.display = 'none'; return; }
+        notifBanner.style.display = 'flex';
+        if (notifState === 'prompt') {
+            notifTextEl.textContent = 'Yeni mesajları ve aramaları kaçırmamak için bildirimleri aç.';
+            notifBtnEl.style.display = '';
+        } else {
+            notifTextEl.textContent = 'Telefon Ayarları > Uygulamalar > AuraChat > Bildirimler yolundan izin ver.';
+            notifBtnEl.style.display = 'none';
+        }
+    }
+
+    notifBtnEl.addEventListener('click', async () => {
+        notifBtnEl.disabled = true;
+        try {
+            if (notifIsNative()) {
+                const PN = window.Capacitor.Plugins.PushNotifications;
+                await PN.requestPermissions();
+            } else if ('Notification' in window) {
+                await Notification.requestPermission();
+            }
+            await refreshNotifState();
+            if (notifState === 'granted' && window.initPushForUser && currentUser) {
+                window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
+            }
+        } catch (e) {
+            showToast('İzin istenemedi', 3000);
+        }
+        notifBtnEl.disabled = false;
+    });
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') refreshNotifState();
+    });
+    refreshNotifState();
+    setTimeout(refreshNotifState, 5000);
+    setTimeout(refreshNotifState, 15000);
+
     // Kullanıcı ayarlardan izin verip uygulamaya dönünce şerit kendiliğinden kalksın
     document.addEventListener('visibilitychange', async () => {
         if (document.visibilityState !== 'visible' || !ContactsPlugin || contactsPermissionGranted) return;
@@ -508,6 +586,7 @@ export async function loadContacts() {
     let allUsersById = new Map();
     window.__aurachatUsers = allUsersById; // ilet ekranı ve grup ekranları bu listeyi kullanıyor
     let myChats = new Map();
+    window.__aurachatMyChats = myChats; // ilet ekranı grupları buradan listeler
     let usersLoaded = false;
     let chatsLoaded = false;
     let listMounted = false;
@@ -537,6 +616,7 @@ export async function loadContacts() {
 
         if (!listMounted) {
             contactList.innerHTML = '';
+            contactList.appendChild(notifBanner);
             contactList.appendChild(permBanner);
             contactList.appendChild(dynamicListContainer);
             listMounted = true;
