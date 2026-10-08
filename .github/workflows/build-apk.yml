@@ -230,6 +230,134 @@ jobs:
                       } catch (Throwable t) {}
                   }
               }
+              public class GalleryBridge {
+                  private final java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(3);
+
+                  private String perm() {
+                      return Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_IMAGES : Manifest.permission.READ_EXTERNAL_STORAGE;
+                  }
+
+                  @JavascriptInterface
+                  public boolean has() {
+                      try {
+                          if (ContextCompat.checkSelfPermission(MainActivity.this, perm()) == PackageManager.PERMISSION_GRANTED) return true;
+                          if (Build.VERSION.SDK_INT >= 34 && ContextCompat.checkSelfPermission(MainActivity.this, "android.permission.READ_MEDIA_VISUAL_USER_SELECTED") == PackageManager.PERMISSION_GRANTED) return true;
+                      } catch (Throwable t) {}
+                      return false;
+                  }
+
+                  @JavascriptInterface
+                  public void ask() {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              ActivityCompat.requestPermissions(MainActivity.this, new String[]{ perm() }, 7001);
+                          }
+                      });
+                  }
+
+                  @JavascriptInterface
+                  public String list(int offset, int limit) {
+                      org.json.JSONArray arr = new org.json.JSONArray();
+                      try {
+                          android.net.Uri uri = android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                          String[] proj = new String[]{ android.provider.MediaStore.Images.Media._ID };
+                          android.database.Cursor cur;
+                          if (Build.VERSION.SDK_INT >= 26) {
+                              android.os.Bundle b = new android.os.Bundle();
+                              b.putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, limit);
+                              b.putInt(android.content.ContentResolver.QUERY_ARG_OFFSET, offset);
+                              b.putStringArray(android.content.ContentResolver.QUERY_ARG_SORT_COLUMNS, new String[]{ "date_added" });
+                              b.putInt(android.content.ContentResolver.QUERY_ARG_SORT_DIRECTION, android.content.ContentResolver.QUERY_SORT_DIRECTION_DESCENDING);
+                              cur = getContentResolver().query(uri, proj, b, null);
+                          } else {
+                              cur = getContentResolver().query(uri, proj, null, null, "date_added DESC LIMIT " + limit + " OFFSET " + offset);
+                          }
+                          if (cur != null) {
+                              while (cur.moveToNext()) arr.put(cur.getLong(0));
+                              cur.close();
+                          }
+                      } catch (Throwable t) {}
+                      return arr.toString();
+                  }
+
+                  private void deliver(final String js) {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try { MainActivity.this.bridge.getWebView().evaluateJavascript(js, null); } catch (Throwable t) {}
+                          }
+                      });
+                  }
+
+                  @JavascriptInterface
+                  public void thumbAsync(final long id, final int size) {
+                      pool.execute(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  android.net.Uri uri = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
+                                  Bitmap bmp;
+                                  if (Build.VERSION.SDK_INT >= 29) {
+                                      bmp = getContentResolver().loadThumbnail(uri, new android.util.Size(size, size), null);
+                                  } else {
+                                      bmp = android.provider.MediaStore.Images.Thumbnails.getThumbnail(getContentResolver(), id, android.provider.MediaStore.Images.Thumbnails.MINI_KIND, null);
+                                  }
+                                  if (bmp == null) return;
+                                  java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                                  bmp.compress(Bitmap.CompressFormat.JPEG, 72, bo);
+                                  String b64 = android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
+                                  deliver("window.__auraGalThumb&&window.__auraGalThumb(" + id + ",'data:image/jpeg;base64," + b64 + "')");
+                              } catch (Throwable t) {}
+                          }
+                      });
+                  }
+
+                  @JavascriptInterface
+                  public void fullAsync(final long id) {
+                      pool.execute(new Runnable() {
+                          @Override
+                          public void run() {
+                              String out = "";
+                              try {
+                                  android.net.Uri uri = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
+                                  android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+                                  o.inJustDecodeBounds = true;
+                                  java.io.InputStream in1 = getContentResolver().openInputStream(uri);
+                                  BitmapFactory.decodeStream(in1, null, o);
+                                  if (in1 != null) in1.close();
+                                  int sample = 1;
+                                  while ((o.outWidth / sample) > 1800 || (o.outHeight / sample) > 1800) sample *= 2;
+                                  android.graphics.BitmapFactory.Options o2 = new android.graphics.BitmapFactory.Options();
+                                  o2.inSampleSize = sample;
+                                  java.io.InputStream in2 = getContentResolver().openInputStream(uri);
+                                  Bitmap bmp = BitmapFactory.decodeStream(in2, null, o2);
+                                  if (in2 != null) in2.close();
+                                  if (bmp != null) {
+                                      int rot = 0;
+                                      try {
+                                          java.io.InputStream in3 = getContentResolver().openInputStream(uri);
+                                          android.media.ExifInterface ex = new android.media.ExifInterface(in3);
+                                          int ori = ex.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1);
+                                          if (ori == 6) rot = 90; else if (ori == 3) rot = 180; else if (ori == 8) rot = 270;
+                                          if (in3 != null) in3.close();
+                                      } catch (Throwable t) {}
+                                      if (rot != 0) {
+                                          android.graphics.Matrix m = new android.graphics.Matrix();
+                                          m.postRotate(rot);
+                                          bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(), m, true);
+                                      }
+                                      java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                                      bmp.compress(Bitmap.CompressFormat.JPEG, 85, bo);
+                                      out = "data:image/jpeg;base64," + android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
+                                  }
+                              } catch (Throwable t) {}
+                              deliver("window.__auraGalFull&&window.__auraGalFull(" + id + ",'" + out + "')");
+                          }
+                      });
+                  }
+              }
+
 
               public class ThemeBridge {
                   @JavascriptInterface
