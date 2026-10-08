@@ -644,6 +644,7 @@ jobs:
                   addPendingCount(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new LaunchBridge(), "AuraLaunch");
                   this.bridge.getWebView().addJavascriptInterface(new ThemeBridge(), "AuraTheme");
+                  this.bridge.getWebView().addJavascriptInterface(new GalleryBridge(), "AuraGallery");
                   this.bridge.getWebView().addJavascriptInterface(new NotifBridge(), "AuraNotif");
                   clearChatFromIntent(getIntent());
                   getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
