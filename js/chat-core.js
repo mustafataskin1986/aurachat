@@ -3732,6 +3732,7 @@ function checkPendingShare() {
             if (res.state === 'busy') return;
                         pendingShare = res.files;
             pendingShareTarget = res.target || '';
+                        showToast('Hedef: ' + (pendingShareTarget || 'YOK'), 5000);
         }
         // Kişi listesi yüklenene kadar bekle
         if (!window.__aurachatUsers || window.__aurachatUsers.size === 0) return;
