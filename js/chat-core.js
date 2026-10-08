@@ -66,6 +66,7 @@ import { watchVoiceCallForChat, startVoiceCall } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
 import "./image-viewer.js";
 import { setupComposer } from "./chat-composer.js";
+import { mountGallery, openGallery, closeGallery, setGalleryExpanded, galleryAvailable } from "./chat-gallery.js";
 
 // DOM elementleri
 const messageContainer = document.getElementById('message-container');
@@ -3137,8 +3138,9 @@ function ensureAttachMenu() {
     // inmiyordu) - tüm önceki senkron sorunlarının asıl kaynağı buydu.
  el.className = 'hidden flex-shrink-0 pt-3 pb-6 overflow-hidden';
 el.innerHTML = `
-        <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5"></div>
-        <div class="grid grid-cols-4 gap-x-3 px-3 pb-1">
+        <div class="aura-attach-inner" style="display:flex;flex-direction:column;height:100%;">
+        <div class="w-10 h-1 bg-white/25 rounded-full mx-auto mb-5 flex-shrink-0"></div>
+        <div class="grid grid-cols-4 gap-x-3 px-3 pb-1 flex-shrink-0">
             <button type="button" data-attach="gallery" class="w-full flex flex-col items-center gap-2 active:scale-95 transition">
                 <span class="w-full h-14 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
                     <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#3b9eff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
@@ -3158,62 +3160,118 @@ el.innerHTML = `
                 <span class="text-gray-300 text-[14px]">Konum</span>
             </button>
         </div>
+        </div>
     `;
     messageInput.parentElement.insertAdjacentElement('afterend', el);
+    if (galleryAvailable()) {
+        mountGallery(el.querySelector('.aura-attach-inner'), (files) => {
+            composer.addImages(files);
+            closeAttachMenu(true);
+            messageInput.focus();
+        });
+    }
 
     el.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-attach]');
         if (btn) handleAttachChoice(btn.dataset.attach);
     });
 
-    // Aşağı sürükleyerek kapatma
+    // Sürükleme: yukarı = galeriyi tam ekran yap, aşağı = küçült / kapat
     el.addEventListener('touchstart', (e) => {
         if (e.touches.length !== 1) return;
         attachDragStartY = e.touches[0].clientY;
-        el.style.transition = 'none';
+        attachDragZone = (e.target.closest && e.target.closest('.aura-gal-grid')) ? 'grid' : 'top';
+        attachGestureDone = false;
+        if (attachDragZone === 'top' && !attachExpanded) el.style.transition = 'none';
     }, { passive: true });
 
-el.addEventListener('touchmove', (e) => {
-        if (attachDragStartY === null) return;
-        const dy = Math.max(0, e.touches[0].clientY - attachDragStartY);
+    el.addEventListener('touchmove', (e) => {
+        if (attachDragStartY === null || attachGestureDone) return;
+        const raw = e.touches[0].clientY - attachDragStartY;
+        if (attachDragZone === 'grid') {
+            const g = el.querySelector('.aura-gal-grid');
+            if (!attachExpanded && raw < -30) { attachGestureDone = true; expandAttachMenu(); }
+            else if (attachExpanded && raw > 50 && g && g.scrollTop <= 0) { attachGestureDone = true; collapseAttachMenu(); }
+            return;
+        }
+        if (attachExpanded) {
+            if (raw > 40) { attachGestureDone = true; collapseAttachMenu(); }
+            return;
+        }
+        if (raw < -30 && galleryAvailable()) {
+            attachGestureDone = true;
+            el.style.transition = '';
+            expandAttachMenu();
+            return;
+        }
+        const dy = Math.max(0, raw);
         el.style.height = Math.max(0, attachMenuTargetHeight - dy) + 'px';
-        const reveal = Math.min(attachComposerHeight, dy);
-        if (composerWrap) composerWrap.style.height = reveal + 'px';
     }, { passive: true });
 
-el.addEventListener('touchend', (e) => {
+    el.addEventListener('touchend', (e) => {
         if (attachDragStartY === null) return;
+        const zone = attachDragZone;
+        const done = attachGestureDone;
         const dy = Math.max(0, e.changedTouches[0].clientY - attachDragStartY);
         attachDragStartY = null;
+        if (done || zone === 'grid' || attachExpanded) return;
         if (dy > 60) {
             closeAttachMenu();
         } else {
             el.style.transition = 'height 0.15s ease-out';
             el.style.height = attachMenuTargetHeight + 'px';
-            if (composerWrap) {
-                composerWrap.style.transition = 'height 0.15s ease-out';
-                composerWrap.style.height = '0px';
-            }
-            setTimeout(() => { el.style.transition = ''; if (composerWrap) composerWrap.style.transition = ''; }, 160);
+            setTimeout(() => { el.style.transition = ''; }, 160);
         }
     });
 
-el.addEventListener('touchcancel', () => {
+    el.addEventListener('touchcancel', () => {
         attachDragStartY = null;
+        if (attachExpanded) return;
         el.style.transition = 'height 0.15s ease-out';
         el.style.height = attachMenuTargetHeight + 'px';
-        if (composerWrap) {
-            composerWrap.style.transition = 'height 0.15s ease-out';
-            composerWrap.style.height = '0px';
-        }
     });
 
     attachMenuEl = el;
     return el;
 }
 
+let attachExpanded = false;
+let attachDragZone = 'top';
+let attachGestureDone = false;
+
+// Menüyü tam ekran yapar: mesaj kutusu gizlenir, galeri ekranı doldurur
+function expandAttachMenu() {
+    if (!attachMenuEl || attachExpanded || !galleryAvailable()) return;
+    const row = messageInput.parentElement;
+    const cs = getComputedStyle(messageContainer);
+    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    const total = messageContainer.clientHeight + attachMenuEl.offsetHeight + row.offsetHeight - pad;
+    attachExpanded = true;
+    row.style.display = 'none';
+    attachMenuEl.style.transition = 'height 0.2s ease-out';
+    attachMenuEl.style.height = Math.max(attachMenuTargetHeight, Math.round(total)) + 'px';
+    setGalleryExpanded(true);
+    setTimeout(() => { if (attachMenuEl) attachMenuEl.style.transition = ''; }, 230);
+}
+
+function collapseAttachMenu() {
+    if (!attachMenuEl || !attachExpanded) return;
+    attachExpanded = false;
+    messageInput.parentElement.style.display = '';
+    setGalleryExpanded(false);
+    attachMenuEl.style.transition = 'height 0.2s ease-out';
+    attachMenuEl.style.height = attachMenuTargetHeight + 'px';
+    setTimeout(() => { if (attachMenuEl) attachMenuEl.style.transition = ''; }, 230);
+}
+
 let attachMenuCloseTimer = null;
 function closeAttachMenuFromBack(instant) {
+    if (attachExpanded) {
+        attachExpanded = false;
+        messageInput.parentElement.style.display = '';
+        instant = true;
+    }
+    try { closeGallery(); } catch (e) {}
     attachMenuOpen = false;
     clearTimeout(attachMenuCloseTimer);
     messageInput.parentElement.classList.remove('menu-open');
@@ -3330,6 +3388,7 @@ if (kbHeight > 100) window.__auraPopupH = kbHeight;
         menu.style.transition = '';
     }
     attachMenuOpen = true;
+    try { openGallery(); } catch (e) {}
     pushBackState(closeAttachMenuFromBack);
     if (wasNearBottom) scrollToBottom();
 }
@@ -3690,13 +3749,14 @@ function consumeSharedImages() {
         if (raw === 'busy') return { state: 'busy' };
         const list = JSON.parse(raw);
         if (!Array.isArray(list) || !list.length) return { state: 'none' };
-                let target = '';
+        let target = '';
         try { target = (window.AuraShare.target && window.AuraShare.target()) || ''; } catch (e) {}
         return { state: 'ok', files: list.map((d, i) => dataUrlToFile(d, `shared_${i}.jpg`)), target: target };
     } catch (e) {
         return { state: 'none' };
     }
 }
+
 // Paylaş menüsünde doğrudan bir sohbete dokunulduysa o sohbetin hedef nesnesi
 function resolveShareTarget(chatId) {
     if (!chatId || !currentUser) return null;
@@ -3719,6 +3779,7 @@ async function openChatWithSharedImages(target) {
     composer.addImages(files);
     showToast('Resimler hazır, göndermek için yeşil düğmeye bas', 3000);
 }
+
 function checkPendingShare() {
     if (shareCheckTimer) return;
     let tries = 0;
@@ -3730,12 +3791,12 @@ function checkPendingShare() {
             const res = consumeSharedImages();
             if (res.state === 'none') { stopShareCheck(); return; }
             if (res.state === 'busy') return;
-                        pendingShare = res.files;
+            pendingShare = res.files;
             pendingShareTarget = res.target || '';
         }
         // Kişi listesi yüklenene kadar bekle
         if (!window.__aurachatUsers || window.__aurachatUsers.size === 0) return;
-                stopShareCheck();
+        stopShareCheck();
         const directTarget = resolveShareTarget(pendingShareTarget);
         pendingShareTarget = '';
         if (directTarget) { openChatWithSharedImages(directTarget); return; }
