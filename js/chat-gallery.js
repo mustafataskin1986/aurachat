@@ -9,6 +9,7 @@ let gridEl = null;
 let barEl = null;
 let permEl = null;
 let onPickCb = null;
+let onSelectCb = null;
 let loaded = 0;
 let loading = false;
 let finished = false;
@@ -95,6 +96,7 @@ function toggle(id) {
     else if (selected.length < MAX_PICK) selected.push(id);
     refreshCellMarks();
     updateBar();
+    if (onSelectCb) onSelectCb(selected.length);
 }
 
 async function confirmPick() {
@@ -184,9 +186,10 @@ function reset() {
 }
 
 // Menü içine ızgarayı kurar. host: menü elemanı, onPick: seçilen dosyaları alan fonksiyon
-export function mountGallery(host, onPick) {
+export function mountGallery(host, onPick, onSelect) {
     if (!bridge() || root) return root;
     onPickCb = onPick;
+    onSelectCb = onSelect || null;
 
     root = document.createElement('div');
     root.className = 'aura-gal-grid';
@@ -255,6 +258,10 @@ export function setGalleryExpanded(v) {
     if (!root) return;
     root.style.overflowY = expanded ? 'auto' : 'hidden';
     if (!expanded) root.scrollTop = 0;
+}
+
+export function gallerySelectedCount() {
+    return selected.length;
 }
 
 export function isGalleryExpanded() {
