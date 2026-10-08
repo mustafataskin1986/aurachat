@@ -2,6 +2,9 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+  permissions:
+  contents: read
+  actions: write
 
 jobs:
   build:
@@ -1820,8 +1823,19 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: APK Dosyasını Çıktı Olarak Kaydet
+            - name: APK Dosyasını Çıktı Olarak Kaydet
         uses: actions/upload-artifact@v4
         with:
           name: AuraChat-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 1
+
+      - name: Eski APK Çıktılarını Temizle
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.workflow_run.id != ${{ github.run_id }}) | .id' | while read id; do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" > /dev/null && echo "silindi: $id"
+          done
