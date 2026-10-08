@@ -609,7 +609,35 @@ export async function loadContacts() {
         const clearedAtMs = clearedAt.toDate().getTime();
         return lastTimeMs <= clearedAtMs;
     }
-
+    // Android "Paylaş" menüsünde en son konuşulan sohbetler kişi olarak görünsün (Direct Share)
+    let shareTargetsSig = '';
+    let shareTargetsTimer = null;
+    function publishShareTargets() {
+        if (!window.AuraNotif || !window.AuraNotif.publishShortcut) return;
+        clearTimeout(shareTargetsTimer);
+        shareTargetsTimer = setTimeout(() => {
+            try {
+                const rows = [];
+                myChats.forEach((d, chatId) => {
+                    if (!d || isClearedChat(d)) return;
+                    const t = d.lastMessageTime && d.lastMessageTime.toMillis ? d.lastMessageTime.toMillis() : 0;
+                    rows.push({ chatId: chatId, d: d, t: t });
+                });
+                rows.sort((a, b) => b.t - a.t);
+                const top = rows.slice(0, 6);
+                const sig = top.map((r) => r.chatId + '|' + (r.d.isGroup ? (r.d.groupName || '') : (r.d.otherName || ''))).join(',');
+                if (sig === shareTargetsSig) return;
+                shareTargetsSig = sig;
+                top.forEach((r) => {
+                    const d = r.d;
+                    const live = !d.isGroup ? allUsersById.get(d.otherUid) : null;
+                    const name = d.isGroup ? (d.groupName || 'Grup') : ((live && live.name) || d.otherName || '');
+                    const avatar = d.isGroup ? (d.groupPhoto || '') : ((live && live.avatar) || '');
+                    window.AuraNotif.publishShortcut(String(r.chatId), name, (typeof avatar === 'string' && avatar.indexOf('data:') === 0) ? avatar : '');
+                });
+            } catch (e) {}
+        }, 3000);
+    }
     function renderAll() {
     if (!usersLoaded || !chatsLoaded) return;
         if (resolveFirstData) { resolveFirstData(); resolveFirstData = null; }
@@ -694,6 +722,7 @@ export async function loadContacts() {
 
         sortContactList();
         prewarmTopChats();
+                publishShareTargets();
         saveListCache();
     }
 
