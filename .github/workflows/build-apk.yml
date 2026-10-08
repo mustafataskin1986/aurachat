@@ -402,7 +402,16 @@ jobs:
                           }
                       }
                   } catch (Throwable t) {}
-                  pendingShareTarget = (scId != null && scId.startsWith("chat_")) ? scId.substring(5) : "";
+                                    pendingShareTarget = (scId != null && scId.startsWith("chat_")) ? scId.substring(5) : "";
+                  try {
+                      android.content.ComponentName cn = intent.getComponent();
+                      String cls = cn == null ? "" : cn.getClassName();
+                      int ix = cls.lastIndexOf("ShareSlot");
+                      if (pendingShareTarget.isEmpty() && ix >= 0) {
+                          String sidSlot = getSharedPreferences("aura_slots", MODE_PRIVATE).getString("slot" + cls.substring(ix + 9), "");
+                          if (sidSlot.startsWith("chat_")) pendingShareTarget = sidSlot.substring(5);
+                      }
+                  } catch (Throwable t) {}
                   pendingShareDiag = "id=" + scId + " bilesen=" + intent.getComponent() + " kategori=" + intent.getCategories() + " anahtarlar=" + kb.toString();
 
                   final ArrayList<Uri> uris = new ArrayList<>();
@@ -1022,15 +1031,32 @@ jobs:
                   } catch (Exception e) {}
               }
 
-                            static void publishShortcut(Context c, String sid, String title, Bitmap avatar) {
+                                          static void publishShortcut(Context c, String sid, String title, Bitmap avatar) {
                   try {
+                      android.content.SharedPreferences sp = c.getSharedPreferences("aura_slots", Context.MODE_PRIVATE);
+                      int slot = -1;
+                      for (int n = 0; n < 6; n++) {
+                          if (sid.equals(sp.getString("slot" + n, ""))) { slot = n; break; }
+                      }
+                      if (slot < 0) {
+                          for (int n = 0; n < 6; n++) {
+                              if (sp.getString("slot" + n, "").isEmpty()) { slot = n; break; }
+                          }
+                      }
+                      if (slot < 0) {
+                          slot = sp.getInt("next", 0) % 6;
+                          String old = sp.getString("slot" + slot, "");
+                          if (!old.isEmpty()) ShortcutManagerCompat.removeDynamicShortcuts(c, java.util.Arrays.asList(old));
+                          sp.edit().putInt("next", slot + 1).apply();
+                      }
+                      sp.edit().putString("slot" + slot, sid).apply();
                       IconCompat icon = IconCompat.createWithBitmap(avatar != null ? avatar : initialsBitmap(title, 128));
                       Person target = new Person.Builder().setName(title).setKey(sid).setIcon(icon).build();
                       Intent i = new Intent(c, MainActivity.class).setAction(Intent.ACTION_VIEW);
                       ShortcutInfoCompat sc = new ShortcutInfoCompat.Builder(c, sid)
                               .setShortLabel(title)
                               .setLongLived(true)
-                              .setCategories(new java.util.HashSet<String>(java.util.Arrays.asList("com.aurachat.sharetarget")))
+                              .setCategories(new java.util.HashSet<String>(java.util.Arrays.asList("com.aurachat.slot" + slot)))
                               .setIntent(i)
                               .setPerson(target)
                               .setIcon(icon)
@@ -1373,7 +1399,24 @@ jobs:
               sed -i 's#</activity>#    <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />\n</activity>#' "$MANIFEST_PATH"
             fi
             mkdir -p android/app/src/main/res/xml
-            printf '<?xml version="1.0" encoding="utf-8"?>\n<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">\n    <share-target android:targetClass="com.aurachat.app.MainActivity">\n        <data android:mimeType="image/*" />\n        <category android:name="com.aurachat.sharetarget" />\n    </share-target>\n</shortcuts>\n' > android/app/src/main/res/xml/shortcuts.xml
+            {
+              echo '<?xml version="1.0" encoding="utf-8"?>'
+              echo '<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">'
+              for n in 0 1 2 3 4 5; do
+                echo "    <share-target android:targetClass=\"com.aurachat.app.ShareSlot$n\">"
+                echo '        <data android:mimeType="image/*" />'
+                echo "        <category android:name=\"com.aurachat.slot$n\" />"
+                echo '    </share-target>'
+              done
+              echo '</shortcuts>'
+            } > android/app/src/main/res/xml/shortcuts.xml
+            if ! grep -q "ShareSlot0" "$MANIFEST_PATH"; then
+              ALIASES=""
+              for n in 0 1 2 3 4 5; do
+                ALIASES="$ALIASES    <activity-alias android:name=\".ShareSlot$n\" android:targetActivity=\".MainActivity\" android:exported=\"true\" android:label=\"AuraChat\">\n        <intent-filter>\n            <action android:name=\"android.intent.action.SEND\" />\n            <category android:name=\"android.intent.category.DEFAULT\" />\n            <data android:mimeType=\"image/*\" />\n        </intent-filter>\n    </activity-alias>\n"
+              done
+              sed -i "s#</application>#${ALIASES}</application>#" "$MANIFEST_PATH"
+            fi
             add_perm "android.permission.ACCESS_FINE_LOCATION"
             add_perm "android.permission.ACCESS_COARSE_LOCATION"
           fi
