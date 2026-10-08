@@ -3239,15 +3239,57 @@ let attachExpanded = false;
 let attachDragZone = 'top';
 let attachGestureDone = false;
 
-// Menü büyürken / küçülürken arkadaki sohbet yerinde dursun (sadece "+" ile açılırken yukarı kalkar)
+// Menü büyürken / küçülürken arkadaki sohbet görsel olarak yerinde dursun
+// (mesaj alanının iç boşluğu değişirken kaydırmayı telafi eder)
 function pinChatBottom(ms) {
     const keep = messageContainer.scrollTop;
+    const pad0 = parseFloat(getComputedStyle(messageContainer).paddingTop) || 0;
     const t0 = performance.now();
     const step = () => {
-        messageContainer.scrollTop = keep;
+        const p = parseFloat(getComputedStyle(messageContainer).paddingTop) || 0;
+        messageContainer.scrollTop = Math.max(0, keep + (p - pad0));
         if (performance.now() - t0 < ms) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
+}
+
+const ROW_PROPS = ['height', 'padding-top', 'padding-bottom', 'margin-top', 'margin-bottom', 'border-top-width', 'border-bottom-width'];
+let composerRowHidden = false;
+
+// Mesaj kutusunu yumuşakça küçülterek gizler (ani zıplama olmasın)
+function hideComposerRow() {
+    const row = messageInput.parentElement;
+    if (composerRowHidden) return;
+    composerRowHidden = true;
+    const cs = getComputedStyle(row);
+    row.__auraSaved = {};
+    ROW_PROPS.forEach((p) => { row.__auraSaved[p] = p === 'height' ? row.offsetHeight + 'px' : cs.getPropertyValue(p); });
+    row.style.setProperty('overflow', 'hidden', 'important');
+    row.style.setProperty('min-height', '0px', 'important');
+    row.style.setProperty('height', row.__auraSaved.height, 'important');
+    void row.offsetHeight;
+    row.style.setProperty('transition', 'height .2s ease-out, padding .2s ease-out, margin .2s ease-out, border-width .2s ease-out, opacity .15s', 'important');
+    ROW_PROPS.forEach((p) => row.style.setProperty(p, '0px', 'important'));
+    row.style.setProperty('opacity', '0', 'important');
+    row.style.setProperty('pointer-events', 'none', 'important');
+}
+
+function clearComposerRowInline() {
+    const row = messageInput.parentElement;
+    ['overflow', 'min-height', 'transition', 'opacity', 'pointer-events'].concat(ROW_PROPS).forEach((p) => row.style.removeProperty(p));
+    row.__auraSaved = null;
+}
+
+// instant: true ise animasyonsuz geri getirir
+function showComposerRow(instant) {
+    const row = messageInput.parentElement;
+    if (!composerRowHidden) return;
+    composerRowHidden = false;
+    if (instant === true || !row.__auraSaved) { clearComposerRowInline(); return; }
+    const saved = row.__auraSaved;
+    ROW_PROPS.forEach((p) => row.style.setProperty(p, saved[p], 'important'));
+    row.style.setProperty('opacity', '1', 'important');
+    setTimeout(() => { if (!composerRowHidden) clearComposerRowInline(); }, 240);
 }
 
 // Resim seçilmediyse menü ilk boyunda, seçim başladıysa sayfanın ortasına kadar yükselir
@@ -3269,6 +3311,7 @@ function applySelectionLayout(count) {
     if (!attachMenuEl || !attachMenuOpen) return;
     setAttachButtonsHidden(count > 0 || attachExpanded);
     if (attachExpanded) return;
+    if (count > 0) hideComposerRow(); else showComposerRow();
     pinChatBottom(260);
     attachMenuEl.style.transition = 'height 0.2s ease-out';
     attachMenuEl.style.height = attachRestHeight() + 'px';
@@ -3276,7 +3319,8 @@ function applySelectionLayout(count) {
 }
 
 function clearExpandedLayout() {
-    messageInput.parentElement.style.display = '';
+    showComposerRow(true);
+    messageContainer.style.transition = '';
     messageContainer.style.paddingTop = '';
     messageContainer.style.paddingBottom = '';
     messageContainer.style.flex = '';
@@ -3292,13 +3336,17 @@ function clearExpandedLayout() {
 function expandAttachMenu() {
     if (!attachMenuEl || attachExpanded || !galleryAvailable()) return;
     const row = messageInput.parentElement;
-    const rcs = getComputedStyle(row);
-    const rowFull = row.offsetHeight + (parseFloat(rcs.marginTop) || 0) + (parseFloat(rcs.marginBottom) || 0);
+    let rowFull = 0;
+    if (!composerRowHidden) {
+        const rcs = getComputedStyle(row);
+        rowFull = row.offsetHeight + (parseFloat(rcs.marginTop) || 0) + (parseFloat(rcs.marginBottom) || 0);
+    }
     const total = messageContainer.clientHeight + attachMenuEl.offsetHeight + rowFull;
     attachExpanded = true;
     pinChatBottom(260);
     setAttachButtonsHidden(true);
-    row.style.display = 'none';
+    hideComposerRow();
+    messageContainer.style.transition = 'padding .2s ease-out';
     messageContainer.style.paddingTop = '0px';
     messageContainer.style.paddingBottom = '0px';
     attachMenuEl.style.paddingBottom = '0px';
@@ -3309,6 +3357,7 @@ function expandAttachMenu() {
     setTimeout(() => {
         if (!attachMenuEl || !attachExpanded) return;
         attachMenuEl.style.transition = '';
+        messageContainer.style.transition = '';
         messageContainer.style.flex = '0 0 0px';
         messageContainer.style.minHeight = '0px';
         attachMenuEl.style.height = 'auto';
@@ -3334,24 +3383,37 @@ function collapseAttachMenu(fromBack) {
     }
     attachExpanded = false;
     const curH = attachMenuEl.offsetHeight;
-    clearExpandedLayout();
+    const hasSel = gallerySelectedCount() > 0;
+    // Dolgu modundan çık, ama görüntü yerinde kalsın
     attachMenuEl.style.transition = 'none';
+    attachMenuEl.style.flex = '';
+    attachMenuEl.style.minHeight = '';
     attachMenuEl.style.height = curH + 'px';
+    messageContainer.style.flex = '';
+    messageContainer.style.minHeight = '';
+    messageContainer.style.transition = 'padding .2s ease-out';
+    messageContainer.style.paddingTop = '';
+    messageContainer.style.paddingBottom = '';
     void attachMenuEl.offsetHeight;
     setGalleryExpanded(false);
-    setAttachButtonsHidden(gallerySelectedCount() > 0);
+    setAttachButtonsHidden(hasSel);
+    if (!hasSel) showComposerRow();
     pinChatBottom(260);
     requestAnimationFrame(() => {
-        attachMenuEl.style.transition = 'height 0.2s ease-out';
+        attachMenuEl.style.transition = 'height 0.2s ease-out, padding 0.2s ease-out';
+        attachMenuEl.style.paddingBottom = '';
         attachMenuEl.style.height = attachRestHeight() + 'px';
     });
-    setTimeout(() => { if (attachMenuEl) attachMenuEl.style.transition = ''; }, 260);
+    setTimeout(() => {
+        if (attachMenuEl && !attachExpanded) attachMenuEl.style.transition = '';
+        if (!attachExpanded) messageContainer.style.transition = '';
+    }, 260);
 }
 
 let attachMenuCloseTimer = null;
 function closeAttachMenuFromBack(instant) {
     setAttachButtonsHidden(false);
-    if (attachExpanded) {
+    if (attachExpanded || composerRowHidden) {
         attachExpanded = false;
         clearExpandedLayout();
         instant = true;
@@ -3473,6 +3535,7 @@ if (kbHeight > 100) window.__auraPopupH = kbHeight;
         menu.style.transition = '';
     }
     attachMenuOpen = true;
+    showComposerRow(true);
     setAttachButtonsHidden(false);
     try { openGallery(); } catch (e) {}
     pushBackState(closeAttachMenuFromBack);
