@@ -1383,6 +1383,18 @@ function getLocalClearedMs(chatId) {
     try { return Number(localStorage.getItem(clearedKey(chatId))) || 0; } catch (e) { return 0; }
 }
 
+// Sohbet temizlenince o sohbetten yıldızlanan mesaj kayıtları da silinir
+async function removeStarredForChat(chatId) {
+    if (!currentUser || !chatId) return;
+    try {
+        const snap = await getDocs(collection(db, "users", currentUser.uid, "starred"));
+        const mine = snap.docs.filter((d) => d.id.startsWith(`${chatId}__`) || (d.data() && d.data().chatId === chatId));
+        await Promise.allSettled(mine.map((d) => deleteDoc(d.ref)));
+    } catch (e) {
+        console.warn("Yıldızlı mesajlar temizlenemedi:", e);
+    }
+}
+
 export async function clearChatForMe(chatId) {
     if (!currentUser || !chatId || chatId === 'global') return;
     try {
@@ -1397,6 +1409,7 @@ export async function clearChatForMe(chatId) {
             if (ca && ca.toMillis) clearedMs = ca.toMillis();
         } catch (e) {}
         try { localStorage.setItem(clearedKey(chatId), String(clearedMs)); } catch (e) {}
+        await removeStarredForChat(chatId);
 
         const session = chatSessions.get(chatId);
         if (session) {
@@ -1446,6 +1459,7 @@ export async function wipeChat(chatId) {
         }
     }
     await deleteChatDiskCache(chatId);
+    await removeStarredForChat(chatId);
 
     // Herkes sohbeti temizlediyse, hepsinin temizlediği zamana kadarki mesajlar sunucudan da silinir
     try {
