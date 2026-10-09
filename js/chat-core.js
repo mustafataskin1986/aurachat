@@ -1,5 +1,5 @@
 // ==========================================
-// CHAT CORE
+// CHAT CORE 
 //
 // GÜNCELLEME (Firebase = sadece kurye/postacı mantığı): Bir resim
 // mesajı karşı tarafın cihazına GERÇEKTEN diske yazıldığında (base64
