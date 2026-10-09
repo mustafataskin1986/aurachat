@@ -44,6 +44,9 @@ function ensureMenu() {
         <button type="button" data-menu="new-group" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-solid fa-user-group text-emerald-400 w-4"></i><span>Yeni grup</span>
         </button>
+        <button type="button" data-menu="starred" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid fa-star text-amber-400 w-4"></i><span>Yıldızlı mesajlar</span>
+        </button>
         <button type="button" data-menu="settings" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-solid fa-gear text-gray-400 w-4"></i><span>Ayarlar</span>
         </button>
@@ -55,6 +58,8 @@ function ensureMenu() {
         closeMenu();
         if (item.dataset.menu === 'new-group') {
             openCreatePanel();
+        } else if (item.dataset.menu === 'starred') {
+            openStarredPanel();
         } else if (item.dataset.menu === 'settings' && window.openProfilePanel) {
             window.openProfilePanel();
         }
@@ -858,9 +863,7 @@ async function openChatMenu() {
         <button type="button" data-chat-menu="search" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
                      <i class="fa-solid fa-magnifying-glass text-gray-300 w-4"></i><span>Ara</span>
         </button>
-        <button type="button" data-chat-menu="starred" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
-            <i class="fa-solid fa-star text-amber-400 w-4"></i><span>Yıldızlı mesajlar</span>
-        </button>`;
+`;
     if (isGrp) {
         itemsHtml += `
             <button type="button" data-chat-menu="info" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
@@ -906,7 +909,6 @@ async function openChatMenu() {
         if (getCurrentChatId() !== id) return;
 
               if (action === 'search') { openChatSearch(); return; }
-                      if (action === 'starred') { openStarredPanel(); return; }
         if (action === 'info') { openGroupInfo(id); return; }
         if (action === 'add') { openAddPanelForGroup(id); return; }
         if (action === 'theme') { openChatThemePicker(id); return; }
