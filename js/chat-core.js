@@ -1,5 +1,5 @@
 // ==========================================
-// CHAT CORE 
+// CHAT CORE
 //
 // GÜNCELLEME (Firebase = sadece kurye/postacı mantığı): Bir resim
 // mesajı karşı tarafın cihazına GERÇEKTEN diske yazıldığında (base64
@@ -333,6 +333,14 @@ let tempIncoming = null; // bildirimden çizilen geçici balon: { chatId, msgId,
 // Son eklenen mesajın kimliğini tutar: bildirime mesaja özel tag vermek için
 let lastAddedMsg = null;
 async function addDoc(colRef, data) {
+    // Süreli mesaj açıksa yeni mesaja bitiş zamanı yaz (sistem mesajları hariç)
+    try {
+        const p = colRef.path.split('/');
+        if (p[0] === 'chats' && p[2] === 'messages' && data && data.type !== 'system' && !data.expiresAtMs) {
+            const sess = chatSessions.get(p[1]);
+            if (sess && sess.disappearAfter > 0) data = Object.assign({}, data, { expiresAtMs: Date.now() + sess.disappearAfter });
+        }
+    } catch (e) {}
     const ref = await rawAddDoc(colRef, data);
     try {
         const parts = colRef.path.split('/'); // chats/{chatId}/messages
@@ -1011,6 +1019,9 @@ if (currentChatId === chatId && !session.waitingFirst) {
             } else {
                 session.otherTyping = !!(otherUid && data[`typing_${otherUid}`]);
             }
+            // Süreli mesaj ayarı değiştiyse kaydet
+            const nextDisappear = Number(data.disappearAfter) || 0;
+            if (nextDisappear !== (session.disappearAfter || 0)) session.disappearAfter = nextDisappear;
             if (currentChatId === chatId) renderChatStatus();
         });
     }
@@ -2629,6 +2640,34 @@ if (selectionDeleteBtn) {
 // ------------------------------------------
 // MESAJLARI EKRANA ÇİZME
 // ------------------------------------------
+const expiredDeleted = new Set();
+let expirySweepTimer = null;
+
+// Süreli mesajlar: seçenekler (ms). 0 = kapalı
+export function getDisappearAfter(chatId) {
+    const s = chatSessions.get(chatId);
+    return s && s.disappearAfter ? s.disappearAfter : 0;
+}
+
+export async function setDisappearAfter(chatId, ms) {
+    if (!currentUser || !chatId || chatId === 'global') return;
+    const s = chatSessions.get(chatId);
+    await setDoc(doc(db, "chats", chatId), { disappearAfter: ms || 0 }, { merge: true });
+    if (s) s.disappearAfter = ms || 0;
+    const label = ms >= 7 * 24 * 3600 * 1000 ? '7 gün' : '24 saat';
+    const text = ms ? `${currentUser.name} süreli mesajları açtı: yeni mesajlar ${label} sonra silinir` : `${currentUser.name} süreli mesajları kapattı`;
+    try {
+        await addDoc(collection(db, "chats", chatId, "messages"), {
+            type: 'system',
+            text,
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false
+        });
+    } catch (e) {}
+}
+
 function renderSession(session) {
     messageContainer.innerHTML = '';
     messageElementsById.clear();
@@ -2642,7 +2681,37 @@ function renderSession(session) {
     const all = session.olderMessagesPrepended.concat(session.messages);
     let lastDayKey = null;
 
-    const visibleAll = all.filter(({ data: m }) => !(currentUser && Array.isArray(m.deletedFor) && m.deletedFor.includes(currentUser.uid)));
+    const nowMs = Date.now();
+    let nextExpiry = 0;
+    const visibleAll = all.filter(({ id: mid, data: m }) => {
+        if (currentUser && Array.isArray(m.deletedFor) && m.deletedFor.includes(currentUser.uid)) return false;
+        if (m.expiresAtMs) {
+            if (m.expiresAtMs <= nowMs) {
+                // Süresi dolan mesaj herkeste gizlenir; kendi mesajımızsa kaydı da sileriz
+                if (currentUser && m.senderUid === currentUser.uid && !expiredDeleted.has(mid)) {
+                    expiredDeleted.add(mid);
+                    deleteDoc(doc(db, "chats", session.chatId, "messages", mid)).catch(() => {});
+                }
+                return false;
+            }
+            if (!nextExpiry || m.expiresAtMs < nextExpiry) nextExpiry = m.expiresAtMs;
+        }
+        return true;
+    });
+    if (expirySweepTimer) { clearTimeout(expirySweepTimer); expirySweepTimer = null; }
+    if (nextExpiry) {
+        const chatIdAtSchedule = session.chatId;
+        expirySweepTimer = setTimeout(() => {
+            expirySweepTimer = null;
+            if (currentChatId !== chatIdAtSchedule) return;
+            const s = chatSessions.get(chatIdAtSchedule);
+            if (!s) return;
+            const top = messageContainer.scrollTop;
+            const nearBottom = isNearBottom();
+            renderSession(s);
+            if (nearBottom) scrollToBottom(); else messageContainer.scrollTop = top;
+        }, Math.min(2147483000, Math.max(300, nextExpiry - nowMs + 250)));
+    }
     const isBubble = (m) => m.type !== 'system' && m.type !== 'call_duration';
     visibleAll.forEach(({ id, data: msg }, vi) => {
         // Gün değişince tarih etiketi
