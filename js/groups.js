@@ -8,7 +8,7 @@
 
 import { db } from "./firebase-init.js";
 import { collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getCurrentUser, getCurrentChatId, selectChat, sendPushToUser, leaveGroup, showToast, toggleBlockUser, openChatSearch, openStarredPanel, getDisappearAfter, setDisappearAfter } from "./chat-core.js";
+import { getCurrentUser, getCurrentChatId, selectChat, sendPushToUser, leaveGroup, showToast, toggleBlockUser, openChatSearch, openStarredPanel, getDisappearAfter, setDisappearAfter, wipeChat } from "./chat-core.js";
 import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
@@ -928,6 +928,11 @@ async function openChatMenu() {
             <i class="fa-solid fa-hourglass-half text-sky-300 w-4"></i><span>Süreli mesajlar: ${dLabel}</span>
         </button>`;
 
+    itemsHtml += `
+        <button type="button" data-chat-menu="wipe" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid fa-trash-can text-rose-400 w-4"></i><span>Sohbeti temizle</span>
+        </button>`;
+
     let otherUidForBlock = null;
     if (!isGrp) {
         otherUidForBlock = id.split('_').find((u) => u !== me.uid) || null;
@@ -957,6 +962,23 @@ async function openChatMenu() {
         if (action === 'info') { openGroupInfo(id); return; }
         if (action === 'add') { openAddPanelForGroup(id); return; }
         if (action === 'theme') { openChatThemePicker(id); return; }
+        if (action === 'wipe') {
+            const ans = await auraDialog({
+                accent: auraAccent(),
+                title: 'Bu sohbeti kalıcı olarak silmek üzeresiniz',
+                buttons: [{ id: 'ok', label: 'Sil' }, { id: 'cancel', label: 'İptal' }]
+            });
+            if (ans.id !== 'ok') return;
+            try {
+                await wipeChat(id);
+                showToast('Sohbet silindi');
+                const back = document.getElementById('back-btn');
+                if (back) back.click();
+            } catch (err) {
+                showToast('Sohbet silinemedi: ' + err.message, 3500);
+            }
+            return;
+        }
         if (action === 'disappear') {
             const pick = await auraDialog({
                 accent: auraAccent(),
