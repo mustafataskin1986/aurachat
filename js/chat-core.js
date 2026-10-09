@@ -173,8 +173,103 @@ function groupAvatarHtml(msg, mode) {
     const inner = src
         ? `<img src="${src}" draggable="false" style="width:${GAV_SIZE}px;height:${GAV_SIZE}px;border-radius:9999px;object-fit:cover;display:block;">`
         : `<div style="width:${GAV_SIZE}px;height:${GAV_SIZE}px;border-radius:9999px;background:${senderColor(msg, 38)};color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;">${initial}</div>`;
-    return `<div class="aura-gav" style="width:${GAV_SIZE}px;height:${GAV_SIZE}px;flex-shrink:0;margin-right:6px;align-self:flex-end;">${inner}</div>`;
+    return `<div class="aura-gav" data-uid="${escapeHtml(String(msg.senderUid || ''))}" data-name="${escapeHtml(nm)}" style="width:${GAV_SIZE}px;height:${GAV_SIZE}px;flex-shrink:0;margin-right:6px;align-self:flex-start;cursor:pointer;">${inner}</div>`;
 }
+
+// ------------------------------------------
+// AVATARA BASINCA PROFİL KARTI (alttan açılır): resim, isim, Mesaj / Sesli / Görüntülü / Kaydet
+// ------------------------------------------
+let memberSheetEl = null;
+
+function closeMemberSheetFromBack() {
+    if (memberSheetEl) { memberSheetEl.remove(); memberSheetEl = null; }
+}
+
+function closeMemberSheet() {
+    if (!memberSheetEl) return;
+    closeMemberSheetFromBack();
+    popBackState();
+}
+
+function isUnsavedNumber(phone) {
+    const local = window.__aurachatLocalPhones;
+    if (!phone || !local || local.size === 0) return false;
+    const l10 = getPhoneLast10(phone);
+    return !!l10 && !local.has(l10);
+}
+
+function openMemberSheet(uid, fallbackName) {
+    if (!uid || !currentUser || uid === currentUser.uid) return;
+    closeMemberSheetFromBack();
+    const um = window.__aurachatUsers;
+    const u = um ? um.get(uid) : null;
+    const name = (u && u.name) || fallbackName || 'Kullanıcı';
+    const avatar = (u && u.avatar) || '';
+    const phone = (u && u.phone) ? String(u.phone) : '';
+    const src = avatar ? groupAvatarSrc(uid, avatar) : '';
+    const showSave = isUnsavedNumber(phone);
+
+    const bigAvatar = src
+        ? `<img src="${src}" data-big-avatar="1" class="w-24 h-24 rounded-full object-cover mx-auto cursor-pointer">`
+        : `<div class="w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-bold mx-auto" style="background-color:${getUserColor(name)};">${escapeHtml(getInitials(name))}</div>`;
+    const btn = (act, icon, label) => `<button type="button" data-act="${act}" class="flex flex-col items-center justify-center flex-1 py-3 rounded-xl bg-[#111b21] active:bg-[#0b141a]"><i class="fa-solid ${icon} text-emerald-400 text-xl"></i><span class="text-[12px] text-gray-200 mt-1.5">${label}</span></button>`;
+
+    const el = document.createElement('div');
+    el.className = 'fixed inset-0 z-[70] bg-black/60 flex items-end';
+    el.innerHTML = `
+        <div class="w-full bg-[#202c33] rounded-t-2xl pb-6 px-4 pt-5 text-center">
+            <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-4"></div>
+            ${bigAvatar}
+            <p class="text-white text-lg font-semibold mt-3 truncate">${escapeHtml(name)}</p>
+            ${phone && showSave ? `<p class="text-gray-400 text-xs mt-0.5">${escapeHtml(phone)}</p>` : ''}
+            <div class="flex gap-2 mt-5">
+                ${btn('msg', 'fa-message', 'Mesaj')}
+                ${btn('voice', 'fa-phone', 'Sesli')}
+                ${btn('video', 'fa-video', 'Görüntülü')}
+                ${showSave ? btn('save', 'fa-user-plus', 'Kaydet') : ''}
+            </div>
+        </div>
+    `;
+    document.body.appendChild(el);
+    el.addEventListener('click', async (e) => {
+        if (e.target === el) { closeMemberSheet(); return; }
+        const big = e.target.closest('[data-big-avatar]');
+        if (big) { window.openImageLightbox(big.src); return; }
+        const b = e.target.closest('button[data-act]');
+        if (!b) return;
+        const act = b.dataset.act;
+        if (act === 'save') {
+            closeMemberSheet();
+            try {
+                if (window.AuraContact && window.AuraContact.add) {
+                    window.AuraContact.add(name, phone);
+                    return;
+                }
+            } catch (err) {}
+            try { await navigator.clipboard.writeText(phone); } catch (err) {}
+            showToast('Numara kopyalandı: ' + phone);
+            return;
+        }
+        closeMemberSheet();
+        try {
+            await selectChat({ uid, name, avatar });
+            if (act === 'voice') startVoiceCall(currentChatId, uid);
+            else if (act === 'video') startCall(currentChatId, uid);
+        } catch (err) {
+            showToast('Açılamadı');
+        }
+    });
+    memberSheetEl = el;
+    pushBackState(closeMemberSheetFromBack);
+}
+
+// Avatara dokunma: seçim modunda değilken profil kartını aç (mesaj seçimini tetiklemesin)
+messageContainer.addEventListener('click', (e) => {
+    const av = e.target.closest ? e.target.closest('.aura-gav[data-uid]') : null;
+    if (!av || selectionMode) return;
+    e.stopPropagation();
+    openMemberSheet(av.dataset.uid, av.dataset.name);
+}, true);
 
 let recentOpenScrollLock = false;
 let unreadDivider = null; // { chatId, msgId, count }
@@ -2509,13 +2604,13 @@ function renderSession(session) {
         }
 
         const isMine = !!(currentUser && currentUser.uid && msg.senderUid === currentUser.uid);
-        // Grup: aynı kişinin arka arkaya mesajlarında avatar yalnızca sonuncuda görünür
+        // Grup: aynı kişinin arka arkaya mesajlarında avatar yalnızca İLK mesajda görünür
         let avatarMode;
         if (session.isGroup && !isMine && isBubble(msg)) {
-            const nx = visibleAll[vi + 1];
-            const sameRun = !!(nx && isBubble(nx.data) && nx.data.senderUid === msg.senderUid
-                && dayKeyOf(nx.data.createdAt ? nx.data.createdAt.toDate() : new Date()) === dayKey
-                && !(unreadDivider && unreadDivider.chatId === session.chatId && unreadDivider.msgId === nx.id));
+            const pv = visibleAll[vi - 1];
+            const sameRun = !!(pv && isBubble(pv.data) && pv.data.senderUid === msg.senderUid
+                && dayKeyOf(pv.data.createdAt ? pv.data.createdAt.toDate() : new Date()) === dayKey
+                && !(unreadDivider && unreadDivider.chatId === session.chatId && unreadDivider.msgId === id));
             avatarMode = sameRun ? 'space' : 'show';
         }
         fragment.appendChild(buildMessageElement(msg, isMine, id, avatarMode));
