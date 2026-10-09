@@ -3124,7 +3124,7 @@ function buildMessageElement(msg, isMine, msgId, avatarMode) {
 
 let bodyHtml;
 if (isViewOnce) {
-        if (msg.viewOnceOpened) {
+        if (msg.viewOnceOpened || msg.imageDelivered) {
             bodyHtml = `<p class="break-words flex items-center gap-2 text-gray-400 italic text-[13px]"><i class="fa-regular fa-circle-check"></i> Fotoğraf açıldı</p>`;
         } else if (isMine) {
             bodyHtml = `<p class="break-words flex items-center gap-2 text-gray-200 text-[13px]"><span style="display:inline-flex;width:22px;height:22px;border:2px solid currentColor;border-radius:9999px;align-items:center;justify-content:center;font-weight:700;font-size:12px;">1</span> Fotoğraf · henüz açılmadı</p>`;
@@ -5152,7 +5152,7 @@ function openViewOnce(msgId) {
     const entry = findMessageEntry(msgId);
     const d = entry && entry.data;
     if (!d || !d.viewOnce || !currentUser) return;
-    if (d.viewOnceOpened || !d.imageUrl) { showToast('Bu fotoğraf zaten açıldı'); return; }
+    if (d.viewOnceOpened || d.imageDelivered || !d.imageUrl) { showToast('Bu fotoğraf zaten açıldı'); return; }
     if (d.senderUid === currentUser.uid) return;
     const chatId = currentChatId;
     const src = toImageSrc(d.imageUrl);
@@ -5172,11 +5172,10 @@ function openViewOnce(msgId) {
 
 function consumeViewOnce(chatId, msgId) {
     const en = findMsgEntry(chatId, msgId);
-    if (en) { en.data.viewOnceOpened = true; en.data.imageUrl = null; }
+    if (en) { en.data.imageDelivered = true; en.data.imageUrl = null; }
     updateDoc(doc(db, "chats", chatId, "messages", msgId), {
         imageUrl: null,
-        viewOnceOpened: true,
-        viewOnceAt: serverTimestamp()
+        imageDelivered: true
     }).catch(() => showToast('Fotoğraf durumu kaydedilemedi'));
     const sess = chatSessions.get(chatId);
     if (sess && currentChatId === chatId) {
