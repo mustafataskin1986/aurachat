@@ -79,7 +79,20 @@ export async function deliverPush({ senderUid, receiverUid, title, body, data, t
     }
 
     const isCall = String(data.kind || '') === 'call';
-    if (!isCall && chatSummarySnap.exists && chatSummarySnap.data().muted === true) {
+
+    // Etiketleme bildirimi: mesajın gerçekten alıcıyı etiketlediğini doğrula (sessize almayı delebilir)
+    let isMention = false;
+    if (String(data.msgType || '') === 'mention' && data.msgId && ID_RE.test(String(data.msgId))) {
+      try {
+        const ms = await admin.firestore().doc(`chats/${chatId}/messages/${String(data.msgId)}`).get();
+        if (ms.exists) {
+          const md = ms.data();
+          isMention = md.senderUid === senderUid && Array.isArray(md.mentions) && md.mentions.includes(receiverUid);
+        }
+      } catch (e) {}
+    }
+
+    if (!isCall && !isMention && chatSummarySnap.exists && chatSummarySnap.data().muted === true) {
       return { status: 200, body: { success: false, reason: 'muted' } };
     }
 
@@ -105,6 +118,7 @@ export async function deliverPush({ senderUid, receiverUid, title, body, data, t
     }
     if (tag) safeData.tag = String(tag).slice(0, MAX_DATA_VALUE);
     safeData.senderUid = senderUid;
+    if (!isMention && safeData.msgType === 'mention') safeData.msgType = 'text';
     safeData.isGroup = chatId.split('_').length === 2 ? '0' : '1';
 
     let message;
