@@ -50,6 +50,9 @@ function ensureMenu() {
         <button type="button" data-menu="settings" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-solid fa-gear text-gray-400 w-4"></i><span>Ayarlar</span>
         </button>
+        <button type="button" data-menu="eruda" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid fa-bug text-sky-400 w-4"></i><span id="aura-eruda-label">Eruda: Kapalı</span>
+        </button>
     `;
     sidebar.appendChild(el);
     el.addEventListener('click', (e) => {
@@ -62,6 +65,8 @@ function ensureMenu() {
             openStarredPanel();
         } else if (item.dataset.menu === 'settings' && window.openProfilePanel) {
             window.openProfilePanel();
+        } else if (item.dataset.menu === 'eruda') {
+            toggleEruda();
         }
     });
     menuEl = el;
@@ -72,10 +77,41 @@ function closeMenu() {
     if (menuEl) menuEl.classList.add('hidden');
 }
 
+// Eruda: yalnızca menüden açılınca yüklenir. Seçim hatırlanır (açıksa sonraki açılışlarda da yüklenir)
+function erudaOn() {
+    try { return localStorage.getItem('aura_eruda') === '1'; } catch (e) { return false; }
+}
+
+function refreshErudaLabel() {
+    const l = document.getElementById('aura-eruda-label');
+    if (l) l.textContent = erudaOn() ? 'Eruda: Açık' : 'Eruda: Kapalı';
+}
+
+function toggleEruda() {
+    if (erudaOn()) {
+        try { localStorage.removeItem('aura_eruda'); } catch (e) {}
+        try { if (window.eruda) window.eruda.destroy(); } catch (e) {}
+        refreshErudaLabel();
+        return;
+    }
+    try { localStorage.setItem('aura_eruda', '1'); } catch (e) {}
+    refreshErudaLabel();
+    if (window.eruda) {
+        try { window.eruda.init(); } catch (e) {}
+        return;
+    }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/eruda';
+    s.async = true;
+    s.onload = () => { try { window.eruda.init(); } catch (e) {} };
+    document.head.appendChild(s);
+}
+
 if (menuBtn) {
     menuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const el = ensureMenu();
+        refreshErudaLabel();
         el.classList.toggle('hidden');
     });
 }
