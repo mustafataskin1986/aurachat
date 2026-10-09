@@ -2111,29 +2111,50 @@ function renderStarredPanel() {
     if (!starredPanelEl) return;
     const list = starredPanelEl.querySelector('[data-list]');
     const items = Array.from(starredMap.values())
-        .filter((d) => d.chatId === currentChatId)
         .sort((a, b) => (b.msgTime || 0) - (a.msgTime || 0));
     if (!items.length) {
-        list.innerHTML = '<div style="padding:40px 24px;text-align:center;color:#8696a0;font-size:15px;">Bu sohbette yıldızlı mesaj yok.<br>Bir mesajı seçip üstteki yıldıza dokun.</div>';
+        list.innerHTML = '<div style="padding:40px 24px;text-align:center;color:#8696a0;font-size:15px;">Yıldızlı mesaj yok.<br>Bir mesajı seçip üstteki yıldıza dokun.</div>';
         return;
     }
     list.innerHTML = items.map((d) => {
         const mine = currentUser && d.senderUid === currentUser.uid;
-        const who = mine ? 'Sen' : (d.senderName || d.chatName || 'Kullanıcı');
+        const whoName = mine ? 'Sen' : (d.senderName || d.chatName || 'Kullanıcı');
+        const who = (d.chatName && d.chatName !== whoName) ? `${whoName} ▸ ${d.chatName}` : whoName;
         const dt = new Date(d.msgTime || 0);
         const when = dt.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + dt.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-        return `<div data-msg="${escapeHtml(d.msgId)}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer;">
+        return `<div data-msg="${escapeHtml(d.msgId)}" data-chat="${escapeHtml(d.chatId)}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);cursor:pointer;">
             <div style="flex:1;min-width:0;">
                 <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;"><span style="color:#34d399;">${escapeHtml(who)}</span><span style="color:#8696a0;">${escapeHtml(when)}</span></div>
                 <div style="color:#e9edef;font-size:15px;margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere;">${escapeHtml(d.preview || '')}</div>
             </div>
-            <button type="button" data-unstar="${escapeHtml(d.msgId)}" style="color:#fbbf24;font-size:18px;padding:4px 6px;"><i class="fa-solid fa-star"></i></button>
+            <button type="button" data-unstar="${escapeHtml(d.chatId)}__${escapeHtml(d.msgId)}" style="color:#fbbf24;font-size:18px;padding:4px 6px;"><i class="fa-solid fa-star"></i></button>
         </div>`;
     }).join('');
 }
 
+// Yıldızlı mesaja tıklayınca o sohbete gider ve mesajı gösterir (alıntıya dokunmak gibi)
+async function goToStarredMessage(chatId, msgId) {
+    closeStarredPanel();
+    if (currentChatId !== chatId) {
+        let target = null;
+        if (chatId === 'global') target = 'global';
+        else target = resolveShareTarget(chatId);
+        if (!target) { showToast('Sohbet bulunamadı'); return; }
+        await selectChat(target);
+    }
+    let tries = 0;
+    const wait = () => {
+        if ((currentChatId === chatId && messageElementsById.size > 0) || tries++ > 40) {
+            scrollToOriginalMessage(msgId);
+            return;
+        }
+        setTimeout(wait, 100);
+    };
+    setTimeout(wait, 150);
+}
+
 export function openStarredPanel() {
-    if (!currentChatId || !currentUser) return;
+    if (!currentUser) return;
     if (starredPanelEl) closeStarredPanel();
     const el = document.createElement('div');
     el.style.cssText = 'position:fixed;inset:0;z-index:75;background:#0b141a;display:flex;flex-direction:column;';
@@ -2152,14 +2173,12 @@ export function openStarredPanel() {
         const un = ev.target.closest('[data-unstar]');
         if (un) {
             ev.stopPropagation();
-            deleteDoc(doc(db, "users", currentUser.uid, "starred", starKey(currentChatId, un.getAttribute('data-unstar')))).catch(() => showToast('Kaldırılamadı'));
+            deleteDoc(doc(db, "users", currentUser.uid, "starred", un.getAttribute('data-unstar'))).catch(() => showToast('Kaldırılamadı'));
             return;
         }
         const row = ev.target.closest('[data-msg]');
         if (!row) return;
-        const mid = row.getAttribute('data-msg');
-        closeStarredPanel();
-        setTimeout(() => scrollToOriginalMessage(mid), 60);
+        goToStarredMessage(row.getAttribute('data-chat'), row.getAttribute('data-msg'));
     });
 }
 function updateSelectionUI() {
