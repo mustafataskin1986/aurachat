@@ -1044,7 +1044,7 @@ export function prewarmChatSession(chatId, otherUid) {
 export async function prewarmChatMedia(chatId, otherUid) {
     const session = await ensureChatSession(chatId, otherUid);
     for (const { id, data: msg } of session.messages) {
-        if (msg.type !== 'image') continue;
+        if (msg.type !== 'image' || msg.viewOnce) continue;
 
         const imagesCount = msg.imagesCount || 0;
         if (imagesCount > 1) {
@@ -2432,7 +2432,7 @@ function updateSelectionUI() {
             const on = sIds.length > 0 && sIds.every((id) => isStarred(currentChatId, id));
             selectionStarBtn.innerHTML = on ? '<i class="fa-solid fa-star" style="color:#fbbf24"></i>' : '<i class="fa-regular fa-star"></i>';
         }
-          if (selectionForwardBtn) selectionForwardBtn.style.display = (onlyEntry && (onlyType === 'text' || onlyType === 'image')) ? '' : 'none';
+          if (selectionForwardBtn) selectionForwardBtn.style.display = (onlyEntry && !onlyEntry.data.viewOnce && (onlyType === 'text' || onlyType === 'image')) ? '' : 'none';
         if (onlyEntry && !NO_REACT_TYPES.includes(onlyType)) showReactionBar(onlyId, onlyEntry); else hideReactionBar();
     } else {
         selectionToolbar.classList.add('hidden');
@@ -3115,14 +3115,23 @@ function buildMessageElement(msg, isMine, msgId, avatarMode) {
 
     const imagesCount = msg.imagesCount || 0;
     const isAlbum = msg.type === 'image' && imagesCount > 1;
-    const isSingleImage = msg.type === 'image' && !isAlbum && (msg.imageUrl || msg.imageDelivered);
+    const isViewOnce = msg.type === 'image' && !!msg.viewOnce;
+    const isSingleImage = !isViewOnce && msg.type === 'image' && !isAlbum && (msg.imageUrl || msg.imageDelivered);
     const isImage = isAlbum || isSingleImage;
 
     const localCachedSrc = isSingleImage ? mediaUriCache.get(`${currentChatId}/${msgId}`) : null;
     const initialImgSrc = localCachedSrc || msg.imageUrl || '';
 
 let bodyHtml;
-if (isAlbum) {
+if (isViewOnce) {
+        if (msg.viewOnceOpened) {
+            bodyHtml = `<p class="break-words flex items-center gap-2 text-gray-400 italic text-[13px]"><i class="fa-regular fa-circle-check"></i> Fotoğraf açıldı</p>`;
+        } else if (isMine) {
+            bodyHtml = `<p class="break-words flex items-center gap-2 text-gray-200 text-[13px]"><span style="display:inline-flex;width:22px;height:22px;border:2px solid currentColor;border-radius:9999px;align-items:center;justify-content:center;font-weight:700;font-size:12px;">1</span> Fotoğraf · henüz açılmadı</p>`;
+        } else {
+            bodyHtml = `<p data-viewonce="${msgId}" class="break-words flex items-center gap-2 text-white text-[14px] cursor-pointer"><span style="display:inline-flex;width:26px;height:26px;border:2px solid var(--aura-btn,#22c55e);color:var(--aura-btn,#22c55e);border-radius:9999px;align-items:center;justify-content:center;font-weight:700;font-size:13px;">1</span> Fotoğraf · görmek için dokun</p>`;
+        }
+    } else if (isAlbum) {
         bodyHtml = buildAlbumTilesHtml(currentChatId, msgId, imagesCount);
         if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
     } else if (isSingleImage) {
@@ -3298,6 +3307,14 @@ if (isAlbum) {
         });
     }
 
+if (isViewOnce) {
+        const voEl = msgDiv.querySelector('[data-viewonce]');
+        if (voEl) voEl.addEventListener('click', (e) => {
+            if (selectionMode) return;
+            e.stopPropagation();
+            openViewOnce(msgId);
+        });
+    }
 if (msg.type === 'audio') bindAudioPlayer(msgDiv, msgId, msg);
 
     const readMoreBtn = msgDiv.querySelector('[data-read-more]');
@@ -4365,6 +4382,8 @@ async function sendSharedImagesTo(targetUser) {
 
 window.forwardImageMessage = function (msgId) {
     if (!currentChatId || !currentUser) return;
+    const vsrc = findMessageEntry(msgId);
+    if (vsrc && vsrc.data && vsrc.data.viewOnce) { showToast('Bir kez görüntülenen fotoğraf iletilemez'); return; }
         forwardSource = { chatId: currentChatId, msgId: msgId, entry: findMessageEntry(msgId) };
     openForwardPicker();
 };
@@ -5123,6 +5142,51 @@ function makeViewerItem(entry, msgId, src) {
     };
 }
 
+function viewOnceAllowed() {
+    return !!(currentChatId && currentChatId !== 'global' && !currentIsGroup);
+}
+window.__auraViewOnceAllowed = viewOnceAllowed;
+
+// Bir kez görüntülenen fotoğraf: galeriye/diske hiç yazılmaz, kapatınca sunucudan da silinir
+function openViewOnce(msgId) {
+    const entry = findMessageEntry(msgId);
+    const d = entry && entry.data;
+    if (!d || !d.viewOnce || !currentUser) return;
+    if (d.viewOnceOpened || !d.imageUrl) { showToast('Bu fotoğraf zaten açıldı'); return; }
+    if (d.senderUid === currentUser.uid) return;
+    const chatId = currentChatId;
+    const src = toImageSrc(d.imageUrl);
+    viewerBackActive = true;
+    pushBackState(() => { viewerBackActive = false; window.closeImageViewer(); });
+    window.openImageViewer({
+        items: [makeViewerItem(entry, msgId, src)],
+        index: 0,
+        album: false,
+        viewOnce: true,
+        onClose: () => {
+            if (viewerBackActive) { viewerBackActive = false; popBackState(); }
+            consumeViewOnce(chatId, msgId);
+        }
+    });
+}
+
+function consumeViewOnce(chatId, msgId) {
+    const en = findMsgEntry(chatId, msgId);
+    if (en) { en.data.viewOnceOpened = true; en.data.imageUrl = null; }
+    updateDoc(doc(db, "chats", chatId, "messages", msgId), {
+        imageUrl: null,
+        viewOnceOpened: true,
+        viewOnceAt: serverTimestamp()
+    }).catch(() => showToast('Fotoğraf durumu kaydedilemedi'));
+    const sess = chatSessions.get(chatId);
+    if (sess && currentChatId === chatId) {
+        const top = messageContainer.scrollTop;
+        const nearBottom = isNearBottom();
+        renderSession(sess);
+        if (nearBottom) scrollToBottom(); else messageContainer.scrollTop = top;
+    }
+}
+
 window.openImageLightbox = function (src) {
     let msgId = null;
     try {
@@ -5269,11 +5333,12 @@ async function sendMessage() {
 // Önce bekleyen resimler, sonra yazı gider
 async function sendFromComposer() {
     if (editingMsg) { await submitEdit(); return; }
+    const wantViewOnce = !!(composer.isViewOnce && composer.isViewOnce()) && viewOnceAllowed();
     const files = composer.takeImages();
     if (files.length) {
-        const caption = messageInput.value.trim();
-        messageInput.value = '';
-        await sendPendingImages(files, caption);
+        const caption = wantViewOnce ? '' : messageInput.value.trim();
+        if (!wantViewOnce) messageInput.value = '';
+        await sendPendingImages(files, caption, wantViewOnce && files.length === 1);
     } else if (messageInput.value.trim()) {
         await sendMessage();
     }
@@ -5445,7 +5510,7 @@ if (attachBtn && imageInput) {
         messageInput.focus();
     });
 
-    sendPendingImages = async (files, caption = '') => {
+    sendPendingImages = async (files, caption = '', viewOnce = false) => {
         if (!files.length || !currentUser || !currentChatId) return;
         const replyPayload = consumeReplyPayload();
         if (currentChatId !== 'global') {
@@ -5507,6 +5572,7 @@ if (attachBtn && imageInput) {
                 await addDoc(collection(db, "chats", currentChatId, "messages"), {
                     type: 'image',
                     imageUrl: compressed[0],
+                    ...(viewOnce ? { viewOnce: true } : {}),
                     text: caption,
                     senderUid: currentUser.uid,
                     senderName: currentUser.name,
@@ -5530,7 +5596,7 @@ if (attachBtn && imageInput) {
             }
 
             const photoLabel = compressed.length > 1 ? `📷 ${compressed.length} Fotoğraf` : '📷 Fotoğraf';
-            const summaryText = caption ? `${photoLabel} ${caption}` : photoLabel;
+            const summaryText = viewOnce ? '📷 Bir kez görüntülenebilir fotoğraf' : (caption ? `${photoLabel} ${caption}` : photoLabel);
             await updateChatSummaries(summaryText);
             pushToGroupMembers(summaryText);
 
