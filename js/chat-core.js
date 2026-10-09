@@ -2135,22 +2135,31 @@ function renderStarredPanel() {
 // Yıldızlı mesaja tıklayınca o sohbete gider ve mesajı gösterir (alıntıya dokunmak gibi)
 async function goToStarredMessage(chatId, msgId) {
     closeStarredPanel();
-    if (currentChatId !== chatId) {
-        let target = null;
-        if (chatId === 'global') target = 'global';
-        else target = resolveShareTarget(chatId);
-        if (!target) { showToast('Sohbet bulunamadı'); return; }
-        await selectChat(target);
-    }
-    let tries = 0;
-    const wait = () => {
-        if ((currentChatId === chatId && messageElementsById.size > 0) || tries++ > 40) {
-            scrollToOriginalMessage(msgId);
-            return;
+    // Sohbet açılırken önce en alta, sonra mesaja kaymasın: mesaj yerine gelene kadar alan gizli kalır
+    const reveal = () => { messageContainer.style.visibility = ''; };
+    messageContainer.style.visibility = 'hidden';
+    const safety = setTimeout(reveal, 5000);
+    try {
+        if (currentChatId !== chatId) {
+            let target = null;
+            if (chatId === 'global') target = 'global';
+            else target = resolveShareTarget(chatId);
+            if (!target) { showToast('Sohbet bulunamadı'); return; }
+            await selectChat(target);
         }
-        setTimeout(wait, 100);
-    };
-    setTimeout(wait, 150);
+        await new Promise((resolve) => {
+            let tries = 0;
+            const wait = () => {
+                if ((currentChatId === chatId && messageElementsById.size > 0) || tries++ > 40) { resolve(); return; }
+                setTimeout(wait, 100);
+            };
+            setTimeout(wait, 100);
+        });
+        await scrollToOriginalMessage(msgId, true);
+    } finally {
+        clearTimeout(safety);
+        reveal();
+    }
 }
 
 export function openStarredPanel() {
@@ -4302,7 +4311,7 @@ if (selectionMoreBtn) {
         moreMenuEl.style.display = moreMenuEl.style.display === 'block' ? 'none' : 'block';
     });
 }
-async function scrollToOriginalMessage(msgId) {
+async function scrollToOriginalMessage(msgId, instant) {
     let el = messageElementsById.get(msgId);
     if (!el && currentChatId) {
         // Mesaj henüz yüklenmemiş eski bir mesaj: bulunana kadar eskileri yükle
@@ -4322,14 +4331,14 @@ async function scrollToOriginalMessage(msgId) {
         }
     }
     if (!el) { showToast('Orijinal mesaj bulunamadı'); return; }
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'center' });
 // Kaydırma bitince şerit belirir, sonra kendiliğinden solar
     setTimeout(() => {
         el.classList.remove('msg-flash');
         void el.offsetWidth;
         el.classList.add('msg-flash');
         setTimeout(() => el.classList.remove('msg-flash'), 1900);
-    }, 350);
+    }, instant ? 80 : 350);
 }
 
 function buildReplyQuoteHtml(replyTo, isMine) {
