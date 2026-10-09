@@ -181,8 +181,19 @@ function groupAvatarHtml(msg, mode) {
 // ------------------------------------------
 let memberSheetEl = null;
 
-function closeMemberSheetFromBack() {
-    if (memberSheetEl) { memberSheetEl.remove(); memberSheetEl = null; }
+// Aşağı kayarak kapanma animasyonu (anında kaldırmak için instant=true)
+function closeMemberSheetFromBack(instant) {
+    const el = memberSheetEl;
+    if (!el) return;
+    memberSheetEl = null;
+    const panel = el.firstElementChild;
+    if (instant === true || !panel) { el.remove(); return; }
+    el.style.pointerEvents = 'none';
+    el.style.transition = 'background-color 220ms ease';
+    el.style.backgroundColor = 'rgba(0,0,0,0)';
+    panel.style.transition = 'transform 240ms cubic-bezier(0.4,0,1,1)';
+    panel.style.transform = 'translateY(100%)';
+    setTimeout(() => el.remove(), 260);
 }
 
 function closeMemberSheet() {
@@ -200,7 +211,7 @@ function isUnsavedNumber(phone) {
 
 function openMemberSheet(uid, fallbackName) {
     if (!uid || !currentUser || uid === currentUser.uid) return;
-    closeMemberSheetFromBack();
+    if (memberSheetEl) { memberSheetEl.remove(); memberSheetEl = null; }
     const um = window.__aurachatUsers;
     const u = um ? um.get(uid) : null;
     const name = (u && u.name) || fallbackName || 'Kullanıcı';
@@ -215,9 +226,11 @@ function openMemberSheet(uid, fallbackName) {
     const btn = (act, icon, label) => `<button type="button" data-act="${act}" class="flex flex-col items-center justify-center flex-1 py-3 rounded-xl bg-[#111b21] active:bg-[#0b141a]"><i class="fa-solid ${icon} text-emerald-400 text-xl"></i><span class="text-[12px] text-gray-200 mt-1.5">${label}</span></button>`;
 
     const el = document.createElement('div');
-    el.className = 'fixed inset-0 z-[70] bg-black/60 flex items-end';
+    el.className = 'fixed inset-0 z-[70] flex items-end';
+    el.style.backgroundColor = 'rgba(0,0,0,0)';
+    el.style.transition = 'background-color 240ms ease';
     el.innerHTML = `
-        <div class="w-full bg-[#202c33] rounded-t-2xl pb-6 px-4 pt-5 text-center">
+        <div class="w-full bg-[#202c33] rounded-t-2xl pb-6 px-4 pt-5 text-center" style="transform:translateY(100%);will-change:transform;touch-action:none;">
             <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-4"></div>
             ${bigAvatar}
             <p class="text-white text-lg font-semibold mt-3 truncate">${escapeHtml(name)}</p>
@@ -261,6 +274,48 @@ function openMemberSheet(uid, fallbackName) {
     });
     memberSheetEl = el;
     pushBackState(closeMemberSheetFromBack);
+
+    // Alttan kayarak açılış
+    const panel = el.firstElementChild;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        el.style.backgroundColor = 'rgba(0,0,0,0.6)';
+        panel.style.transition = 'transform 280ms cubic-bezier(0.2,0.9,0.3,1)';
+        panel.style.transform = 'translateY(0)';
+    }));
+
+    // Parmakla aşağı çekerek kapatma
+    let dragY0 = null;
+    let dragDy = 0;
+    let dragT0 = 0;
+    panel.addEventListener('touchstart', (ev) => {
+        if (ev.touches.length !== 1) return;
+        dragY0 = ev.touches[0].clientY;
+        dragDy = 0;
+        dragT0 = Date.now();
+        panel.style.transition = 'none';
+    }, { passive: true });
+    panel.addEventListener('touchmove', (ev) => {
+        if (dragY0 === null) return;
+        dragDy = Math.max(0, ev.touches[0].clientY - dragY0);
+        panel.style.transform = `translateY(${dragDy}px)`;
+        el.style.backgroundColor = `rgba(0,0,0,${Math.max(0, 0.6 - dragDy / 600)})`;
+    }, { passive: true });
+    const endDrag = () => {
+        if (dragY0 === null) return;
+        const dy = dragDy;
+        const fast = dy / Math.max(1, Date.now() - dragT0) > 0.6;
+        dragY0 = null;
+        dragDy = 0;
+        if (dy > 90 || (fast && dy > 25)) {
+            closeMemberSheet();
+        } else {
+            panel.style.transition = 'transform 200ms ease';
+            panel.style.transform = 'translateY(0)';
+            el.style.backgroundColor = 'rgba(0,0,0,0.6)';
+        }
+    };
+    panel.addEventListener('touchend', endDrag);
+    panel.addEventListener('touchcancel', endDrag);
 }
 
 // Avatara dokunma: seçim modunda değilken profil kartını aç (mesaj seçimini tetiklemesin)
