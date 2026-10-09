@@ -605,6 +605,7 @@ export async function loadContacts() {
     function isClearedChat(chatData) {
         const clearedAt = chatData.clearedAt;
         if (!clearedAt) return false;
+        if (chatData.keepRow) return false; // "Sohbeti temizle": satır listede kalır
         const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
         const clearedAtMs = clearedAt.toDate().getTime();
         return lastTimeMs <= clearedAtMs;
