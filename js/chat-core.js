@@ -935,6 +935,11 @@ let firstSnapResolve = null;
             });
             session.messages = docs;
         }
+        // Temizlenen sohbette temizleme anından eski mesajlar bellekte de tutulmaz
+        if (session.clearedAt) {
+            const clrMs = session.clearedAt.toMillis();
+            session.messages = session.messages.filter((m) => !m.data.createdAt || !m.data.createdAt.toMillis || m.data.createdAt.toMillis() > clrMs);
+        }
 
         session.oldestLoadedCreatedAt = session.messages.length ? session.messages[0].data.createdAt : null;
         session.hasMoreOlderCandidate = session.messages.length >= 50;
@@ -1382,7 +1387,8 @@ export async function clearChatForMe(chatId) {
     if (!currentUser || !chatId || chatId === 'global') return;
     try {
         await setDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
-            clearedAt: serverTimestamp()
+            clearedAt: serverTimestamp(),
+            keepRow: false
         }, { merge: true });
         let clearedMs = Date.now();
         try {
@@ -1411,10 +1417,35 @@ export async function wipeChat(chatId) {
     if (!currentUser || !chatId || chatId === 'global') return;
     const me = currentUser.uid;
     const isGrp = isGroupChat(chatId);
-    await clearChatForMe(chatId);
+    // Sohbet ve liste satırı kalır, içindeki her şey temizlenir
+    await setDoc(doc(db, "users", me, "chats", chatId), {
+        clearedAt: serverTimestamp(),
+        keepRow: true,
+        lastMessage: '',
+        unreadCount: 0,
+        hasMention: false
+    }, { merge: true });
+    let wipedMs = Date.now();
     try {
-        await setDoc(doc(db, "users", me, "chats", chatId), { lastMessage: '', unreadCount: 0, hasMention: false }, { merge: true });
+        const snapW = await getDoc(doc(db, "users", me, "chats", chatId));
+        const ca = snapW.exists() ? snapW.data().clearedAt : null;
+        if (ca && ca.toMillis) wipedMs = ca.toMillis();
     } catch (e) {}
+    try { localStorage.setItem(clearedKey(chatId), String(wipedMs)); } catch (e) {}
+    const wsess = chatSessions.get(chatId);
+    if (wsess) {
+        wsess.clearedAt = Timestamp.fromMillis(wipedMs);
+        wsess.messages = [];
+        wsess.olderMessagesPrepended = [];
+        wsess.hasMoreOlderCandidate = false;
+        wsess.noMoreOlderMessages = true;
+        wsess.oldestLoadedCreatedAt = null;
+        if (currentChatId === chatId) {
+            unreadDivider = null;
+            renderSession(wsess);
+        }
+    }
+    await deleteChatDiskCache(chatId);
 
     // Herkes sohbeti temizlediyse, hepsinin temizlediği zamana kadarki mesajlar sunucudan da silinir
     try {
