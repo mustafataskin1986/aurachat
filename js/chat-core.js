@@ -875,6 +875,12 @@ if (!window.__auraTBuild) window.__auraTBuild = Math.round(performance.now());
         }).catch(() => {});
     }
 
+    // Bu cihazda saklanan temizleme zamanı Firestore'dan okunandan yeniyse onu kullan
+    const localClr = getLocalClearedMs(chatId);
+    if (localClr && (!session.clearedAt || session.clearedAt.toMillis() < localClr)) {
+        session.clearedAt = Timestamp.fromMillis(localClr);
+    }
+
     const isIncremental = session.messages.length > 0;
     const lastCachedAt = isIncremental ? session.messages[session.messages.length - 1].data.createdAt : null;
 
@@ -1364,12 +1370,27 @@ if (currentIsGroup || isGroupChat(currentChatId)) {
 // ------------------------------------------
 // SOHBETİ KALICI OLARAK TEMİZLE (listeden "sil")
 // ------------------------------------------
+// Temizleme zamanı bu cihazda da saklanır: önbellek/ağ okuması gecikse bile eski mesajlar geri gelmesin
+function clearedKey(chatId) {
+    return 'aura_clr_' + (currentUser ? currentUser.uid : '') + '_' + chatId;
+}
+function getLocalClearedMs(chatId) {
+    try { return Number(localStorage.getItem(clearedKey(chatId))) || 0; } catch (e) { return 0; }
+}
+
 export async function clearChatForMe(chatId) {
     if (!currentUser || !chatId || chatId === 'global') return;
     try {
         await setDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
             clearedAt: serverTimestamp()
         }, { merge: true });
+        let clearedMs = Date.now();
+        try {
+            const snapC = await getDoc(doc(db, "users", currentUser.uid, "chats", chatId));
+            const ca = snapC.exists() ? snapC.data().clearedAt : null;
+            if (ca && ca.toMillis) clearedMs = ca.toMillis();
+        } catch (e) {}
+        try { localStorage.setItem(clearedKey(chatId), String(clearedMs)); } catch (e) {}
 
         const session = chatSessions.get(chatId);
         if (session) {
@@ -1382,6 +1403,51 @@ export async function clearChatForMe(chatId) {
     } catch (err) {
         console.error("Sohbet temizlenemedi:", err);
         throw err;
+    }
+}
+
+// Sohbet içinden "Sohbeti temizle": bende kalıcı olarak temizle, herkes temizlediyse Firestore'dan da sil
+export async function wipeChat(chatId) {
+    if (!currentUser || !chatId || chatId === 'global') return;
+    const me = currentUser.uid;
+    const isGrp = isGroupChat(chatId);
+    await clearChatForMe(chatId);
+    try {
+        await setDoc(doc(db, "users", me, "chats", chatId), { lastMessage: '', unreadCount: 0, hasMention: false }, { merge: true });
+    } catch (e) {}
+
+    // Herkes sohbeti temizlediyse, hepsinin temizlediği zamana kadarki mesajlar sunucudan da silinir
+    try {
+        await setDoc(doc(db, "chats", chatId), { [`clearedAt_${me}`]: serverTimestamp() }, { merge: true });
+        const chatSnap = await getDoc(doc(db, "chats", chatId));
+        const cd = chatSnap.exists() ? chatSnap.data() : {};
+        let others = [];
+        if (isGrp) {
+            const gd = await getGroupData(chatId);
+            others = ((gd && gd.members) || []).filter((u) => u !== me);
+        } else {
+            others = chatId.split('_').filter((u) => u && u !== me);
+        }
+        let threshold = cd[`clearedAt_${me}`];
+        if (!threshold || !threshold.toMillis) return;
+        for (const u of others) {
+            const c = cd[`clearedAt_${u}`];
+            if (!c || !c.toMillis) return; // biri henüz temizlemedi: sunucudan silme
+            if (c.toMillis() < threshold.toMillis()) threshold = c;
+        }
+        for (let guard = 0; guard < 30; guard++) {
+            const snap = await getDocs(query(
+                collection(db, "chats", chatId, "messages"),
+                where("createdAt", "<=", threshold),
+                orderBy("createdAt", "asc"),
+                limit(100)
+            ));
+            if (snap.empty) break;
+            const res = await Promise.allSettled(snap.docs.map((d) => deleteDoc(d.ref)));
+            if (res.every((r) => r.status === 'rejected')) break;
+        }
+    } catch (err) {
+        console.warn("Sohbet sunucudan tam temizlenemedi:", err);
     }
 }
 
@@ -2685,6 +2751,7 @@ function renderSession(session) {
     let nextExpiry = 0;
     const visibleAll = all.filter(({ id: mid, data: m }) => {
         if (currentUser && Array.isArray(m.deletedFor) && m.deletedFor.includes(currentUser.uid)) return false;
+        if (session.clearedAt && m.createdAt && m.createdAt.toMillis && m.createdAt.toMillis() <= session.clearedAt.toMillis()) return false;
         if (m.expiresAtMs) {
             if (m.expiresAtMs <= nowMs) {
                 // Süresi dolan mesaj herkeste gizlenir; kendi mesajımızsa kaydı da sileriz
