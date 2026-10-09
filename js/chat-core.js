@@ -131,6 +131,51 @@ function senderLineHtml(msg, isImage) {
     const phone = unsavedSenderPhone(msg);
     return `<div class="flex items-baseline justify-between gap-3 mb-0.5 ${isImage ? 'px-2 pt-1' : ''}"><span class="text-[11px] font-bold truncate" style="color:${senderColor(msg)}">${phone ? '~ ' : ''}${escapeHtml(msg.senderName)}</span>${phone ? `<span class="text-[11px] flex-shrink-0 text-gray-400">${escapeHtml(phone)}</span>` : ''}</div>`;
 }
+// ------------------------------------------
+// GRUPTA MESAJ YANINDA AVATAR
+// Avatar verisi zaten bellekte (window.__aurachatUsers, profildeki avatarla aynı kayıt):
+// ek Firestore okuması YOK. Her kişi için bir kez blob adresi üretilir, tüm mesajlar aynı adresi paylaşır.
+// ------------------------------------------
+const GAV_SIZE = 28;
+const gavBlobByUid = new Map(); // uid -> { key, url }
+
+function groupAvatarSrc(uid, avatar) {
+    if (!avatar || typeof avatar !== 'string') return '';
+    if (/^https?:\/\//i.test(avatar)) return avatar;
+    if (avatar.indexOf('data:') !== 0) return '';
+    const key = avatar.length + ':' + avatar.slice(-32);
+    const hit = gavBlobByUid.get(uid);
+    if (hit && hit.key === key) return hit.url;
+    try {
+        const comma = avatar.indexOf(',');
+        const mime = (avatar.slice(5, comma).split(';')[0]) || 'image/jpeg';
+        const bin = atob(avatar.slice(comma + 1).replace(/\s/g, ''));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+        if (hit) { try { URL.revokeObjectURL(hit.url); } catch (e) {} }
+        gavBlobByUid.set(uid, { key, url });
+        return url;
+    } catch (e) {
+        return '';
+    }
+}
+
+// mode: 'space' = aynı kişinin arka arkaya mesajlarında boşluk bırak, diğerlerinde avatar göster
+function groupAvatarHtml(msg, mode) {
+    if (!currentIsGroup) return '';
+    if (mode === 'space') return `<div class="aura-gav" style="width:${GAV_SIZE}px;flex-shrink:0;margin-right:6px;"></div>`;
+    const um = window.__aurachatUsers;
+    const u = um && msg.senderUid ? um.get(msg.senderUid) : null;
+    const src = u && u.avatar ? groupAvatarSrc(msg.senderUid, u.avatar) : '';
+    const nm = String(msg.senderName || (u && u.name) || '?').trim();
+    const initial = escapeHtml((nm.charAt(0) || '?').toUpperCase());
+    const inner = src
+        ? `<img src="${src}" draggable="false" style="width:${GAV_SIZE}px;height:${GAV_SIZE}px;border-radius:9999px;object-fit:cover;display:block;">`
+        : `<div style="width:${GAV_SIZE}px;height:${GAV_SIZE}px;border-radius:9999px;background:${senderColor(msg, 38)};color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;">${initial}</div>`;
+    return `<div class="aura-gav" style="width:${GAV_SIZE}px;height:${GAV_SIZE}px;flex-shrink:0;margin-right:6px;align-self:flex-end;">${inner}</div>`;
+}
+
 let recentOpenScrollLock = false;
 let unreadDivider = null; // { chatId, msgId, count }
 let tempIncoming = null; // bildirimden çizilen geçici balon: { chatId, msgId, at }
@@ -2447,9 +2492,9 @@ function renderSession(session) {
     const all = session.olderMessagesPrepended.concat(session.messages);
     let lastDayKey = null;
 
-    all.forEach(({ id, data: msg }) => {
-        if (currentUser && Array.isArray(msg.deletedFor) && msg.deletedFor.includes(currentUser.uid)) return;
-
+    const visibleAll = all.filter(({ data: m }) => !(currentUser && Array.isArray(m.deletedFor) && m.deletedFor.includes(currentUser.uid)));
+    const isBubble = (m) => m.type !== 'system' && m.type !== 'call_duration';
+    visibleAll.forEach(({ id, data: msg }, vi) => {
         // Gün değişince tarih etiketi
         const msgDate = msg.createdAt ? msg.createdAt.toDate() : new Date();
         const dayKey = dayKeyOf(msgDate);
@@ -2464,7 +2509,16 @@ function renderSession(session) {
         }
 
         const isMine = !!(currentUser && currentUser.uid && msg.senderUid === currentUser.uid);
-        fragment.appendChild(buildMessageElement(msg, isMine, id));
+        // Grup: aynı kişinin arka arkaya mesajlarında avatar yalnızca sonuncuda görünür
+        let avatarMode;
+        if (session.isGroup && !isMine && isBubble(msg)) {
+            const nx = visibleAll[vi + 1];
+            const sameRun = !!(nx && isBubble(nx.data) && nx.data.senderUid === msg.senderUid
+                && dayKeyOf(nx.data.createdAt ? nx.data.createdAt.toDate() : new Date()) === dayKey
+                && !(unreadDivider && unreadDivider.chatId === session.chatId && unreadDivider.msgId === nx.id));
+            avatarMode = sameRun ? 'space' : 'show';
+        }
+        fragment.appendChild(buildMessageElement(msg, isMine, id, avatarMode));
     });
 
     messageContainer.appendChild(fragment);
@@ -2812,7 +2866,7 @@ function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
     return `<div class="grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden" style="width:280px;max-width:100%;">${tiles}</div>`;
 }
 
-function buildMessageElement(msg, isMine, msgId) {
+function buildMessageElement(msg, isMine, msgId, avatarMode) {
    // Konuşma süresi mesajı: iki tarafta da ortada küçük etiket
     if (msg.type === 'call_duration') {
         const cdDiv = document.createElement('div');
@@ -2941,6 +2995,7 @@ if (isAlbum) {
                  : `<span class="aura-time text-[10px] text-white float-right ml-3 mt-1">${editedLabel}${timeStr}</span>`;
         msgDiv.className = "flex justify-start rounded-lg transition-colors";
         msgDiv.innerHTML = `
+            ${groupAvatarHtml(msg, avatarMode)}
             <div class="bg-[#202c33] text-gray-100 ${isImage ? 'p-1' : 'px-4 py-2'} rounded-xl max-w-[80%] md:max-w-md text-sm shadow relative">
                            ${(currentChatId === 'global' || currentIsGroup) ? senderLineHtml(msg, isImage) : ''}
                 ${forwardedLabel}
