@@ -107,7 +107,7 @@
     tb.firstChild.textContent = title || '';
     tb.lastChild.textContent = sub || '';
     top.appendChild(tb);
-    if (single) {
+    if (single && !(opts && opts.viewOnce)) {
       top.appendChild(btn(ICON.down, 'İndir', function () {
         (opts.onDownload || downloadDefault)(item());
       }));
@@ -250,6 +250,7 @@
     var it = item();
     var top = buildTop(it.senderName || '', timeLabel(it.time), true);
     var bottom = buildBottom();
+    if (opts && opts.viewOnce) bottom.style.display = 'none';
     var stage = document.createElement('div');
     stage.className = 'iv-stage';
     var img = document.createElement('img');
