@@ -358,6 +358,26 @@ jobs:
                   }
               }
 
+              public class ContactBridge {
+                  @JavascriptInterface
+                  public void add(final String name, final String phone) {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  Intent i = new Intent(android.provider.ContactsContract.Intents.Insert.ACTION);
+                                  i.setType(android.provider.ContactsContract.RawContacts.CONTENT_TYPE);
+                                  i.putExtra(android.provider.ContactsContract.Intents.Insert.NAME, name);
+                                  i.putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, phone);
+                                  i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                  startActivity(i);
+                              } catch (Throwable t) {}
+                          }
+                      });
+                  }
+              }
+
+
 
               public class ThemeBridge {
                   @JavascriptInterface
@@ -644,6 +664,7 @@ jobs:
                   addPendingCount(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new LaunchBridge(), "AuraLaunch");
                   this.bridge.getWebView().addJavascriptInterface(new ThemeBridge(), "AuraTheme");
+                  this.bridge.getWebView().addJavascriptInterface(new ContactBridge(), "AuraContact");
                   this.bridge.getWebView().addJavascriptInterface(new GalleryBridge(), "AuraGallery");
                   this.bridge.getWebView().addJavascriptInterface(new NotifBridge(), "AuraNotif");
                   clearChatFromIntent(getIntent());
