@@ -3139,7 +3139,7 @@ function ensureAttachMenu() {
     // min-h-[45vh] YOK: bu sınıf popup'ın JS'ten küçültülmesini CSS
     // seviyesinde engelliyordu (görsel olarak 45vh'nin altına asla
     // inmiyordu) - tüm önceki senkron sorunlarının asıl kaynağı buydu.
- el.className = 'hidden flex-shrink-0 pt-2 pb-6 overflow-hidden';
+ el.className = 'hidden flex-shrink-0 pt-2 overflow-hidden ' + (galleryAvailable() ? 'pb-0' : 'pb-6');
 el.innerHTML = `
         <div class="aura-attach-inner" style="display:flex;flex-direction:column;height:100%;">
         <div class="aura-attach-handle w-10 h-1 bg-white/25 rounded-full mx-auto mb-3 flex-shrink-0"></div>
@@ -3185,7 +3185,7 @@ el.innerHTML = `
         attachDragStartY = e.touches[0].clientY;
         attachDragZone = (e.target.closest && e.target.closest('.aura-gal-grid')) ? 'grid' : 'top';
         attachGestureDone = false;
-        if (attachDragZone === 'top' && !attachExpanded) el.style.transition = 'none';
+        if (!attachExpanded) el.style.transition = 'none';
     }, { passive: true });
 
     el.addEventListener('touchmove', (e) => {
@@ -3193,7 +3193,11 @@ el.innerHTML = `
         const raw = e.touches[0].clientY - attachDragStartY;
         if (attachDragZone === 'grid') {
             const g = el.querySelector('.aura-gal-grid');
-            if (!attachExpanded && raw < -30) { attachGestureDone = true; expandAttachMenu(); }
+            if (!attachExpanded && raw < -30) { attachGestureDone = true; el.style.transition = ''; expandAttachMenu(); }
+            else if (!attachExpanded && raw > 0) {
+                // Yarım boyda resimlerden aşağı çekince menü parmağı takip eder, bırakınca kapanır
+                el.style.height = Math.max(0, attachRestHeight() - raw) + 'px';
+            }
             else if (attachExpanded && raw > 50 && g && g.scrollTop <= 0) { attachGestureDone = true; collapseAttachMenu(); }
             return;
         }
@@ -3217,7 +3221,7 @@ el.innerHTML = `
         const done = attachGestureDone;
         const dy = Math.max(0, e.changedTouches[0].clientY - attachDragStartY);
         attachDragStartY = null;
-        if (done || zone === 'grid' || attachExpanded) return;
+        if (done || attachExpanded) return;
         if (dy > 60) {
             closeAttachMenu();
         } else {
