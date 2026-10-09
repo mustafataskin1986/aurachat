@@ -3131,6 +3131,18 @@ if (isViewOnce) {
         } else {
             bodyHtml = `<p data-viewonce="${msgId}" class="break-words flex items-center gap-2 text-white text-[14px] cursor-pointer"><span style="display:inline-flex;width:26px;height:26px;border:2px solid var(--aura-btn,#22c55e);color:var(--aura-btn,#22c55e);border-radius:9999px;align-items:center;justify-content:center;font-weight:700;font-size:13px;">1</span> Fotoğraf · görmek için dokun</p>`;
         }
+    } else if (msg.type === 'document') {
+        const ext = (String(msg.fileName || '').split('.').pop() || '').toLowerCase();
+        const col = ext === 'pdf' ? '#ef4444' : (/^docx?$/.test(ext) ? '#3b82f6' : (/^(xlsx?|csv)$/.test(ext) ? '#22c55e' : (/^pptx?$/.test(ext) ? '#f97316' : '#94a3b8')));
+        const saved = !msg.imageUrl && msg.imageDelivered;
+        const state = saved ? (isMine ? 'Teslim edildi' : 'Kaydedildi · İndirilenler/AuraChat') : 'Dokun ve kaydet';
+        bodyHtml = `<div data-doc="${msgId}" class="flex items-center gap-3 cursor-pointer" style="min-width:200px;max-width:260px;">
+            <span style="flex-shrink:0;width:42px;height:48px;border-radius:8px;background:${col};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">${escapeHtml((ext || 'dosya').slice(0, 4).toUpperCase())}</span>
+            <span style="min-width:0;display:flex;flex-direction:column;">
+                <span class="text-sm font-medium" style="overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-all;">${escapeHtml(msg.fileName || 'Belge')}</span>
+                <span class="text-[11px] text-gray-300">${escapeHtml(formatFileSize(msg.fileSize))} · ${state}</span>
+            </span>
+        </div>`;
     } else if (isAlbum) {
         bodyHtml = buildAlbumTilesHtml(currentChatId, msgId, imagesCount);
         if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
@@ -3307,6 +3319,14 @@ if (isViewOnce) {
         });
     }
 
+if (msg.type === 'document') {
+        const docEl = msgDiv.querySelector('[data-doc]');
+        if (docEl) docEl.addEventListener('click', (e) => {
+            if (selectionMode) return;
+            e.stopPropagation();
+            saveDocument(msgId);
+        });
+    }
 if (isViewOnce) {
         const voEl = msgDiv.querySelector('[data-viewonce]');
         if (voEl) voEl.addEventListener('click', (e) => {
@@ -3511,6 +3531,12 @@ el.innerHTML = `
                     <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#12c26b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
                 </span>
                 <span class="text-gray-300 text-[14px]">Konum</span>
+            </button>
+            <button type="button" data-attach="document" class="w-full flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="w-full h-12 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg>
+                </span>
+                <span class="text-gray-300 text-[14px]">Belge</span>
             </button>
         </div>
         </div>
@@ -3917,6 +3943,10 @@ function handleAttachChoice(kind) {
     closeAttachMenu();
     if (kind === 'location') {
         sendCurrentLocation();
+        return;
+    }
+    if (kind === 'document') {
+        pickDocument();
         return;
     }
     if (!imageInput) return;
@@ -4405,6 +4435,7 @@ function replyPreviewTextFor(msg) {
     }
     if (msg.type === 'audio') return `🎤 Sesli mesaj (${fmtAudioTime(msg.audioDuration)})`;
     if (msg.type === 'location') return '📍 Konum';
+    if (msg.type === 'document') return '📄 ' + (msg.fileName || 'Belge');
     return (msg.text || '').slice(0, 120);
 }
 
@@ -6003,6 +6034,129 @@ window.isrtPopBack = popBackState;
 window.openLocation = function (lat, lng) {
     window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
 };
+
+// ------------------------------------------
+// BELGE GÖNDERME (PDF, Word, Excel...)
+// Firestore belge sınırı (1 MB) yüzünden en fazla ~700 KB. Veri base64 olarak imageUrl alanında gider:
+// alıcı kaydedince (birebir sohbette) sunucudaki kopya silinir, kota harcanmaz.
+// ------------------------------------------
+const DOC_MAX_BYTES = 700 * 1024;
+let docInputEl = null;
+
+function formatFileSize(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+    return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function pickDocument() {
+    if (!currentUser || !currentChatId) return;
+    if (!docInputEl) {
+        docInputEl = document.createElement('input');
+        docInputEl.type = 'file';
+        docInputEl.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain';
+        docInputEl.style.display = 'none';
+        document.body.appendChild(docInputEl);
+        docInputEl.addEventListener('change', () => {
+            const f = docInputEl.files && docInputEl.files[0];
+            docInputEl.value = '';
+            if (f) sendDocument(f);
+        });
+    }
+    docInputEl.click();
+}
+
+async function sendDocument(file) {
+    if (!currentUser || !currentChatId) return;
+    if (file.size > DOC_MAX_BYTES) {
+        showToast('Belge çok büyük (en fazla 700 KB). Küçültüp tekrar dene.', 3800);
+        return;
+    }
+    const chatIdAtStart = currentChatId;
+    const replyPayload = consumeReplyPayload();
+    showToast('Belge gönderiliyor...', 4000);
+    try {
+        const dataUrl = await new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(String(r.result));
+            r.onerror = () => reject(new Error('Dosya okunamadı'));
+            r.readAsDataURL(file);
+        });
+        await addDoc(collection(db, "chats", chatIdAtStart, "messages"), {
+            type: 'document',
+            fileName: String(file.name || 'belge').slice(0, 120),
+            fileSize: file.size,
+            fileMime: file.type || 'application/octet-stream',
+            imageUrl: dataUrl,
+            text: '',
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false,
+            ...(replyPayload ? { replyTo: replyPayload } : {})
+        });
+        const label = '📄 ' + (file.name || 'Belge');
+        await updateChatSummaries(label);
+        pushToGroupMembers('📄 Belge gönderdi');
+        if (chatIdAtStart !== 'global' && currentOtherUid) {
+            sendPushToUser(currentOtherUid, `${currentUser.name}`, '📄 Belge gönderdi', {
+                chatId: chatIdAtStart,
+                otherUid: currentUser.uid,
+                otherName: currentUser.name
+            });
+        }
+        scrollToBottom();
+    } catch (err) {
+        showToast('Belge gönderilemedi: ' + ((err && err.message) || ''), 3500);
+    }
+}
+
+async function saveDocument(msgId) {
+    const entry = findMessageEntry(msgId);
+    const d = entry && entry.data;
+    if (!d || d.type !== 'document') return;
+    if (!d.imageUrl) {
+        showToast(d.senderUid === (currentUser && currentUser.uid) ? 'Belge alıcıya teslim edildi' : 'Belge zaten kaydedildi: İndirilenler/AuraChat', 3200);
+        return;
+    }
+    const chatId = currentChatId;
+    const safeName = String(d.fileName || 'belge').replace(/[\\/:*?"<>|]+/g, '_');
+    const dot = safeName.lastIndexOf('.');
+    const uniq = String(msgId).slice(0, 4);
+    const fname = dot > 0 ? `${safeName.slice(0, dot)} (${uniq})${safeName.slice(dot)}` : `${safeName} (${uniq})`;
+    const b64 = d.imageUrl.includes(',') ? d.imageUrl.split(',')[1] : d.imageUrl;
+    const Filesystem = getFilesystemPlugin();
+    try {
+        if (Filesystem) {
+            await Filesystem.writeFile({ path: `Download/AuraChat/${fname}`, data: b64, directory: 'EXTERNAL_STORAGE', recursive: true });
+            showToast('Kaydedildi: İndirilenler/AuraChat/' + fname, 3800);
+        } else {
+            const a = document.createElement('a');
+            a.href = d.imageUrl;
+            a.download = d.fileName || 'belge';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+    } catch (err) {
+        showToast('Belge kaydedilemedi', 3200);
+        return;
+    }
+    // Birebir sohbette alıcı kaydettiyse sunucudaki kopyayı temizle
+    if (currentUser && d.senderUid !== currentUser.uid && chatId !== 'global' && !isGroupChat(chatId)) {
+        updateDoc(doc(db, "chats", chatId, "messages", msgId), { imageUrl: null, imageDelivered: true }).catch(() => {});
+        d.imageUrl = null;
+        d.imageDelivered = true;
+        const sess = chatSessions.get(chatId);
+        if (sess && currentChatId === chatId) {
+            const top = messageContainer.scrollTop;
+            const nearBottom = isNearBottom();
+            renderSession(sess);
+            if (nearBottom) scrollToBottom(); else messageContainer.scrollTop = top;
+        }
+    }
+}
 
 async function sendCurrentLocation() {
     if (!currentUser || !currentChatId) return;
