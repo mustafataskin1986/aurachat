@@ -971,9 +971,7 @@ async function openChatMenu() {
             if (ans.id !== 'ok') return;
             try {
                 await wipeChat(id);
-                showToast('Sohbet silindi');
-                const back = document.getElementById('back-btn');
-                if (back) back.click();
+                showToast('Sohbet temizlendi');
             } catch (err) {
                 showToast('Sohbet silinemedi: ' + err.message, 3500);
             }
