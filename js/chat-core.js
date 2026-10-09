@@ -768,11 +768,14 @@ if (currentChatId === chatId && !session.waitingFirst) {
             }
             const stayAway = freshIncoming > 0 && freshMine === 0 && !isNearBottom();
             if (stayAway) jumpBottomUnread += freshIncoming;
+            // Yalnızca var olan mesaj değiştiyse (tepki, düzenleme, okundu...) yukarıdaki konum korunur
+            const changesNow = snapshot.docChanges();
+            const modifyOnly = changesNow.length > 0 && changesNow.every((c) => c.type === 'modified') && !dividerRebuilt && !openedRecently && !isNearBottom();
 
             renderSession(session);
             markVisibleMessagesRead(session);
 
-            if (keepPosition || stayAway) {
+            if (keepPosition || stayAway || modifyOnly) {
                 messageContainer.scrollTop = prevScrollTop;
                 updateJumpBottomBtn();
           } else if (dividerRebuilt || (unreadDivider && unreadDivider.chatId === chatId && recentOpenScrollLock)) {
@@ -1815,11 +1818,28 @@ async function applyReaction(msgId, emoji) {
     const entry = findMessageEntry(msgId);
     const current = entry && entry.data.reactions ? entry.data.reactions[currentUser.uid] : null;
     const reactChatId = currentChatId;
+    // Yerelde hemen güncelle (eski yüklenen / önbellekteki mesajlar canlı dinlenmediği için şart)
+    const reactUid = currentUser.uid;
+    const setLocalReaction = (val) => {
+        if (!entry) return;
+        const r = Object.assign({}, entry.data.reactions || {});
+        if (val) r[reactUid] = val; else delete r[reactUid];
+        entry.data.reactions = r;
+        const sess = chatSessions.get(reactChatId);
+        if (sess && currentChatId === reactChatId) {
+            const top = messageContainer.scrollTop;
+            const nearBottom = isNearBottom();
+            renderSession(sess);
+            if (nearBottom) scrollToBottom(); else messageContainer.scrollTop = top;
+        }
+    };
+    setLocalReaction(current === emoji ? null : emoji);
     try {
         await updateDoc(doc(db, "chats", reactChatId, "messages", msgId), {
-            [`reactions.${currentUser.uid}`]: current === emoji ? deleteField() : emoji
+            [`reactions.${reactUid}`]: current === emoji ? deleteField() : emoji
         });
     } catch (e) {
+        setLocalReaction(current || null);
         showToast('Tepki gönderilemedi');
         return;
     }
@@ -2276,10 +2296,21 @@ if (selectionDeleteBtn) {
 
         let deleteForEveryone = false;
 
+        // "Herkesten sil" yalnızca gönderildikten sonraki 60 saat içinde mümkün
+        const DELETE_ALL_WINDOW_MS = 60 * 60 * 60 * 1000;
+        const withinDeleteWindow = ids.every((id) => {
+            const en = findMessageEntry(id);
+            const ca = en && en.data && en.data.createdAt;
+            if (!ca) return true; // henüz sunucuya yazılmamış (yeni) mesaj
+            const ms = ca.toMillis ? ca.toMillis() : (ca.toDate ? ca.toDate().getTime() : Number(ca));
+            return Date.now() - ms <= DELETE_ALL_WINDOW_MS;
+        });
+        const canDeleteAll = allMine && withinDeleteWindow;
+
         const delChoice = await auraDialog({
                     accent: auraAccent(),
             title: ids.length > 1 ? `${ids.length} mesaj silinsin mi?` : 'Mesaj silinsin mi?',
-            buttons: allMine
+            buttons: canDeleteAll
                 ? [{ id: 'all', label: 'Herkesten sil' }, { id: 'me', label: 'Benden sil' }, { id: 'cancel', label: 'İptal' }]
                 : [{ id: 'me', label: 'Benden sil' }, { id: 'cancel', label: 'İptal' }]
         });
