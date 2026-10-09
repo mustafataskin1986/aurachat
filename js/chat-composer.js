@@ -4,7 +4,7 @@
 
 export function setupComposer() {
     const old = document.getElementById('message-input');
-    if (!old) return { input: old, addImages() {}, takeImages() { return []; }, clearImages() {}, hasImages() { return false; }, onChange() {} };
+    if (!old) return { input: old, addImages() {}, takeImages() { return []; }, clearImages() {}, hasImages() { return false; }, isViewOnce() { return false; }, onChange() {} };
 
     const LINE = 24;         // 20px * 1.2 satır yüksekliği (px)
     const SINGLE_H = 36;     // tek satır toplam yükseklik (px, çerçeve dahil)
@@ -163,7 +163,7 @@ export function setupComposer() {
     display: flex;
     align-items: center;
     gap: 18px;
-        margin: 0 8px 0 0 !important;
+    margin: 0 8px 0 0 !important;
 }
 .aura-composer.aura-multi > .aura-actions {
     grid-row: 3;
@@ -363,6 +363,7 @@ export function setupComposer() {
     });
 
     let pending = [];
+    let viewOnce = false;
     const listeners = [];
     function notify() { listeners.forEach((fn) => { try { fn(); } catch (e) {} }); }
 
@@ -386,6 +387,21 @@ export function setupComposer() {
             wrap.appendChild(x);
             tray.appendChild(wrap);
         });
+        // Tek fotoğrafta "bir kez görüntüle" düğmesi
+        if (pending.length !== 1) viewOnce = false;
+        if (pending.length === 1 && window.__auraViewOnceAllowed && window.__auraViewOnceAllowed()) {
+            const vo = document.createElement('button');
+            vo.type = 'button';
+            vo.title = 'Bir kez görüntüle';
+            vo.textContent = '1';
+            const paint = () => {
+                vo.style.cssText = 'flex-shrink:0;align-self:center;width:34px;height:34px;border-radius:9999px;font-weight:700;font-size:15px;margin-left:8px;border:2px solid ' + (viewOnce ? 'var(--aura-btn,#22c55e)' : 'rgba(255,255,255,0.7)') + ';color:' + (viewOnce ? '#fff' : 'rgba(255,255,255,0.85)') + ';background:' + (viewOnce ? 'var(--aura-btn,#22c55e)' : 'transparent') + ';';
+            };
+            paint();
+            vo.addEventListener('mousedown', (e) => e.preventDefault());
+            vo.addEventListener('click', (e) => { e.stopPropagation(); viewOnce = !viewOnce; paint(); });
+            tray.appendChild(vo);
+        }
         row.classList.toggle('has-tray', pending.length > 0);
         sync();
     }
@@ -459,6 +475,7 @@ export function setupComposer() {
 
     function takeImages() {
         const files = pending.map((p) => p.file);
+        viewOnce = false;
         pending.forEach((p) => URL.revokeObjectURL(p.url));
         pending = [];
         renderTray();
@@ -479,6 +496,7 @@ export function setupComposer() {
         takeImages: takeImages,
         clearImages: clearImages,
         hasImages: () => pending.length > 0,
+        isViewOnce: () => viewOnce && pending.length === 1,
         onChange: (fn) => { listeners.push(fn); }
     };
 }
