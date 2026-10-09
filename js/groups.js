@@ -85,6 +85,9 @@ function erudaOn() {
 function refreshErudaLabel() {
     const l = document.getElementById('aura-eruda-label');
     if (l) l.textContent = erudaOn() ? 'Eruda: Açık' : 'Eruda: Kapalı';
+    // Yalnızca yönetici hesapta görünür (AuraChat başlığıyla aynı koşul)
+    const btn = menuEl && menuEl.querySelector('[data-menu="eruda"]');
+    if (btn) btn.classList.toggle('hidden', !document.documentElement.hasAttribute('data-aura-admin'));
 }
 
 function toggleEruda() {
