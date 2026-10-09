@@ -66,6 +66,7 @@ import { watchVoiceCallForChat, startVoiceCall } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
 import "./image-viewer.js";
 import { setupComposer } from "./chat-composer.js";
+import { setupMentions, resetMentions, collectMentions, clearChosenMentions, highlightMentions } from "./chat-mentions.js";
 import { mountGallery, openGallery, closeGallery, setGalleryExpanded, galleryAvailable, gallerySelectedCount } from "./chat-gallery.js";
 
 // DOM elementleri
@@ -425,8 +426,8 @@ function watchMyUnread(chatId) {
     if (!currentUser || !chatId || chatId === 'global') return;
     unsubscribeMyUnread = onSnapshot(doc(db, "users", currentUser.uid, "chats", chatId), (snap) => {
         if (currentChatId !== chatId || document.visibilityState !== 'visible') return;
-        if (snap.exists() && Number(snap.data().unreadCount || 0) > 0) {
-            updateDoc(snap.ref, { unreadCount: 0 }).catch(() => {});
+        if (snap.exists() && (Number(snap.data().unreadCount || 0) > 0 || snap.data().hasMention)) {
+            updateDoc(snap.ref, { unreadCount: 0, hasMention: false }).catch(() => {});
         }
     }, () => {});
 }
@@ -882,7 +883,7 @@ if (session.isGroup) {
         });
 
         if (markedAny) {
-            updateDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), { unreadCount: 0 }).catch(() => {});
+            updateDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), { unreadCount: 0, hasMention: false }).catch(() => {});
             if (readReceiptsHidden) {
                 setChatLastReadMs(session.chatId, newestSeenMs);
                 return;
@@ -922,7 +923,8 @@ if (session.isGroup) {
 
     if (markedAny) {
         updateDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), {
-            unreadCount: 0
+            unreadCount: 0,
+            hasMention: false
         }).catch(() => {});
         if (readReceiptsHidden) {
             setChatLastReadMs(session.chatId, newestSeenMs);
@@ -1113,9 +1115,9 @@ export async function logCallDuration(chatId, myUid, myName, otherUid, callType 
 // ------------------------------------------
 // ÖZET DOKÜMANI (users/{uid}/chats/{chatId}) GÜNCELLEME
 // ------------------------------------------
-async function updateChatSummaries(lastMessageText) {
+async function updateChatSummaries(lastMessageText, mentionedUids) {
 if (currentIsGroup || isGroupChat(currentChatId)) {
-        return updateGroupSummaries(lastMessageText);
+        return updateGroupSummaries(lastMessageText, mentionedUids);
     }
     if (currentChatId === 'global' || !currentOtherUid || !currentUser) return;
 
@@ -1344,6 +1346,7 @@ composer.clearImages();
     }
 
     currentChatId = chatId;
+    resetMentions(chatId);
     currentChatName = chatName;
     currentOtherUid = otherUid;
     currentOtherAvatar = otherAvatar;
@@ -2821,9 +2824,9 @@ if (isAlbum) {
         if (tooLong && !expandedMsgIds.has(msgId)) {
             let shown = textLines.slice(0, 14).join('\n');
             if (shown.length > 700) shown = shown.slice(0, 700);
-            bodyHtml = `<p class="break-words whitespace-pre-wrap">${linkifyText(shown.trimEnd())}…</p><button type="button" data-read-more="${msgId}" class="inline-block text-[12.5px] font-medium mt-1.5 px-3 py-1 rounded-full text-white" style="background:rgba(0,0,0,0.28);">Devamını okuyun</button>`;
+            bodyHtml = `<p class="break-words whitespace-pre-wrap">${renderMsgText(shown.trimEnd(), msg)}…</p><button type="button" data-read-more="${msgId}" class="inline-block text-[12.5px] font-medium mt-1.5 px-3 py-1 rounded-full text-white" style="background:rgba(0,0,0,0.28);">Devamını okuyun</button>`;
         } else {
-            bodyHtml = `<p class="break-words whitespace-pre-wrap">${linkifyText(fullText)}</p>${buildLinkPreviewHtml(msg.linkPreview)}`;
+            bodyHtml = `<p class="break-words whitespace-pre-wrap">${renderMsgText(fullText, msg)}</p>${buildLinkPreviewHtml(msg.linkPreview)}`;
         }
     }
 
@@ -4835,6 +4838,10 @@ function linkifyText(text) {
     });
 }
 
+function renderMsgText(text, msg) {
+    return highlightMentions(linkifyText(text), msg, currentUser && currentUser.uid, currentUser && currentUser.name);
+}
+
 function buildLinkPreviewHtml(lp) {
     if (!lp || !lp.url || (!lp.title && !lp.image && !lp.description)) return '';
     let host = '';
@@ -4881,18 +4888,30 @@ async function sendMessage() {
         messageInput.value = '';
         updateMicToggle();
 
+        // Grupta @ ile etiketlenenler
+        let mentionInfo = { uids: [], names: [] };
+        if (isGroupChat(currentChatId)) {
+            try {
+                const gdM = await getGroupData(currentChatId);
+                const others = ((gdM && gdM.members) || []).filter((u) => u !== currentUser.uid);
+                mentionInfo = collectMentions(text, others);
+            } catch (e) {}
+        }
+        clearChosenMentions();
+
         const sentRef = await addDoc(collection(db, "chats", currentChatId, "messages"), {
             text: text,
             senderUid: currentUser.uid,
             senderName: currentUser.name,
             createdAt: serverTimestamp(),
             read: false,
+            ...(mentionInfo.uids.length ? { mentions: mentionInfo.uids, mentionNames: mentionInfo.names } : {}),
             ...(replyPayload ? { replyTo: replyPayload } : {})
         });
         attachLinkPreview(sentRef, text);
 
-        await updateChatSummaries(text);
-        pushToGroupMembers(text);
+        await updateChatSummaries(text, mentionInfo.uids);
+        pushToGroupMembers(text, mentionInfo.uids, sentRef.id);
 
         if (currentChatId !== 'global' && currentOtherUid) {
             sendPushToUser(currentOtherUid, `${currentUser.name}`, text, {
@@ -4923,6 +4942,32 @@ async function sendFromComposer() {
     }
     updateMicToggle();
 }
+
+// Grupta @ ile etiketleme: üye adları (kişi listesinde yoksa kullanıcı belgesinden okunur)
+const memberNameCache = new Map();
+async function resolveMemberName(uid) {
+    const um = window.__aurachatUsers;
+    const fromList = um && Array.from(um.values()).find((u) => u.uid === uid);
+    if (fromList && fromList.name) return fromList.name;
+    if (memberNameCache.has(uid)) return memberNameCache.get(uid);
+    let name = '';
+    try {
+        const snap = await getDoc(doc(db, "users", uid));
+        if (snap.exists()) name = snap.data().name || snap.data().displayName || '';
+    } catch (e) {}
+    memberNameCache.set(uid, name);
+    return name;
+}
+setupMentions({
+    input: messageInput,
+    isActive: () => !!currentChatId && currentChatId !== 'global' && isGroupChat(currentChatId),
+    getMembers: async () => {
+        const gd = await getGroupData(currentChatId);
+        const uids = ((gd && gd.members) || []).filter((u) => currentUser && u !== currentUser.uid);
+        const named = await Promise.all(uids.map(async (uid) => ({ uid, name: await resolveMemberName(uid) })));
+        return named.filter((m) => m.name);
+    }
+});
 
 sendBtn.addEventListener('click', sendFromComposer);
 messageInput.addEventListener('keydown', (e) => {
@@ -5630,7 +5675,7 @@ async function getGroupData(chatId) {
 }
 
 // Grupta her üyenin liste özetini günceller (son mesaj + okunmamış sayacı)
-async function updateGroupSummaries(lastMessageText) {
+async function updateGroupSummaries(lastMessageText, mentionedUids) {
     if (!currentUser || !currentChatId) return;
     const groupId = currentChatId;
 
@@ -5655,6 +5700,7 @@ async function updateGroupSummaries(lastMessageText) {
         lastSenderName: currentUser.name,
         lastMessageRead: false,
         unreadCount: memberUid === currentUser.uid ? 0 : increment(1),
+        ...((mentionedUids || []).includes(memberUid) ? { hasMention: true } : {}),
         updatedAt: serverTimestamp()
     }, { merge: true })));
 
@@ -5666,14 +5712,25 @@ async function updateGroupSummaries(lastMessageText) {
 }
 
 // Grup mesajında gönderen hariç herkese bildirim
-async function pushToGroupMembers(bodyText) {
+async function pushToGroupMembers(bodyText, mentionedUids, msgId) {
 if (!currentChatId || !isGroupChat(currentChatId) || !currentUser) return;
     const groupId = currentChatId;
+    const mentioned = new Set(mentionedUids || []);
     try {
         const gd = await getGroupData(groupId);
         if (!gd) return;
         (gd.members || []).forEach((memberUid) => {
             if (memberUid === currentUser.uid) return;
+            if (mentioned.has(memberUid) && msgId) {
+                sendPushToUser(memberUid, gd.name || 'Grup', `${currentUser.name}: 🔔 Seni etiketledi: ${bodyText}`, {
+                    chatId: groupId,
+                    otherUid: groupId,
+                    otherName: gd.name || 'Grup',
+                    msgType: 'mention',
+                    msgId: msgId
+                });
+                return;
+            }
             sendPushToUser(memberUid, gd.name || 'Grup', `${currentUser.name}: ${bodyText}`, {
                 chatId: groupId,
                 otherUid: groupId,
