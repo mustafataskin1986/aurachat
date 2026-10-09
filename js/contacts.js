@@ -609,6 +609,7 @@ export async function loadContacts() {
         const clearedAtMs = clearedAt.toDate().getTime();
         return lastTimeMs <= clearedAtMs;
     }
+
     // Android "Paylaş" menüsünde en son konuşulan sohbetler kişi olarak görünsün (Direct Share)
     let shareTargetsSig = '';
     let shareTargetsTimer = null;
@@ -638,6 +639,7 @@ export async function loadContacts() {
             } catch (e) {}
         }, 3000);
     }
+
     function renderAll() {
     if (!usersLoaded || !chatsLoaded) return;
         if (resolveFirstData) { resolveFirstData(); resolveFirstData = null; }
@@ -722,7 +724,7 @@ export async function loadContacts() {
 
         sortContactList();
         prewarmTopChats();
-                publishShareTargets();
+        publishShareTargets();
         saveListCache();
     }
 
@@ -840,7 +842,8 @@ export async function loadContacts() {
                         ${tickHtml}
                                             <span class="preview-text truncate">${previewInnerHtml(chatData)}</span>
                     </p>
-                    ${unreadCount > 0 ? `<div class="unread-badge bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-2">${unreadCount}</div>` : ''}
+                    ${unreadCount > 0 && chatData.hasMention ? `<div class="mention-badge bg-emerald-500 text-white text-[10px] font-bold rounded-full w-[18px] h-[18px] flex items-center justify-center ml-2">@</div>` : ''}
+                    ${unreadCount > 0 ? `<div class="unread-badge bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-1">${unreadCount}</div>` : ''}
                 </div>
             </div>
         `;
