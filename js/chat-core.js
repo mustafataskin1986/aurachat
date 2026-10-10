@@ -3270,7 +3270,7 @@ function buildMessageElement(msg, isMine, msgId, avatarMode) {
 
 let bodyHtml;
 if (isViewOnce) {
-        if (msg.viewOnceOpened || msg.imageDelivered) {
+        if (msg.viewOnceOpened || msg.imageDelivered || (!isMine && isGroupChat(currentChatId) && isViewOnceSeen(currentChatId, msgId))) {
             bodyHtml = `<p class="break-words flex items-center gap-2 text-gray-400 italic text-[13px]"><i class="fa-regular fa-circle-check"></i> Fotoğraf açıldı</p>`;
         } else if (isMine) {
             bodyHtml = `<p class="break-words flex items-center gap-2 text-gray-200 text-[13px]"><span style="display:inline-flex;width:22px;height:22px;border:2px solid currentColor;border-radius:9999px;align-items:center;justify-content:center;font-weight:700;font-size:12px;">1</span> Fotoğraf · henüz açılmadı</p>`;
@@ -3281,7 +3281,7 @@ if (isViewOnce) {
         const ext = (String(msg.fileName || '').split('.').pop() || '').toLowerCase();
         const col = ext === 'pdf' ? '#ef4444' : (/^docx?$/.test(ext) ? '#3b82f6' : (/^(xlsx?|csv)$/.test(ext) ? '#22c55e' : (/^pptx?$/.test(ext) ? '#f97316' : '#94a3b8')));
         const saved = !msg.imageUrl && msg.imageDelivered;
-        const state = saved ? (isMine ? 'Teslim edildi' : 'Kaydedildi · İndirilenler/AuraChat') : 'Dokun ve kaydet';
+        const state = saved ? (isMine ? 'Teslim edildi' : 'Kaydedildi · dokun ve aç') : 'Dokun ve aç';
         bodyHtml = `<div data-doc="${msgId}" class="flex items-center gap-3 cursor-pointer" style="min-width:200px;max-width:260px;">
             <span style="flex-shrink:0;width:42px;height:48px;border-radius:8px;background:${col};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">${escapeHtml((ext || 'dosya').slice(0, 4).toUpperCase())}</span>
             <span style="min-width:0;display:flex;flex-direction:column;">
@@ -5320,7 +5320,20 @@ function makeViewerItem(entry, msgId, src) {
 }
 
 function viewOnceAllowed() {
-    return !!(currentChatId && currentChatId !== 'global' && !currentIsGroup);
+    return !!(currentChatId && currentChatId !== 'global');
+}
+
+// Grupta tek mesaj herkese ortak olduğundan "açıldı" bilgisi her kişide kendi cihazında tutulur
+function voSeenKey(chatId, msgId) { return 'aura_vo_' + chatId + '_' + msgId; }
+function isViewOnceSeen(chatId, msgId) {
+    try { return localStorage.getItem(voSeenKey(chatId, msgId)) === '1'; } catch (e) { return false; }
+}
+function markViewOnceSeen(chatId, msgId) {
+    try { localStorage.setItem(voSeenKey(chatId, msgId), '1'); } catch (e) {}
+}
+// Bir kez görülen fotoğraf açıkken ekran görüntüsü/kaydı engeli (yalnızca yeni APK'da çalışır)
+function setSecureScreen(on) {
+    try { if (window.AuraSecure && window.AuraSecure.set) window.AuraSecure.set(!!on); } catch (e) {}
 }
 window.__auraViewOnceAllowed = viewOnceAllowed;
 
@@ -5329,9 +5342,10 @@ function openViewOnce(msgId) {
     const entry = findMessageEntry(msgId);
     const d = entry && entry.data;
     if (!d || !d.viewOnce || !currentUser) return;
-    if (d.viewOnceOpened || d.imageDelivered || !d.imageUrl) { showToast('Bu fotoğraf zaten açıldı'); return; }
+    if (d.viewOnceOpened || d.imageDelivered || !d.imageUrl || (isGroupChat(currentChatId) && isViewOnceSeen(currentChatId, msgId))) { showToast('Bu fotoğraf zaten açıldı'); return; }
     if (d.senderUid === currentUser.uid) return;
     const chatId = currentChatId;
+    setSecureScreen(true);
     const src = toImageSrc(d.imageUrl);
     viewerBackActive = true;
     pushBackState(() => { viewerBackActive = false; window.closeImageViewer(); });
@@ -5342,6 +5356,7 @@ function openViewOnce(msgId) {
         viewOnce: true,
         onClose: () => {
             if (viewerBackActive) { viewerBackActive = false; popBackState(); }
+            setSecureScreen(false);
             consumeViewOnce(chatId, msgId);
         }
     });
@@ -5349,11 +5364,16 @@ function openViewOnce(msgId) {
 
 function consumeViewOnce(chatId, msgId) {
     const en = findMsgEntry(chatId, msgId);
-    if (en) { en.data.imageDelivered = true; en.data.imageUrl = null; }
-    updateDoc(doc(db, "chats", chatId, "messages", msgId), {
-        imageUrl: null,
-        imageDelivered: true
-    }).catch(() => showToast('Fotoğraf durumu kaydedilemedi'));
+    if (isGroupChat(chatId)) {
+        // Grup: mesaj herkese ortak, sunucudaki kopyaya dokunma; sadece bende "açıldı" olarak işaretle
+        markViewOnceSeen(chatId, msgId);
+    } else {
+        if (en) { en.data.imageDelivered = true; en.data.imageUrl = null; }
+        updateDoc(doc(db, "chats", chatId, "messages", msgId), {
+            imageUrl: null,
+            imageDelivered: true
+        }).catch(() => showToast('Fotoğraf durumu kaydedilemedi'));
+    }
     const sess = chatSessions.get(chatId);
     if (sess && currentChatId === chatId) {
         const top = messageContainer.scrollTop;
@@ -5749,6 +5769,8 @@ if (attachBtn && imageInput) {
                     type: 'image',
                     imageUrl: compressed[0],
                     ...(viewOnce ? { viewOnce: true } : {}),
+                    // Grupta açılmamış fotoğraf 48 saat sonra herkesten ve sunucudan kalkar
+                    ...(viewOnce && currentIsGroup ? { expiresAtMs: Date.now() + 48 * 3600 * 1000 } : {}),
                     text: caption,
                     senderUid: currentUser.uid,
                     senderName: currentUser.name,
@@ -6258,25 +6280,33 @@ async function sendDocument(file) {
     }
 }
 
+function docSavedName(msgId, d) {
+    const safeName = String(d.fileName || 'belge').replace(/[\\/:*?"<>|]+/g, '_');
+    const dot = safeName.lastIndexOf('.');
+    const uniq = String(msgId).slice(0, 4);
+    return dot > 0 ? `${safeName.slice(0, dot)} (${uniq})${safeName.slice(dot)}` : `${safeName} (${uniq})`;
+}
+
+// Belgeyi cihaza kaydeder (gerekirse) ve telefondaki uygun uygulamada açar
 async function saveDocument(msgId) {
     const entry = findMessageEntry(msgId);
     const d = entry && entry.data;
     if (!d || d.type !== 'document') return;
+    const mine = d.senderUid === (currentUser && currentUser.uid);
+    const fname = docSavedName(msgId, d);
+    const Filesystem = getFilesystemPlugin();
+    const chatId = currentChatId;
+
     if (!d.imageUrl) {
-        showToast(d.senderUid === (currentUser && currentUser.uid) ? 'Belge alıcıya teslim edildi' : 'Belge zaten kaydedildi: İndirilenler/AuraChat', 3200);
+        if (mine) { showToast('Belge alıcıya teslim edildi', 3200); return; }
+        await openSavedDocument(Filesystem, fname, d.fileMime);
         return;
     }
-    const chatId = currentChatId;
-    const safeName = String(d.fileName || 'belge').replace(/[\\/:*?"<>|]+/g, '_');
-    const dot = safeName.lastIndexOf('.');
-    const uniq = String(msgId).slice(0, 4);
-    const fname = dot > 0 ? `${safeName.slice(0, dot)} (${uniq})${safeName.slice(dot)}` : `${safeName} (${uniq})`;
+
     const b64 = d.imageUrl.includes(',') ? d.imageUrl.split(',')[1] : d.imageUrl;
-    const Filesystem = getFilesystemPlugin();
     try {
         if (Filesystem) {
             await Filesystem.writeFile({ path: `Download/AuraChat/${fname}`, data: b64, directory: 'EXTERNAL_STORAGE', recursive: true });
-            showToast('Kaydedildi: İndirilenler/AuraChat/' + fname, 3800);
         } else {
             const a = document.createElement('a');
             a.href = d.imageUrl;
@@ -6284,13 +6314,14 @@ async function saveDocument(msgId) {
             document.body.appendChild(a);
             a.click();
             a.remove();
+            return;
         }
     } catch (err) {
         showToast('Belge kaydedilemedi', 3200);
         return;
     }
     // Birebir sohbette alıcı kaydettiyse sunucudaki kopyayı temizle
-    if (currentUser && d.senderUid !== currentUser.uid && chatId !== 'global' && !isGroupChat(chatId)) {
+    if (currentUser && !mine && chatId !== 'global' && !isGroupChat(chatId)) {
         updateDoc(doc(db, "chats", chatId, "messages", msgId), { imageUrl: null, imageDelivered: true }).catch(() => {});
         d.imageUrl = null;
         d.imageDelivered = true;
@@ -6301,6 +6332,26 @@ async function saveDocument(msgId) {
             renderSession(sess);
             if (nearBottom) scrollToBottom(); else messageContainer.scrollTop = top;
         }
+    }
+    if (window.AuraDoc && window.AuraDoc.open) {
+        await openSavedDocument(Filesystem, fname, d.fileMime);
+    } else {
+        showToast('Kaydedildi: İndirilenler/AuraChat/' + fname, 3800);
+    }
+}
+
+async function openSavedDocument(Filesystem, fname, mime) {
+    if (!Filesystem || !window.AuraDoc || !window.AuraDoc.open) {
+        showToast('Belge İndirilenler/AuraChat klasöründe', 3200);
+        return;
+    }
+    try {
+        const r = await Filesystem.getUri({ path: `Download/AuraChat/${fname}`, directory: 'EXTERNAL_STORAGE' });
+        const path = String(r.uri || '').replace(/^file:\/\//, '');
+        const ok = window.AuraDoc.open(decodeURIComponent(path), mime || '');
+        if (!ok) showToast('Belge bulunamadı (silinmiş olabilir)', 3200);
+    } catch (e) {
+        showToast('Belge açılamadı', 3200);
     }
 }
 
