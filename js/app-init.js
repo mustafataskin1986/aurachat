@@ -215,7 +215,23 @@ window.initApp = async function () {
         await hideNativeSplash();
         return;
     }
-
+    // Sohbet listesi önbelleği HTML açılırken zaten çizildi: splash'i oturum/ağ beklemeden kaldır.
+    // Hazır olana kadar listeye dokunmalar kapalı (uygulama henüz kullanıcıyı bilmiyor).
+    readLaunchChatFromNative();
+    let earlyReveal = false;
+    try {
+        const cachedListEl = document.getElementById('contact-list');
+        earlyReveal = !!(cachedListEl && cachedListEl.dataset.cached === '1' && !window.pendingOpenChat);
+    } catch (e) {}
+    if (earlyReveal) {
+        const bootStyle = document.createElement('style');
+        bootStyle.textContent = 'html[data-aura-booting] #sidebar{pointer-events:none}';
+        document.head.appendChild(bootStyle);
+        document.documentElement.setAttribute('data-aura-booting', '1');
+        setTimeout(() => document.documentElement.removeAttribute('data-aura-booting'), 8000);
+        await hideNativeSplash();
+        auraMark('Splash kapandı');
+    }
         // Firebase oturumu diskten yüklenene kadar bekle: bitmeden istek atılırsa
     // Firestore "permission-denied" verir ve dinleyiciler kalıcı olarak kapanır
     try {
@@ -279,11 +295,13 @@ window.initApp = async function () {
 
     window.__aurachatReady = true;
 
-    // Arayüz tam olarak yüklendi, kişilerin çekilmesi vs. bitti!
+    document.documentElement.removeAttribute('data-aura-booting');
     auraMark('Liste hazır');
-    // Splash ekranını şimdi yumuşak bir animasyonla kaldırıyoruz:
-    await hideNativeSplash();
-    auraMark('Splash kapandı');
+    if (!earlyReveal) {
+        // Liste önbelleği yoksa splash şimdi kapanır
+        await hideNativeSplash();
+        auraMark('Splash kapandı');
+    }
     auraShowTiming();
 };
 
