@@ -14,6 +14,7 @@ import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
 import { openChatThemePicker } from "./chat-theme.js";
 import { auraDialog, auraAccent } from "./aura-dialog.js";
+import "./dark-toggle.js";
 import { openBackupMenu } from "./backup.js";
 
 const sidebar = document.getElementById('sidebar');
