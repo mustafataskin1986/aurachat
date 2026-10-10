@@ -2748,6 +2748,39 @@ if (selectionDeleteBtn) {
     });
 }
 
+
+// Sohbet listesindeki önizleme: son mesaj bende gizlendiyse (benden sil / süresi doldu)
+// listede eski yazı kalmasın, görünen son mesajı göstersin
+const previewSyncMemo = new Map();
+function syncMyListPreview(session, visibleAll) {
+    try {
+        if (!currentUser || !session || session.chatId === 'global') return;
+        const raw = session.messages;
+        if (!raw.length) return;
+        const lastRaw = raw[raw.length - 1];
+        const lm = lastRaw.data || {};
+        const hiddenForMe = Array.isArray(lm.deletedFor) && lm.deletedFor.includes(currentUser.uid);
+        const expired = !!lm.expiresAtMs && lm.expiresAtMs <= Date.now();
+        if (!hiddenForMe && !expired) return;
+        const lastVis = visibleAll.length ? visibleAll[visibleAll.length - 1] : null;
+        const key = session.chatId + '|' + (lastVis ? lastVis.id : 'none');
+        if (previewSyncMemo.get(session.chatId) === key) return;
+        previewSyncMemo.set(session.chatId, key);
+        const patch = lastVis
+            ? {
+                lastMessage: lastVis.data.type === 'deleted'
+                    ? '🚫 Bu mesaj silindi'
+                    : (lastVis.data.type === 'system' || lastVis.data.type === 'call_duration' || lastVis.data.type === 'missed_call' || lastVis.data.type === 'declined_call')
+                        ? (lastVis.data.text || '')
+                        : (lastVis.data.viewOnce ? '📷 Bir kez görüntülenebilir fotoğraf' : replyPreviewTextFor(lastVis.data)),
+                lastSenderUid: lastVis.data.senderUid || '',
+                keepRow: true
+            }
+            : { lastMessage: '', keepRow: true };
+        setDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), patch, { merge: true }).catch(() => {});
+    } catch (e) {}
+}
+
 // ------------------------------------------
 // MESAJLARI EKRANA ÇİZME
 // ------------------------------------------
@@ -2810,6 +2843,7 @@ function renderSession(session) {
         }
         return true;
     });
+    syncMyListPreview(session, visibleAll);
     if (expirySweepTimer) { clearTimeout(expirySweepTimer); expirySweepTimer = null; }
     if (nextExpiry) {
         const chatIdAtSchedule = session.chatId;
