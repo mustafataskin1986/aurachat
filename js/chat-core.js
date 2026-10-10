@@ -1767,6 +1767,74 @@ function appendLaunchTemps(session) {
     }
 }
 
+// Bildirimle açılışta: oturum/ağ beklemeden başlığı ve bildirimdeki kısa yazıları hemen göster.
+// Gerçek açılış tamamlanınca (renderSession) bu görüntü kendiliğinden gerçeğiyle değişir.
+export function previewLaunchChat(L) {
+    try {
+        if (!L || !L.uid || !L.chatId || L.chatId === L.uid || currentChatId) return false;
+        const seen = new Set();
+        const items = [];
+        (Array.isArray(L.msgs) ? L.msgs.slice() : []).sort((a, b) => a.t - b.t).forEach((m) => {
+            if (m.tag && !seen.has(m.tag)) {
+                seen.add(m.tag);
+                items.push({ id: 'prev_' + String(m.tag), text: String(m.text || ''), t: m.t });
+            }
+        });
+        if (L.tag && L.body && !seen.has(L.tag)) {
+            items.push({ id: 'prev_' + String(L.tag), text: String(L.body), t: Date.now() });
+        }
+        if (!items.length) return false;
+        if (items.some((i) => !i.text || i.text.length > 400 || /^(📷|🎤|📍|🚫)/.test(i.text))) return false;
+
+        const name = L.name || 'Sohbet';
+        let av = L.avatar || '';
+        if (!av) { try { av = localStorage.getItem('aura_av_' + L.uid) || ''; } catch (e) {} }
+        activeChatName.textContent = name;
+        activeChatStatus.textContent = '';
+        if (av) {
+            activeChatAvatar.style.backgroundColor = '';
+            activeChatAvatar.className = "w-10 h-10 rounded-full overflow-hidden shadow flex-shrink-0";
+            activeChatAvatar.innerHTML = `<img src="${av}" class="w-full h-full object-cover">`;
+        } else {
+            activeChatAvatar.style.backgroundColor = getUserColor(name);
+            activeChatAvatar.className = "w-10 h-10 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0 text-sm";
+            activeChatAvatar.innerHTML = `<span>${getInitials(name)}</span>`;
+        }
+
+        messageContainer.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+        const firstChip = tempDayChipFor(items[0].t, undefined);
+        if (firstChip.el) fragment.appendChild(firstChip.el);
+        let label = firstChip.label;
+        fragment.appendChild(buildUnreadDividerElement(items.length));
+        items.forEach((i, idx) => {
+            if (idx > 0) {
+                const c = tempDayChipFor(i.t, label);
+                if (c.el) fragment.appendChild(c.el);
+                label = c.label;
+            }
+            fragment.appendChild(buildMessageElement({
+                type: 'text',
+                text: i.text,
+                senderUid: L.uid,
+                senderName: name,
+                createdAt: Timestamp.fromMillis(i.t || Date.now()),
+                read: false
+            }, false, i.id));
+        });
+        messageContainer.appendChild(fragment);
+
+        if (window.innerWidth < 1024) {
+            sidebar.classList.add('-translate-x-full');
+            chatArea.classList.remove('translate-x-full');
+        }
+        scrollToUnreadOrBottom();
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 export function showTempIncomingBubble(chatId, msgId, text, timeMs, withDivider) {
     if (!chatId || !msgId || !text || currentChatId !== chatId || currentIsGroup) return;
     if (messageElementsById.size === 0) return;
