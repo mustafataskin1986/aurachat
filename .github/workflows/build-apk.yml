@@ -3,6 +3,10 @@ name: Build Android APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -141,7 +145,6 @@ jobs:
           import com.google.android.gms.common.api.Scope;
           import java.io.File;
           import androidx.core.content.FileProvider;
-          import android.provider.ContactsContract;
 
           public class MainActivity extends BridgeActivity {
               // Uygulama ekranda mı? (AuraMessagingService, uygulama açıkken arama bildirimi göstermesin diye bakar)
@@ -201,7 +204,8 @@ jobs:
 
               private volatile String pendingSharedJson = null;
               private volatile boolean shareBusy = false;
-              private volatile String pendingShareTarget = "";
+                            private volatile String pendingShareTarget = "";
+                                          private volatile String pendingShareDiag = "";
               private volatile String launchChatJson = "";
 
             // JS, sohbet temasının rengini bildirir; seçim tutamakları bu renge boyanır
@@ -218,7 +222,7 @@ jobs:
                   public void clearChat(String chatId) {
                       AuraNotif.clearChat(getApplicationContext(), chatId);
                   }
-                  // Paylaş menüsünde son sohbetler kişi olarak çıksın (Direct Share)
+                                    // Paylaş menüsünde son sohbetler kişi olarak çıksın (Direct Share)
                   @JavascriptInterface
                   public void publishShortcut(String chatId, String title, String avatarDataUrl) {
                       try {
@@ -234,6 +238,154 @@ jobs:
                       } catch (Throwable t) {}
                   }
               }
+              public class GalleryBridge {
+                  private final java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(3);
+
+                  private String perm() {
+                      return Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_IMAGES : Manifest.permission.READ_EXTERNAL_STORAGE;
+                  }
+
+                  @JavascriptInterface
+                  public boolean has() {
+                      try {
+                          if (ContextCompat.checkSelfPermission(MainActivity.this, perm()) == PackageManager.PERMISSION_GRANTED) return true;
+                          if (Build.VERSION.SDK_INT >= 34 && ContextCompat.checkSelfPermission(MainActivity.this, "android.permission.READ_MEDIA_VISUAL_USER_SELECTED") == PackageManager.PERMISSION_GRANTED) return true;
+                      } catch (Throwable t) {}
+                      return false;
+                  }
+
+                  @JavascriptInterface
+                  public void ask() {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              ActivityCompat.requestPermissions(MainActivity.this, new String[]{ perm() }, 7001);
+                          }
+                      });
+                  }
+
+                  @JavascriptInterface
+                  public String list(int offset, int limit) {
+                      org.json.JSONArray arr = new org.json.JSONArray();
+                      try {
+                          android.net.Uri uri = android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                          String[] proj = new String[]{ android.provider.MediaStore.Images.Media._ID };
+                          android.database.Cursor cur;
+                          if (Build.VERSION.SDK_INT >= 26) {
+                              android.os.Bundle b = new android.os.Bundle();
+                              b.putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, limit);
+                              b.putInt(android.content.ContentResolver.QUERY_ARG_OFFSET, offset);
+                              b.putStringArray(android.content.ContentResolver.QUERY_ARG_SORT_COLUMNS, new String[]{ "date_added" });
+                              b.putInt(android.content.ContentResolver.QUERY_ARG_SORT_DIRECTION, android.content.ContentResolver.QUERY_SORT_DIRECTION_DESCENDING);
+                              cur = getContentResolver().query(uri, proj, b, null);
+                          } else {
+                              cur = getContentResolver().query(uri, proj, null, null, "date_added DESC LIMIT " + limit + " OFFSET " + offset);
+                          }
+                          if (cur != null) {
+                              while (cur.moveToNext()) arr.put(cur.getLong(0));
+                              cur.close();
+                          }
+                      } catch (Throwable t) {}
+                      return arr.toString();
+                  }
+
+                  private void deliver(final String js) {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try { MainActivity.this.bridge.getWebView().evaluateJavascript(js, null); } catch (Throwable t) {}
+                          }
+                      });
+                  }
+
+                  @JavascriptInterface
+                  public void thumbAsync(final long id, final int size) {
+                      pool.execute(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  android.net.Uri uri = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
+                                  Bitmap bmp;
+                                  if (Build.VERSION.SDK_INT >= 29) {
+                                      bmp = getContentResolver().loadThumbnail(uri, new android.util.Size(size, size), null);
+                                  } else {
+                                      bmp = android.provider.MediaStore.Images.Thumbnails.getThumbnail(getContentResolver(), id, android.provider.MediaStore.Images.Thumbnails.MINI_KIND, null);
+                                  }
+                                  if (bmp == null) return;
+                                  java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                                  bmp.compress(Bitmap.CompressFormat.JPEG, 72, bo);
+                                  String b64 = android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
+                                  deliver("window.__auraGalThumb&&window.__auraGalThumb(" + id + ",'data:image/jpeg;base64," + b64 + "')");
+                              } catch (Throwable t) {}
+                          }
+                      });
+                  }
+
+                  @JavascriptInterface
+                  public void fullAsync(final long id) {
+                      pool.execute(new Runnable() {
+                          @Override
+                          public void run() {
+                              String out = "";
+                              try {
+                                  android.net.Uri uri = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
+                                  android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+                                  o.inJustDecodeBounds = true;
+                                  java.io.InputStream in1 = getContentResolver().openInputStream(uri);
+                                  BitmapFactory.decodeStream(in1, null, o);
+                                  if (in1 != null) in1.close();
+                                  int sample = 1;
+                                  while ((o.outWidth / sample) > 1800 || (o.outHeight / sample) > 1800) sample *= 2;
+                                  android.graphics.BitmapFactory.Options o2 = new android.graphics.BitmapFactory.Options();
+                                  o2.inSampleSize = sample;
+                                  java.io.InputStream in2 = getContentResolver().openInputStream(uri);
+                                  Bitmap bmp = BitmapFactory.decodeStream(in2, null, o2);
+                                  if (in2 != null) in2.close();
+                                  if (bmp != null) {
+                                      int rot = 0;
+                                      try {
+                                          java.io.InputStream in3 = getContentResolver().openInputStream(uri);
+                                          android.media.ExifInterface ex = new android.media.ExifInterface(in3);
+                                          int ori = ex.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1);
+                                          if (ori == 6) rot = 90; else if (ori == 3) rot = 180; else if (ori == 8) rot = 270;
+                                          if (in3 != null) in3.close();
+                                      } catch (Throwable t) {}
+                                      if (rot != 0) {
+                                          android.graphics.Matrix m = new android.graphics.Matrix();
+                                          m.postRotate(rot);
+                                          bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(), m, true);
+                                      }
+                                      java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                                      bmp.compress(Bitmap.CompressFormat.JPEG, 85, bo);
+                                      out = "data:image/jpeg;base64," + android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
+                                  }
+                              } catch (Throwable t) {}
+                              deliver("window.__auraGalFull&&window.__auraGalFull(" + id + ",'" + out + "')");
+                          }
+                      });
+                  }
+              }
+
+              public class ContactBridge {
+                  @JavascriptInterface
+                  public void add(final String name, final String phone) {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  Intent i = new Intent(android.provider.ContactsContract.Intents.Insert.ACTION);
+                                  i.setType(android.provider.ContactsContract.RawContacts.CONTENT_TYPE);
+                                  i.putExtra(android.provider.ContactsContract.Intents.Insert.NAME, name);
+                                  i.putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, phone);
+                                  i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                  startActivity(i);
+                              } catch (Throwable t) {}
+                          }
+                      });
+                  }
+              }
+
+
 
               // Drive yedeği: izin SADECE yedekle/geri yükle'ye basılınca istenir
               static final int DRIVE_REQ = 9101;
@@ -360,22 +512,47 @@ jobs:
                   }
               }
 
-              // Rehbere kişi ekleme ekranını açar (profil kartındaki "Kaydet")
-              public class ContactBridge {
+              // Uygulama simgesini değiştirir (activity-alias aç/kapat): 0 = varsayılan, 1..15 = seçenekler
+              public class IconBridge {
+                  private String aliasName(int n) {
+                      return "com.aurachat.app." + (n == 0 ? "IconDefault" : "IconAlt" + n);
+                  }
                   @JavascriptInterface
-                  public void add(final String name, final String phone) {
-                      runOnUiThread(new Runnable() {
-                          @Override
-                          public void run() {
+                  public int current() {
+                      try {
+                          android.content.pm.PackageManager pm = getPackageManager();
+                          for (int n = 0; n <= 15; n++) {
+                              int st;
                               try {
-                                  Intent i = new Intent(ContactsContract.Intents.Insert.ACTION);
-                                  i.setType(ContactsContract.RawContacts.CONTENT_TYPE);
-                                  i.putExtra(ContactsContract.Intents.Insert.NAME, name == null ? "" : name);
-                                  i.putExtra(ContactsContract.Intents.Insert.PHONE, phone == null ? "" : phone);
-                                  startActivity(i);
+                                  st = pm.getComponentEnabledSetting(new android.content.ComponentName(getPackageName(), aliasName(n)));
+                              } catch (Throwable t) { continue; }
+                              boolean on = st == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                                  || (st == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && n == 0);
+                              if (on) return n;
+                          }
+                      } catch (Throwable t) {}
+                      return 0;
+                  }
+                  @JavascriptInterface
+                  public boolean set(final int target) {
+                      try {
+                          android.content.pm.PackageManager pm = getPackageManager();
+                          // Önce seçileni aç (her an bir simge açık kalsın), sonra diğerlerini kapat
+                          pm.setComponentEnabledSetting(new android.content.ComponentName(getPackageName(), aliasName(target)),
+                              android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                              android.content.pm.PackageManager.DONT_KILL_APP);
+                          for (int n = 0; n <= 15; n++) {
+                              if (n == target) continue;
+                              try {
+                                  pm.setComponentEnabledSetting(new android.content.ComponentName(getPackageName(), aliasName(n)),
+                                      android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                                      android.content.pm.PackageManager.DONT_KILL_APP);
                               } catch (Throwable t) {}
                           }
-                      });
+                          return true;
+                      } catch (Throwable t) {
+                          return false;
+                      }
                   }
               }
 
@@ -490,7 +667,7 @@ jobs:
               }
 
               // JS buradan bekleyen paylaşımı alır: "" = yok, "busy" = hazırlanıyor, aksi halde resim listesi (JSON)
-              public class ShareBridge {
+                            public class ShareBridge {
                   @JavascriptInterface
                   public String consume() {
                       if (shareBusy) return "busy";
@@ -503,8 +680,14 @@ jobs:
                   @JavascriptInterface
                   public String target() {
                       String t = pendingShareTarget;
-                      pendingShareTarget = "";
+                                            pendingShareTarget = "";
                       return t == null ? "" : t;
+                  }
+
+                  // Geçici: paylaşımla telefonun hangi bilgileri verdiğini gösterir
+                  @JavascriptInterface
+                  public String diag() {
+                      return pendingShareDiag == null ? "" : pendingShareDiag;
                   }
               }
 
@@ -530,9 +713,31 @@ jobs:
                   if (intent == null) return;
                   String action = intent.getAction();
                   if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) return;
-
-                  String scId = intent.getStringExtra("android.intent.extra.shortcut.ID");
-                  pendingShareTarget = (scId != null && scId.startsWith("chat_")) ? scId.substring(5) : "";
+                                         String scId = intent.getStringExtra("android.intent.extra.shortcut.ID");
+                  StringBuilder kb = new StringBuilder();
+                  try {
+                      android.os.Bundle ex = intent.getExtras();
+                      if (ex != null) {
+                          for (String k : ex.keySet()) {
+                              Object v = ex.get(k);
+                              String vs = String.valueOf(v);
+                              if (vs.length() > 40) vs = vs.substring(0, 40);
+                              kb.append(k).append("=").append(vs).append("; ");
+                              if (scId == null && v instanceof String && ((String) v).startsWith("chat_")) scId = (String) v;
+                          }
+                      }
+                  } catch (Throwable t) {}
+                                    pendingShareTarget = (scId != null && scId.startsWith("chat_")) ? scId.substring(5) : "";
+                  try {
+                      android.content.ComponentName cn = intent.getComponent();
+                      String cls = cn == null ? "" : cn.getClassName();
+                      int ix = cls.lastIndexOf("ShareSlot");
+                      if (pendingShareTarget.isEmpty() && ix >= 0) {
+                          String sidSlot = getSharedPreferences("aura_slots", MODE_PRIVATE).getString("slot" + cls.substring(ix + 9), "");
+                          if (sidSlot.startsWith("chat_")) pendingShareTarget = sidSlot.substring(5);
+                      }
+                  } catch (Throwable t) {}
+                  pendingShareDiag = "id=" + scId + " bilesen=" + intent.getComponent() + " kategori=" + intent.getCategories() + " anahtarlar=" + kb.toString();
 
                   final ArrayList<Uri> uris = new ArrayList<>();
                   if (Intent.ACTION_SEND.equals(action)) {
@@ -636,10 +841,12 @@ jobs:
                   addPendingCount(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new LaunchBridge(), "AuraLaunch");
                   this.bridge.getWebView().addJavascriptInterface(new ThemeBridge(), "AuraTheme");
+                  this.bridge.getWebView().addJavascriptInterface(new ContactBridge(), "AuraContact");
+                  this.bridge.getWebView().addJavascriptInterface(new GalleryBridge(), "AuraGallery");
                   this.bridge.getWebView().addJavascriptInterface(new DriveBridge(), "AuraDrive");
                   this.bridge.getWebView().addJavascriptInterface(new SecureBridge(), "AuraSecure");
                   this.bridge.getWebView().addJavascriptInterface(new DocBridge(), "AuraDoc");
-                  this.bridge.getWebView().addJavascriptInterface(new ContactBridge(), "AuraContact");
+                  this.bridge.getWebView().addJavascriptInterface(new IconBridge(), "AuraIcon");
                   this.bridge.getWebView().addJavascriptInterface(new NotifBridge(), "AuraNotif");
                   clearChatFromIntent(getIntent());
                   getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
@@ -943,7 +1150,7 @@ jobs:
                           o.put("text", text);
                           o.put("raw", body);
                           o.put("sender", sender);
-                          String suid = group ? "" : d.get("senderUid");
+                          String suid = d.get("senderUid");
                           o.put("senderUid", suid == null ? "" : suid);
                           o.put("t", System.currentTimeMillis());
                           o.put("me", false);
@@ -969,7 +1176,8 @@ jobs:
                       m.put("msgType", d.get("msgType") == null ? "" : d.get("msgType"));
                       sp(c).edit().putString("meta_" + chatId, m.toString()).apply();
 
-                      if (!group) ensureAvatar(c, chatId);
+                      ensureAvatar(c, chatId);
+                      if (group) ensureAvatarFor(c, chatId, d.get("senderUid"));
                       post(c, chatId, false);
                   } catch (Exception e) {}
               }
@@ -1042,7 +1250,7 @@ jobs:
                           style.setGroupConversation(true);
                       }
 
-                      Bitmap avatar = group ? null : cachedAvatar(c, chatId);
+                      Bitmap avatar = cachedAvatar(c, chatId);
                       Map<String, Person> people = new HashMap<>();
                       long lastT = System.currentTimeMillis();
                       String lastText = "";
@@ -1061,10 +1269,11 @@ jobs:
                               if (key.isEmpty()) key = "n:" + name;
                               Person p = people.get(key);
                               if (p == null) {
+                                  Bitmap personAv = group ? cachedAvatar(c, chatId + "|" + key) : avatar;
                                   p = new Person.Builder()
                                           .setName(name)
                                           .setKey(key)
-                                          .setIcon(IconCompat.createWithBitmap(avatar != null ? avatar : initialsBitmap(name, 128)))
+                                          .setIcon(IconCompat.createWithBitmap(personAv != null ? personAv : initialsBitmap(name, 128)))
                                           .build();
                                   people.put(key, p);
                               }
@@ -1153,15 +1362,32 @@ jobs:
                   } catch (Exception e) {}
               }
 
-              static void publishShortcut(Context c, String sid, String title, Bitmap avatar) {
+                                          static void publishShortcut(Context c, String sid, String title, Bitmap avatar) {
                   try {
+                      android.content.SharedPreferences sp = c.getSharedPreferences("aura_slots", Context.MODE_PRIVATE);
+                      int slot = -1;
+                      for (int n = 0; n < 6; n++) {
+                          if (sid.equals(sp.getString("slot" + n, ""))) { slot = n; break; }
+                      }
+                      if (slot < 0) {
+                          for (int n = 0; n < 6; n++) {
+                              if (sp.getString("slot" + n, "").isEmpty()) { slot = n; break; }
+                          }
+                      }
+                      if (slot < 0) {
+                          slot = sp.getInt("next", 0) % 6;
+                          String old = sp.getString("slot" + slot, "");
+                          if (!old.isEmpty()) ShortcutManagerCompat.removeDynamicShortcuts(c, java.util.Arrays.asList(old));
+                          sp.edit().putInt("next", slot + 1).apply();
+                      }
+                      sp.edit().putString("slot" + slot, sid).apply();
                       IconCompat icon = IconCompat.createWithBitmap(avatar != null ? avatar : initialsBitmap(title, 128));
                       Person target = new Person.Builder().setName(title).setKey(sid).setIcon(icon).build();
                       Intent i = new Intent(c, MainActivity.class).setAction(Intent.ACTION_VIEW);
                       ShortcutInfoCompat sc = new ShortcutInfoCompat.Builder(c, sid)
                               .setShortLabel(title)
                               .setLongLived(true)
-                              .setCategories(new java.util.HashSet<String>(java.util.Arrays.asList("com.aurachat.sharetarget")))
+                              .setCategories(new java.util.HashSet<String>(java.util.Arrays.asList("com.aurachat.slot" + slot)))
                               .setIntent(i)
                               .setPerson(target)
                               .setIcon(icon)
@@ -1258,11 +1484,14 @@ jobs:
               }
 
               // Önbellekte yoksa ya da 12 saatten eskiyse sunucudan indirir (kısa zaman aşımı)
-              static void ensureAvatar(Context c, String chatId) {
+              static void ensureAvatar(Context c, String chatId) { ensureAvatarFor(c, chatId, null); }
+
+              static void ensureAvatarFor(Context c, String chatId, String uid) {
                   try {
-                      File f = avatarFile(c, chatId);
+                      String key = (uid == null || uid.isEmpty()) ? chatId : chatId + "|" + uid;
+                      File f = avatarFile(c, key);
                       if (f.exists() && System.currentTimeMillis() - f.lastModified() < 12L * 3600 * 1000) return;
-                      String resp = callServerRaw(c, "avatar", chatId, null, 3500);
+                      String resp = callServerRaw(c, "avatar", chatId, (uid == null || uid.isEmpty()) ? null : uid, 3500);
                       if (resp == null) return;
                       String av = new JSONObject(resp).optString("avatar", "");
                       if (av.isEmpty()) return;
@@ -1496,12 +1725,29 @@ jobs:
             if ! grep -q "android.intent.action.SEND" "$MANIFEST_PATH"; then
               sed -i 's#</activity>#    <intent-filter>\n        <action android:name="android.intent.action.SEND" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <data android:mimeType="image/*" />\n    </intent-filter>\n    <intent-filter>\n        <action android:name="android.intent.action.SEND_MULTIPLE" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <data android:mimeType="image/*" />\n    </intent-filter>\n</activity>#' "$MANIFEST_PATH"
             fi
-            # Direct Share: Paylaş menüsünde son sohbetler kişi olarak görünsün
+                        # Direct Share: Paylaş menüsünde son sohbetler kişi olarak görünsün
             if ! grep -q "android.app.shortcuts" "$MANIFEST_PATH"; then
               sed -i 's#</activity>#    <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />\n</activity>#' "$MANIFEST_PATH"
             fi
             mkdir -p android/app/src/main/res/xml
-            printf '<?xml version="1.0" encoding="utf-8"?>\n<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">\n    <share-target android:targetClass="com.aurachat.app.MainActivity">\n        <data android:mimeType="image/*" />\n        <category android:name="com.aurachat.sharetarget" />\n    </share-target>\n</shortcuts>\n' > android/app/src/main/res/xml/shortcuts.xml
+            {
+              echo '<?xml version="1.0" encoding="utf-8"?>'
+              echo '<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">'
+              for n in 0 1 2 3 4 5; do
+                echo "    <share-target android:targetClass=\"com.aurachat.app.ShareSlot$n\">"
+                echo '        <data android:mimeType="image/*" />'
+                echo "        <category android:name=\"com.aurachat.slot$n\" />"
+                echo '    </share-target>'
+              done
+              echo '</shortcuts>'
+            } > android/app/src/main/res/xml/shortcuts.xml
+            if ! grep -q "ShareSlot0" "$MANIFEST_PATH"; then
+              ALIASES=""
+              for n in 0 1 2 3 4 5; do
+                ALIASES="$ALIASES    <activity-alias android:name=\".ShareSlot$n\" android:targetActivity=\".MainActivity\" android:exported=\"true\" android:label=\"AuraChat\" />\n"
+              done
+              sed -i "s#</application>#${ALIASES}</application>#" "$MANIFEST_PATH"
+            fi
             add_perm "android.permission.ACCESS_FINE_LOCATION"
             add_perm "android.permission.ACCESS_COARSE_LOCATION"
           fi
@@ -1885,6 +2131,83 @@ jobs:
           print("Ikonlar static/icons'tan uretildi, arka plan:", bg_hex)
           PY
 
+      - name: Uygulama İkon Seçeneklerini Üret (Görünüm sayfası)
+        run: |
+          pip install pillow --quiet
+          python3 - << 'PY'
+          import os, re
+          from PIL import Image
+
+          RES = "android/app/src/main/res"
+          MANIFEST = "android/app/src/main/AndroidManifest.xml"
+          legacy = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
+          fgsz = {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}
+
+          def rounded(img, size):
+              from PIL import ImageDraw
+              im = img.resize((size, size), Image.LANCZOS)
+              m = Image.new("L", (size * 4, size * 4), 0)
+              ImageDraw.Draw(m).ellipse((0, 0, size * 4 - 1, size * 4 - 1), fill=255)
+              m = m.resize((size, size), Image.LANCZOS)
+              out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+              out.paste(im, (0, 0), m)
+              return out
+
+          os.makedirs(RES + "/values", exist_ok=True)
+          os.makedirs(RES + "/mipmap-anydpi-v26", exist_ok=True)
+          colors = []
+          made = []
+          for n in range(1, 16):
+              src = "static/icons/ikon-%d.png" % n
+              if not os.path.exists(src):
+                  continue
+              im = Image.open(src).convert("RGBA")
+              bg = im.getpixel((4, 4))
+              if bg[3] < 255:
+                  bg = (0, 0, 0, 255)
+              colors.append('    <color name="aura_alt_bg_%d">#%02x%02x%02x</color>' % (n, bg[0], bg[1], bg[2]))
+              for dens, size in legacy.items():
+                  p = "%s/mipmap-%s" % (RES, dens)
+                  os.makedirs(p, exist_ok=True)
+                  im.resize((size, size), Image.LANCZOS).save("%s/ic_alt_%d.png" % (p, n))
+                  rounded(im, size).save("%s/ic_alt_%d_round.png" % (p, n))
+              for dens, size in fgsz.items():
+                  p = "%s/mipmap-%s" % (RES, dens)
+                  canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+                  inner = int(round(size * 0.8333))
+                  canvas.paste(im.resize((inner, inner), Image.LANCZOS), ((size - inner) // 2, (size - inner) // 2))
+                  canvas.save("%s/aura_alt_fg_%d.png" % (p, n))
+              xml = ('<?xml version="1.0" encoding="utf-8"?>\n'
+                     '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                     '    <background android:drawable="@color/aura_alt_bg_%d"/>\n'
+                     '    <foreground android:drawable="@mipmap/aura_alt_fg_%d"/>\n'
+                     '</adaptive-icon>\n') % (n, n)
+              open("%s/mipmap-anydpi-v26/ic_alt_%d.xml" % (RES, n), "w").write(xml)
+              open("%s/mipmap-anydpi-v26/ic_alt_%d_round.xml" % (RES, n), "w").write(xml)
+              made.append(n)
+
+          if colors:
+              open(RES + "/values/aura_alt_colors.xml", "w").write(
+                  '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n' + "\n".join(colors) + '\n</resources>\n')
+
+          # Manifest: MainActivity'nin LAUNCHER'ını kaldır, simge takma adlarını ekle
+          m = open(MANIFEST, encoding="utf-8").read()
+          if "IconDefault" not in m:
+              m = m.replace('<category android:name="android.intent.category.LAUNCHER" />', '')
+              filt = ('<intent-filter><action android:name="android.intent.action.MAIN" />'
+                      '<category android:name="android.intent.category.LAUNCHER" /></intent-filter>')
+              al = ('    <activity-alias android:name=".IconDefault" android:targetActivity=".MainActivity" android:exported="true" '
+                    'android:enabled="true" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" '
+                    'android:label="AuraChat">' + filt + '</activity-alias>\n')
+              for n in made:
+                  al += ('    <activity-alias android:name=".IconAlt%d" android:targetActivity=".MainActivity" android:exported="true" '
+                         'android:enabled="false" android:icon="@mipmap/ic_alt_%d" android:roundIcon="@mipmap/ic_alt_%d_round" '
+                         'android:label="AuraChat">' % (n, n, n) + filt + '</activity-alias>\n')
+              m = m.replace("</application>", al + "</application>")
+              open(MANIFEST, "w", encoding="utf-8").write(m)
+          print("Simge secenekleri:", made)
+          PY
+
       - name: Sistem Açılış Logosu Üret
         run: |
           pip install pillow --quiet
@@ -1965,3 +2288,20 @@ jobs:
         with:
           name: AuraChat-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 1
+
+      - name: Eski Çıktıları ve Kayıtları Temizle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.workflow_run.id != ${{ github.run_id }}) | .id' | while read id; do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" > /dev/null || echo "SILINEMEDI artifact: $id"
+          done
+          gh api --paginate "repos/${{ github.repository }}/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | select(.status=="completed") | .id' \
+            | grep -v "^${{ github.run_id }}$" | tail -n +3 | while read id; do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$id" > /dev/null || echo "SILINEMEDI kayit: $id"
+          done
+          exit 0
