@@ -512,19 +512,51 @@ jobs:
                   }
               }
 
-              // Uygulama simgesini değiştirir (activity-alias aç/kapat): 0 = varsayılan, 1..15 = seçenekler
+              // Uygulama ikonunu değiştirir (activity-alias aç/kapat): 0 = varsayılan, 1..15 = seçenekler.
+              // Çalışan uygulamanın kendi giriş noktası kapatılınca Android uygulamayı kapattığı için
+              // değişiklik hemen değil, kullanıcı uygulamadan çıkarken (ana ekran / geri) uygulanır.
+              static volatile int pendingIcon = -1;
+
+              String iconAliasName(int n) {
+                  return "com.aurachat.app." + (n == 0 ? "IconDefault" : "IconAlt" + n);
+              }
+
+              void applyPendingIcon() {
+                  final int target = pendingIcon;
+                  if (target < 0) return;
+                  pendingIcon = -1;
+                  try {
+                      android.content.pm.PackageManager pm = getPackageManager();
+                      pm.setComponentEnabledSetting(new android.content.ComponentName(getPackageName(), iconAliasName(target)),
+                          android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                          android.content.pm.PackageManager.DONT_KILL_APP);
+                      for (int n = 0; n <= 15; n++) {
+                          if (n == target) continue;
+                          try {
+                              pm.setComponentEnabledSetting(new android.content.ComponentName(getPackageName(), iconAliasName(n)),
+                                  android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                                  android.content.pm.PackageManager.DONT_KILL_APP);
+                          } catch (Throwable t) {}
+                      }
+                  } catch (Throwable t) {}
+              }
+
+              @Override
+              protected void onUserLeaveHint() {
+                  super.onUserLeaveHint();
+                  applyPendingIcon();
+              }
+
               public class IconBridge {
-                  private String aliasName(int n) {
-                      return "com.aurachat.app." + (n == 0 ? "IconDefault" : "IconAlt" + n);
-                  }
                   @JavascriptInterface
                   public int current() {
+                      if (pendingIcon >= 0) return pendingIcon;
                       try {
                           android.content.pm.PackageManager pm = getPackageManager();
                           for (int n = 0; n <= 15; n++) {
                               int st;
                               try {
-                                  st = pm.getComponentEnabledSetting(new android.content.ComponentName(getPackageName(), aliasName(n)));
+                                  st = pm.getComponentEnabledSetting(new android.content.ComponentName(getPackageName(), iconAliasName(n)));
                               } catch (Throwable t) { continue; }
                               boolean on = st == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                                   || (st == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && n == 0);
@@ -536,19 +568,9 @@ jobs:
                   @JavascriptInterface
                   public boolean set(final int target) {
                       try {
-                          android.content.pm.PackageManager pm = getPackageManager();
-                          // Önce seçileni aç (her an bir simge açık kalsın), sonra diğerlerini kapat
-                          pm.setComponentEnabledSetting(new android.content.ComponentName(getPackageName(), aliasName(target)),
-                              android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                              android.content.pm.PackageManager.DONT_KILL_APP);
-                          for (int n = 0; n <= 15; n++) {
-                              if (n == target) continue;
-                              try {
-                                  pm.setComponentEnabledSetting(new android.content.ComponentName(getPackageName(), aliasName(n)),
-                                      android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                                      android.content.pm.PackageManager.DONT_KILL_APP);
-                              } catch (Throwable t) {}
-                          }
+                          // Böyle bir ikon APK'da var mı?
+                          getPackageManager().getComponentEnabledSetting(new android.content.ComponentName(getPackageName(), iconAliasName(target)));
+                          pendingIcon = target;
                           return true;
                       } catch (Throwable t) {
                           return false;
@@ -858,7 +880,7 @@ jobs:
                                   new ValueCallback<String>() {
                                       @Override
                                       public void onReceiveValue(String v) {
-                                          if (!"true".equals(v)) moveTaskToBack(true);
+                                          if (!"true".equals(v)) { applyPendingIcon(); moveTaskToBack(true); }
                                       }
                                   });
                           } catch (Throwable t) {
