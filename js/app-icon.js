@@ -30,40 +30,55 @@ function closePanel(fromBack) {
     if (!fromBack) popBackState();
 }
 
-function tileHtml(n, label, selected) {
-    const src = n === 0 ? '/static/icons/icon-512.png' : `/static/icons/ikon-${n}.png`;
+// Ana ekrandaki ikonla aynı görünsün diye: arka plan = görselin köşe rengi, görsel %83 boyutunda ortada
+// (APK'daki adaptive ikonla aynı işlem). Varsayılan ikon için maskable görsel kullanılır.
+function iconSrc(n) {
+    return n === 0 ? '/static/icons/icon-maskable-512.png' : `/static/icons/ikon-${n}.png`;
+}
+
+function tileHtml(n, label, selected, bg) {
     return `<button type="button" data-icon="${n}" style="display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:0;padding:6px;cursor:pointer;">
-        <span style="position:relative;display:block;width:76px;height:76px;">
-            <img src="${src}" alt="" style="width:76px;height:76px;border-radius:20px;object-fit:cover;background:#202c33;${selected ? 'outline:3px solid ' + accent() + ';outline-offset:3px;' : ''}">
-            ${selected ? `<span data-check style="position:absolute;right:-4px;bottom:-4px;width:22px;height:22px;border-radius:9999px;background:${accent()};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;"><i class="fa-solid fa-check"></i></span>` : ''}
+        <span style="position:relative;display:flex;align-items:center;justify-content:center;width:76px;height:76px;border-radius:20px;background:${bg || '#202c33'};${selected ? 'outline:3px solid ' + accent() + ';outline-offset:3px;' : ''}">
+            <img src="${iconSrc(n)}" alt="" style="width:83.33%;height:83.33%;object-fit:contain;">
+            ${selected ? `<span data-check style="position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:9999px;background:${accent()};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;"><i class="fa-solid fa-check"></i></span>` : ''}
         </span>
         <span style="color:#8696a0;font-size:11px;">${label}</span>
     </button>`;
 }
 
-// Hangi simge dosyaları gerçekten var? (yükleme bitmeden kutucuk çizilmez, boş kutular hiç görünmez)
-let availableIcons = null;
+// Hangi ikon dosyaları gerçekten var? Boş kutular hiç çizilmez. Köşe rengi de burada okunur.
+let availableIcons = null; // [{ n, bg }]
 function probe(n) {
     return new Promise((resolve) => {
         const im = new Image();
-        const t = setTimeout(() => resolve(false), 4000);
-        im.onload = () => { clearTimeout(t); resolve(true); };
-        im.onerror = () => { clearTimeout(t); resolve(false); };
-        im.src = `/static/icons/ikon-${n}.png`;
+        const t = setTimeout(() => resolve(null), 4000);
+        im.onload = () => {
+            clearTimeout(t);
+            let bg = '#000';
+            try {
+                const c = document.createElement('canvas');
+                c.width = 8; c.height = 8;
+                const cx = c.getContext('2d');
+                cx.drawImage(im, 0, 0, 8, 8);
+                const d = cx.getImageData(1, 1, 1, 1).data;
+                bg = d[3] < 255 ? '#000' : `rgb(${d[0]},${d[1]},${d[2]})`;
+            } catch (e) {}
+            resolve({ n, bg });
+        };
+        im.onerror = () => { clearTimeout(t); resolve(null); };
+        im.src = iconSrc(n);
     });
 }
 async function loadAvailable() {
     if (availableIcons) return availableIcons;
-    const res = await Promise.all(Array.from({ length: COUNT }, (_, i) => probe(i + 1)));
-    availableIcons = res.map((ok, i) => (ok ? i + 1 : 0)).filter(Boolean);
+    const res = await Promise.all(Array.from({ length: COUNT + 1 }, (_, i) => probe(i)));
+    availableIcons = res.filter(Boolean);
     return availableIcons;
 }
 
 function renderGrid(cur) {
     const grid = panelEl.querySelector('[data-grid]');
-    let html = tileHtml(0, 'Varsayılan', cur === 0);
-    (availableIcons || []).forEach((n) => { html += tileHtml(n, String(n), cur === n); });
-    grid.innerHTML = html;
+    grid.innerHTML = (availableIcons || []).map((it) => tileHtml(it.n, it.n === 0 ? 'Varsayılan' : String(it.n), cur === it.n, it.bg)).join('');
 }
 
 function openPanel() {
