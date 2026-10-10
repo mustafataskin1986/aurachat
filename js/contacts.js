@@ -20,7 +20,7 @@ import {
     collection, onSnapshot, query, orderBy, doc, getDocs, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
-import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, showToast } from "./chat-core.js";
+import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, showToast, openMemberSheet } from "./chat-core.js";
 import { auraDialog } from "./aura-dialog.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -856,6 +856,12 @@ export async function loadContacts() {
                 : `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white shadow" style="background-color:${getUserColor(displayName)};"><i class="fa-solid fa-user-group"></i></div>`;
         } else {
             renderAvatarInto(avatarSlot, chatData.otherUid, chatData.otherAvatar, chatData.otherName, 'w-12 h-12');
+            // Avatara basınca sohbet açılmaz, profil kartı (Mesaj / Sesli / Görüntülü / Kaydet) açılır
+            avatarSlot.addEventListener('click', (e) => {
+                if (chatSelectionMode) return;
+                e.stopPropagation();
+                openMemberSheet(chatData.otherUid, chatData.otherName);
+            });
         }
 
         userDiv.addEventListener('click', () => {
