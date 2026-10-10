@@ -10,7 +10,8 @@ import { db, auth } from "./firebase-init.js";
 import { collection, doc, getDoc, getDocs, setDoc, query, orderBy, limit, startAfter, Timestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { GoogleAuthProvider, reauthenticateWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { showToast, getCurrentUser } from "./chat-core.js";
-import { auraDialog, auraAccent } from "./aura-dialog.js";
+import { auraAccent } from "./aura-dialog.js";
+import { pushBackState, popBackState } from "./back-handler.js";
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const BACKUP_NAME = 'aurachat-yedek.json';
@@ -221,6 +222,7 @@ async function doBackup() {
     try {
         p.set(4, 'Google izni isteniyor…');
         const token = await getToken();
+        markDriveAllowed();
         const data = await buildBackup(user.uid, p);
         p.set(90, 'Drive\'a yükleniyor…');
         const json = JSON.stringify(data);
@@ -243,6 +245,7 @@ async function doRestore() {
     try {
         p.set(4, 'Google izni isteniyor…');
         const token = await getToken();
+        markDriveAllowed();
         p.set(10, 'Yedek indiriliyor…');
         const dl = await downloadBackup(token);
         if (!dl) { p.close(); showToast('Drive\'da yedek bulunamadı', 3500); return; }
@@ -295,6 +298,82 @@ async function doRestore() {
     }
 }
 
+function driveAllowed() {
+    try { return localStorage.getItem('aura_drive_ok') === '1'; } catch (e) { return false; }
+}
+
+function markDriveAllowed() {
+    try { localStorage.setItem('aura_drive_ok', '1'); } catch (e) {}
+}
+
+function openBackupDialog(info) {
+    return new Promise((resolve) => {
+        const black = document.documentElement.hasAttribute('data-aura-black');
+        const accent = auraAccent();
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.6);';
+        const box = document.createElement('div');
+        box.style.cssText = 'width:100%;max-width:360px;border-radius:28px;padding:28px 24px 20px;box-shadow:0 10px 40px rgba(0,0,0,.6);'
+            + 'background:' + (black ? '#000' : '#111b21') + ';border:1px solid rgba(255,255,255,.08);';
+
+        const h = document.createElement('div');
+        h.textContent = 'Google Drive yedeği';
+        h.style.cssText = 'color:#e9edef;font-size:20px;line-height:1.3;margin:0 4px 6px;';
+        box.appendChild(h);
+
+        if (!driveAllowed()) {
+            const note = document.createElement('div');
+            note.textContent = 'İlk yedekleme için sizden bir kere izin istenecektir. Sonraki yedekleme ve geri yükleme işlemlerinde izin istenmeyecektir.';
+            note.style.cssText = 'color:#8696a0;font-size:12px;line-height:1.4;margin:0 4px 14px;';
+            box.appendChild(note);
+        } else {
+            h.style.marginBottom = '14px';
+        }
+
+        let done = false;
+        const finish = (id, fromBack) => {
+            if (done) return;
+            done = true;
+            overlay.remove();
+            if (!fromBack) popBackState();
+            resolve(id);
+        };
+
+        const mkLeft = (label, id) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = label;
+            b.style.cssText = 'display:block;width:100%;text-align:left;background:none;border:0;color:' + accent + ';font-size:17px;padding:12px 4px;cursor:pointer;';
+            b.addEventListener('click', () => finish(id, false));
+            return b;
+        };
+        box.appendChild(mkLeft('Şimdi yedekle', 'backup'));
+        box.appendChild(mkLeft('Geri yükle', 'restore'));
+
+        if (info) {
+            const inf = document.createElement('div');
+            inf.textContent = info;
+            inf.style.cssText = 'color:#8696a0;font-size:13px;line-height:1.4;margin:6px 4px 0;';
+            box.appendChild(inf);
+        }
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;justify-content:flex-end;margin-top:18px;';
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.textContent = 'Kapat';
+        close.style.cssText = 'background:none;border:1px solid ' + accent + ';border-radius:999px;color:' + accent + ';font-size:16px;padding:9px 22px;cursor:pointer;';
+        close.addEventListener('click', () => finish('cancel', false));
+        row.appendChild(close);
+        box.appendChild(row);
+
+        overlay.appendChild(box);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) finish('cancel', false); });
+        document.body.appendChild(overlay);
+        pushBackState(() => finish('cancel', true));
+    });
+}
+
 export async function openBackupMenu() {
     if (busy) return;
     let info = '';
@@ -302,17 +381,7 @@ export async function openBackupMenu() {
         const l = JSON.parse(localStorage.getItem(LAST_KEY) || 'null');
         if (l) info = 'Son yedek: ' + fmtDate(l.t) + ' · ' + l.msgs + ' mesaj · ' + fmtSize(l.size);
     } catch (e) {}
-    if (info) showToast(info, 3000);
-    const choice = await auraDialog({
-        title: 'Google Drive yedeği',
-        accent: auraAccent(),
-        buttons: [
-            { id: 'backup', label: 'Şimdi yedekle' },
-            { id: 'restore', label: 'Yedekten geri yükle' },
-            { id: 'cancel', label: 'Kapat' }
-        ]
-    });
-    const id = choice && (choice.id || choice);
+    const id = await openBackupDialog(info);
     if (id !== 'backup' && id !== 'restore') return;
     busy = true;
     try {
