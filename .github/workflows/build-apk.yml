@@ -139,6 +139,9 @@ jobs:
           import com.google.android.gms.auth.api.signin.GoogleSignIn;
           import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
           import com.google.android.gms.common.api.Scope;
+          import java.io.File;
+          import androidx.core.content.FileProvider;
+          import android.provider.ContactsContract;
 
           public class MainActivity extends BridgeActivity {
               // Uygulama ekranda mı? (AuraMessagingService, uygulama açıkken arama bildirimi göstermesin diye bakar)
@@ -310,6 +313,69 @@ jobs:
                       } else {
                           driveResult(null, "Drive izni verilmedi.");
                       }
+                  }
+              }
+
+              // Bir kez görülen fotoğraf açıkken ekran görüntüsü / ekran kaydı engellenir (FLAG_SECURE)
+              public class SecureBridge {
+                  @JavascriptInterface
+                  public void set(final boolean on) {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                                  else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                              } catch (Throwable t) {}
+                          }
+                      });
+                  }
+              }
+
+              // Kaydedilen belgeyi (PDF, Word...) telefondaki uygun uygulamada açar
+              public class DocBridge {
+                  @JavascriptInterface
+                  public boolean open(final String path, final String mime) {
+                      try {
+                          final File f = new File(path == null ? "" : path);
+                          if (!f.exists()) return false;
+                          runOnUiThread(new Runnable() {
+                              @Override
+                              public void run() {
+                                  try {
+                                      Uri uri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", f);
+                                      Intent i = new Intent(Intent.ACTION_VIEW);
+                                      i.setDataAndType(uri, (mime == null || mime.length() == 0) ? "*/*" : mime);
+                                      i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                                      startActivity(i);
+                                  } catch (Throwable t) {
+                                      android.widget.Toast.makeText(MainActivity.this, "Bu belgeyi açacak uygulama bulunamadı", android.widget.Toast.LENGTH_LONG).show();
+                                  }
+                              }
+                          });
+                          return true;
+                      } catch (Throwable t) {
+                          return false;
+                      }
+                  }
+              }
+
+              // Rehbere kişi ekleme ekranını açar (profil kartındaki "Kaydet")
+              public class ContactBridge {
+                  @JavascriptInterface
+                  public void add(final String name, final String phone) {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  Intent i = new Intent(ContactsContract.Intents.Insert.ACTION);
+                                  i.setType(ContactsContract.RawContacts.CONTENT_TYPE);
+                                  i.putExtra(ContactsContract.Intents.Insert.NAME, name == null ? "" : name);
+                                  i.putExtra(ContactsContract.Intents.Insert.PHONE, phone == null ? "" : phone);
+                                  startActivity(i);
+                              } catch (Throwable t) {}
+                          }
+                      });
                   }
               }
 
@@ -571,6 +637,9 @@ jobs:
                   this.bridge.getWebView().addJavascriptInterface(new LaunchBridge(), "AuraLaunch");
                   this.bridge.getWebView().addJavascriptInterface(new ThemeBridge(), "AuraTheme");
                   this.bridge.getWebView().addJavascriptInterface(new DriveBridge(), "AuraDrive");
+                  this.bridge.getWebView().addJavascriptInterface(new SecureBridge(), "AuraSecure");
+                  this.bridge.getWebView().addJavascriptInterface(new DocBridge(), "AuraDoc");
+                  this.bridge.getWebView().addJavascriptInterface(new ContactBridge(), "AuraContact");
                   this.bridge.getWebView().addJavascriptInterface(new NotifBridge(), "AuraNotif");
                   clearChatFromIntent(getIntent());
                   getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
