@@ -6,7 +6,7 @@
 
 import { db, auth } from "./firebase-init.js";
 import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showTempIncomingBubble, showToast } from "./chat-core.js";
+import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showTempIncomingBubble, showToast, previewLaunchChat } from "./chat-core.js";
 import { watchCallForChat } from "./video-call.js";
 import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
@@ -45,7 +45,11 @@ window.__auraOnFirstPaint = function () {
 };
 
 // Splash ekranını yumuşakça kapatan yardımcı fonksiyon (js/splash.js tanımlar)
+
+let splashHidden = false;
 async function hideNativeSplash() {
+    if (splashHidden) return;
+    splashHidden = true;
     if (window.hideAuraSplash) window.hideAuraSplash();
 }
 
@@ -232,6 +236,18 @@ window.initApp = async function () {
         await hideNativeSplash();
         auraMark('Splash kapandı');
     }
+        // Bildirimle açılış: oturumu beklemeden başlığı ve bildirimdeki yazıları hemen göster, splash'i kaldır.
+    // Hazır olana kadar dokunmalar kapalı. Gerçek sohbet açılınca bu görüntü kendiliğinden yenilenir.
+    readLaunchChatFromNative();
+    if (!earlyReveal && window.pendingOpenChat && previewLaunchChat(window.pendingOpenChat)) {
+        const bootStyle2 = document.createElement('style');
+        bootStyle2.textContent = 'html[data-aura-booting] #chat-area{pointer-events:none}';
+        document.head.appendChild(bootStyle2);
+        document.documentElement.setAttribute('data-aura-booting', '1');
+        setTimeout(() => document.documentElement.removeAttribute('data-aura-booting'), 8000);
+        await hideNativeSplash();
+        auraMark('Önizleme çizildi');
+    }
         // Firebase oturumu diskten yüklenene kadar bekle: bitmeden istek atılırsa
     // Firestore "permission-denied" verir ve dinleyiciler kalıcı olarak kapanır
     try {
@@ -265,6 +281,7 @@ window.initApp = async function () {
         ]);
         
         document.documentElement.removeAttribute('data-aura-launch');
+                document.documentElement.removeAttribute('data-aura-booting');
         window.__aurachatReady = true;
         const tPaint = Math.round(performance.now());
         await hideNativeSplash();
