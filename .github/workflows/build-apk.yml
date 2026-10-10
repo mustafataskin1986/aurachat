@@ -3,10 +3,6 @@ name: Build Android APK
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-  actions: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -137,6 +133,12 @@ jobs:
           import android.view.WindowManager;
           import androidx.activity.OnBackPressedCallback;
           import android.webkit.ValueCallback;
+          import org.json.JSONObject;
+          import com.google.android.gms.auth.GoogleAuthUtil;
+          import com.google.android.gms.auth.UserRecoverableAuthException;
+          import com.google.android.gms.auth.api.signin.GoogleSignIn;
+          import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+          import com.google.android.gms.common.api.Scope;
 
           public class MainActivity extends BridgeActivity {
               // Uygulama ekranda mı? (AuraMessagingService, uygulama açıkken arama bildirimi göstermesin diye bakar)
@@ -196,8 +198,7 @@ jobs:
 
               private volatile String pendingSharedJson = null;
               private volatile boolean shareBusy = false;
-                            private volatile String pendingShareTarget = "";
-                                          private volatile String pendingShareDiag = "";
+              private volatile String pendingShareTarget = "";
               private volatile String launchChatJson = "";
 
             // JS, sohbet temasının rengini bildirir; seçim tutamakları bu renge boyanır
@@ -214,7 +215,7 @@ jobs:
                   public void clearChat(String chatId) {
                       AuraNotif.clearChat(getApplicationContext(), chatId);
                   }
-                                    // Paylaş menüsünde son sohbetler kişi olarak çıksın (Direct Share)
+                  // Paylaş menüsünde son sohbetler kişi olarak çıksın (Direct Share)
                   @JavascriptInterface
                   public void publishShortcut(String chatId, String title, String avatarDataUrl) {
                       try {
@@ -230,154 +231,87 @@ jobs:
                       } catch (Throwable t) {}
                   }
               }
-              public class GalleryBridge {
-                  private final java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(3);
 
-                  private String perm() {
-                      return Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_IMAGES : Manifest.permission.READ_EXTERNAL_STORAGE;
-                  }
+              // Drive yedeği: izin SADECE yedekle/geri yükle'ye basılınca istenir
+              static final int DRIVE_REQ = 9101;
+              static final int DRIVE_REQ_RETRY = 9102;
+              static final String DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 
+              void driveResult(final String token, final String err) {
+                  runOnUiThread(new Runnable() {
+                      @Override
+                      public void run() {
+                          try {
+                              String js = "window.__auraDriveCb&&window.__auraDriveCb("
+                                  + JSONObject.quote(token == null ? "" : token) + ","
+                                  + JSONObject.quote(err == null ? "" : err) + ")";
+                              MainActivity.this.bridge.getWebView().evaluateJavascript(js, null);
+                          } catch (Throwable t) {}
+                      }
+                  });
+              }
+
+              void fetchDriveToken(final GoogleSignInAccount acct) {
+                  new Thread(new Runnable() {
+                      @Override
+                      public void run() {
+                          try {
+                              String token = GoogleAuthUtil.getToken(MainActivity.this, acct.getAccount(), "oauth2:" + DRIVE_SCOPE);
+                              driveResult(token, null);
+                          } catch (final UserRecoverableAuthException e) {
+                              runOnUiThread(new Runnable() {
+                                  @Override
+                                  public void run() {
+                                      try { startActivityForResult(e.getIntent(), DRIVE_REQ_RETRY); }
+                                      catch (Throwable t) { driveResult(null, "Drive izni açılamadı."); }
+                                  }
+                              });
+                          } catch (Throwable t) {
+                              driveResult(null, "Drive izni alınamadı: " + t.getMessage());
+                          }
+                      }
+                  }).start();
+              }
+
+              public class DriveBridge {
                   @JavascriptInterface
-                  public boolean has() {
-                      try {
-                          if (ContextCompat.checkSelfPermission(MainActivity.this, perm()) == PackageManager.PERMISSION_GRANTED) return true;
-                          if (Build.VERSION.SDK_INT >= 34 && ContextCompat.checkSelfPermission(MainActivity.this, "android.permission.READ_MEDIA_VISUAL_USER_SELECTED") == PackageManager.PERMISSION_GRANTED) return true;
-                      } catch (Throwable t) {}
-                      return false;
-                  }
-
-                  @JavascriptInterface
-                  public void ask() {
+                  public void requestToken() {
                       runOnUiThread(new Runnable() {
-                          @Override
-                          public void run() {
-                              ActivityCompat.requestPermissions(MainActivity.this, new String[]{ perm() }, 7001);
-                          }
-                      });
-                  }
-
-                  @JavascriptInterface
-                  public String list(int offset, int limit) {
-                      org.json.JSONArray arr = new org.json.JSONArray();
-                      try {
-                          android.net.Uri uri = android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-                          String[] proj = new String[]{ android.provider.MediaStore.Images.Media._ID };
-                          android.database.Cursor cur;
-                          if (Build.VERSION.SDK_INT >= 26) {
-                              android.os.Bundle b = new android.os.Bundle();
-                              b.putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, limit);
-                              b.putInt(android.content.ContentResolver.QUERY_ARG_OFFSET, offset);
-                              b.putStringArray(android.content.ContentResolver.QUERY_ARG_SORT_COLUMNS, new String[]{ "date_added" });
-                              b.putInt(android.content.ContentResolver.QUERY_ARG_SORT_DIRECTION, android.content.ContentResolver.QUERY_SORT_DIRECTION_DESCENDING);
-                              cur = getContentResolver().query(uri, proj, b, null);
-                          } else {
-                              cur = getContentResolver().query(uri, proj, null, null, "date_added DESC LIMIT " + limit + " OFFSET " + offset);
-                          }
-                          if (cur != null) {
-                              while (cur.moveToNext()) arr.put(cur.getLong(0));
-                              cur.close();
-                          }
-                      } catch (Throwable t) {}
-                      return arr.toString();
-                  }
-
-                  private void deliver(final String js) {
-                      runOnUiThread(new Runnable() {
-                          @Override
-                          public void run() {
-                              try { MainActivity.this.bridge.getWebView().evaluateJavascript(js, null); } catch (Throwable t) {}
-                          }
-                      });
-                  }
-
-                  @JavascriptInterface
-                  public void thumbAsync(final long id, final int size) {
-                      pool.execute(new Runnable() {
                           @Override
                           public void run() {
                               try {
-                                  android.net.Uri uri = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
-                                  Bitmap bmp;
-                                  if (Build.VERSION.SDK_INT >= 29) {
-                                      bmp = getContentResolver().loadThumbnail(uri, new android.util.Size(size, size), null);
+                                  GoogleSignInAccount acct = GoogleSignIn.getLastSignedInAccount(MainActivity.this);
+                                  if (acct == null || acct.getAccount() == null) {
+                                      driveResult(null, "Google hesabı bulunamadı. Çıkış yapıp Google ile tekrar giriş yap.");
+                                      return;
+                                  }
+                                  Scope sc = new Scope(DRIVE_SCOPE);
+                                  if (GoogleSignIn.hasPermissions(acct, sc)) {
+                                      fetchDriveToken(acct);
                                   } else {
-                                      bmp = android.provider.MediaStore.Images.Thumbnails.getThumbnail(getContentResolver(), id, android.provider.MediaStore.Images.Thumbnails.MINI_KIND, null);
+                                      GoogleSignIn.requestPermissions(MainActivity.this, DRIVE_REQ, acct, sc);
                                   }
-                                  if (bmp == null) return;
-                                  java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
-                                  bmp.compress(Bitmap.CompressFormat.JPEG, 72, bo);
-                                  String b64 = android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
-                                  deliver("window.__auraGalThumb&&window.__auraGalThumb(" + id + ",'data:image/jpeg;base64," + b64 + "')");
-                              } catch (Throwable t) {}
-                          }
-                      });
-                  }
-
-                  @JavascriptInterface
-                  public void fullAsync(final long id) {
-                      pool.execute(new Runnable() {
-                          @Override
-                          public void run() {
-                              String out = "";
-                              try {
-                                  android.net.Uri uri = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
-                                  android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
-                                  o.inJustDecodeBounds = true;
-                                  java.io.InputStream in1 = getContentResolver().openInputStream(uri);
-                                  BitmapFactory.decodeStream(in1, null, o);
-                                  if (in1 != null) in1.close();
-                                  int sample = 1;
-                                  while ((o.outWidth / sample) > 1800 || (o.outHeight / sample) > 1800) sample *= 2;
-                                  android.graphics.BitmapFactory.Options o2 = new android.graphics.BitmapFactory.Options();
-                                  o2.inSampleSize = sample;
-                                  java.io.InputStream in2 = getContentResolver().openInputStream(uri);
-                                  Bitmap bmp = BitmapFactory.decodeStream(in2, null, o2);
-                                  if (in2 != null) in2.close();
-                                  if (bmp != null) {
-                                      int rot = 0;
-                                      try {
-                                          java.io.InputStream in3 = getContentResolver().openInputStream(uri);
-                                          android.media.ExifInterface ex = new android.media.ExifInterface(in3);
-                                          int ori = ex.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1);
-                                          if (ori == 6) rot = 90; else if (ori == 3) rot = 180; else if (ori == 8) rot = 270;
-                                          if (in3 != null) in3.close();
-                                      } catch (Throwable t) {}
-                                      if (rot != 0) {
-                                          android.graphics.Matrix m = new android.graphics.Matrix();
-                                          m.postRotate(rot);
-                                          bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(), m, true);
-                                      }
-                                      java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
-                                      bmp.compress(Bitmap.CompressFormat.JPEG, 85, bo);
-                                      out = "data:image/jpeg;base64," + android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
-                                  }
-                              } catch (Throwable t) {}
-                              deliver("window.__auraGalFull&&window.__auraGalFull(" + id + ",'" + out + "')");
+                              } catch (Throwable t) {
+                                  driveResult(null, "Drive izni hatası: " + t.getMessage());
+                              }
                           }
                       });
                   }
               }
 
-              public class ContactBridge {
-                  @JavascriptInterface
-                  public void add(final String name, final String phone) {
-                      runOnUiThread(new Runnable() {
-                          @Override
-                          public void run() {
-                              try {
-                                  Intent i = new Intent(android.provider.ContactsContract.Intents.Insert.ACTION);
-                                  i.setType(android.provider.ContactsContract.RawContacts.CONTENT_TYPE);
-                                  i.putExtra(android.provider.ContactsContract.Intents.Insert.NAME, name);
-                                  i.putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, phone);
-                                  i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                  startActivity(i);
-                              } catch (Throwable t) {}
-                          }
-                      });
+              @Override
+              public void onActivityResult(int requestCode, int resultCode, Intent data) {
+                  super.onActivityResult(requestCode, resultCode, data);
+                  if (requestCode == DRIVE_REQ || requestCode == DRIVE_REQ_RETRY) {
+                      if (resultCode == RESULT_OK) {
+                          GoogleSignInAccount acct = GoogleSignIn.getLastSignedInAccount(this);
+                          if (acct != null && acct.getAccount() != null) fetchDriveToken(acct);
+                          else driveResult(null, "Google hesabı bulunamadı.");
+                      } else {
+                          driveResult(null, "Drive izni verilmedi.");
+                      }
                   }
               }
-
-
 
               public class ThemeBridge {
                   @JavascriptInterface
@@ -490,7 +424,7 @@ jobs:
               }
 
               // JS buradan bekleyen paylaşımı alır: "" = yok, "busy" = hazırlanıyor, aksi halde resim listesi (JSON)
-                            public class ShareBridge {
+              public class ShareBridge {
                   @JavascriptInterface
                   public String consume() {
                       if (shareBusy) return "busy";
@@ -503,14 +437,8 @@ jobs:
                   @JavascriptInterface
                   public String target() {
                       String t = pendingShareTarget;
-                                            pendingShareTarget = "";
+                      pendingShareTarget = "";
                       return t == null ? "" : t;
-                  }
-
-                  // Geçici: paylaşımla telefonun hangi bilgileri verdiğini gösterir
-                  @JavascriptInterface
-                  public String diag() {
-                      return pendingShareDiag == null ? "" : pendingShareDiag;
                   }
               }
 
@@ -536,31 +464,9 @@ jobs:
                   if (intent == null) return;
                   String action = intent.getAction();
                   if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) return;
-                                         String scId = intent.getStringExtra("android.intent.extra.shortcut.ID");
-                  StringBuilder kb = new StringBuilder();
-                  try {
-                      android.os.Bundle ex = intent.getExtras();
-                      if (ex != null) {
-                          for (String k : ex.keySet()) {
-                              Object v = ex.get(k);
-                              String vs = String.valueOf(v);
-                              if (vs.length() > 40) vs = vs.substring(0, 40);
-                              kb.append(k).append("=").append(vs).append("; ");
-                              if (scId == null && v instanceof String && ((String) v).startsWith("chat_")) scId = (String) v;
-                          }
-                      }
-                  } catch (Throwable t) {}
-                                    pendingShareTarget = (scId != null && scId.startsWith("chat_")) ? scId.substring(5) : "";
-                  try {
-                      android.content.ComponentName cn = intent.getComponent();
-                      String cls = cn == null ? "" : cn.getClassName();
-                      int ix = cls.lastIndexOf("ShareSlot");
-                      if (pendingShareTarget.isEmpty() && ix >= 0) {
-                          String sidSlot = getSharedPreferences("aura_slots", MODE_PRIVATE).getString("slot" + cls.substring(ix + 9), "");
-                          if (sidSlot.startsWith("chat_")) pendingShareTarget = sidSlot.substring(5);
-                      }
-                  } catch (Throwable t) {}
-                  pendingShareDiag = "id=" + scId + " bilesen=" + intent.getComponent() + " kategori=" + intent.getCategories() + " anahtarlar=" + kb.toString();
+
+                  String scId = intent.getStringExtra("android.intent.extra.shortcut.ID");
+                  pendingShareTarget = (scId != null && scId.startsWith("chat_")) ? scId.substring(5) : "";
 
                   final ArrayList<Uri> uris = new ArrayList<>();
                   if (Intent.ACTION_SEND.equals(action)) {
@@ -664,8 +570,7 @@ jobs:
                   addPendingCount(getIntent());
                   this.bridge.getWebView().addJavascriptInterface(new LaunchBridge(), "AuraLaunch");
                   this.bridge.getWebView().addJavascriptInterface(new ThemeBridge(), "AuraTheme");
-                  this.bridge.getWebView().addJavascriptInterface(new ContactBridge(), "AuraContact");
-                  this.bridge.getWebView().addJavascriptInterface(new GalleryBridge(), "AuraGallery");
+                  this.bridge.getWebView().addJavascriptInterface(new DriveBridge(), "AuraDrive");
                   this.bridge.getWebView().addJavascriptInterface(new NotifBridge(), "AuraNotif");
                   clearChatFromIntent(getIntent());
                   getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
@@ -969,7 +874,7 @@ jobs:
                           o.put("text", text);
                           o.put("raw", body);
                           o.put("sender", sender);
-                          String suid = d.get("senderUid");
+                          String suid = group ? "" : d.get("senderUid");
                           o.put("senderUid", suid == null ? "" : suid);
                           o.put("t", System.currentTimeMillis());
                           o.put("me", false);
@@ -995,8 +900,7 @@ jobs:
                       m.put("msgType", d.get("msgType") == null ? "" : d.get("msgType"));
                       sp(c).edit().putString("meta_" + chatId, m.toString()).apply();
 
-                      ensureAvatar(c, chatId);
-                      if (group) ensureAvatarFor(c, chatId, d.get("senderUid"));
+                      if (!group) ensureAvatar(c, chatId);
                       post(c, chatId, false);
                   } catch (Exception e) {}
               }
@@ -1069,7 +973,7 @@ jobs:
                           style.setGroupConversation(true);
                       }
 
-                      Bitmap avatar = cachedAvatar(c, chatId);
+                      Bitmap avatar = group ? null : cachedAvatar(c, chatId);
                       Map<String, Person> people = new HashMap<>();
                       long lastT = System.currentTimeMillis();
                       String lastText = "";
@@ -1088,11 +992,10 @@ jobs:
                               if (key.isEmpty()) key = "n:" + name;
                               Person p = people.get(key);
                               if (p == null) {
-                                  Bitmap personAv = group ? cachedAvatar(c, chatId + "|" + key) : avatar;
                                   p = new Person.Builder()
                                           .setName(name)
                                           .setKey(key)
-                                          .setIcon(IconCompat.createWithBitmap(personAv != null ? personAv : initialsBitmap(name, 128)))
+                                          .setIcon(IconCompat.createWithBitmap(avatar != null ? avatar : initialsBitmap(name, 128)))
                                           .build();
                                   people.put(key, p);
                               }
@@ -1181,32 +1084,15 @@ jobs:
                   } catch (Exception e) {}
               }
 
-                                          static void publishShortcut(Context c, String sid, String title, Bitmap avatar) {
+              static void publishShortcut(Context c, String sid, String title, Bitmap avatar) {
                   try {
-                      android.content.SharedPreferences sp = c.getSharedPreferences("aura_slots", Context.MODE_PRIVATE);
-                      int slot = -1;
-                      for (int n = 0; n < 6; n++) {
-                          if (sid.equals(sp.getString("slot" + n, ""))) { slot = n; break; }
-                      }
-                      if (slot < 0) {
-                          for (int n = 0; n < 6; n++) {
-                              if (sp.getString("slot" + n, "").isEmpty()) { slot = n; break; }
-                          }
-                      }
-                      if (slot < 0) {
-                          slot = sp.getInt("next", 0) % 6;
-                          String old = sp.getString("slot" + slot, "");
-                          if (!old.isEmpty()) ShortcutManagerCompat.removeDynamicShortcuts(c, java.util.Arrays.asList(old));
-                          sp.edit().putInt("next", slot + 1).apply();
-                      }
-                      sp.edit().putString("slot" + slot, sid).apply();
                       IconCompat icon = IconCompat.createWithBitmap(avatar != null ? avatar : initialsBitmap(title, 128));
                       Person target = new Person.Builder().setName(title).setKey(sid).setIcon(icon).build();
                       Intent i = new Intent(c, MainActivity.class).setAction(Intent.ACTION_VIEW);
                       ShortcutInfoCompat sc = new ShortcutInfoCompat.Builder(c, sid)
                               .setShortLabel(title)
                               .setLongLived(true)
-                              .setCategories(new java.util.HashSet<String>(java.util.Arrays.asList("com.aurachat.slot" + slot)))
+                              .setCategories(new java.util.HashSet<String>(java.util.Arrays.asList("com.aurachat.sharetarget")))
                               .setIntent(i)
                               .setPerson(target)
                               .setIcon(icon)
@@ -1303,14 +1189,11 @@ jobs:
               }
 
               // Önbellekte yoksa ya da 12 saatten eskiyse sunucudan indirir (kısa zaman aşımı)
-              static void ensureAvatar(Context c, String chatId) { ensureAvatarFor(c, chatId, null); }
-
-              static void ensureAvatarFor(Context c, String chatId, String uid) {
+              static void ensureAvatar(Context c, String chatId) {
                   try {
-                      String key = (uid == null || uid.isEmpty()) ? chatId : chatId + "|" + uid;
-                      File f = avatarFile(c, key);
+                      File f = avatarFile(c, chatId);
                       if (f.exists() && System.currentTimeMillis() - f.lastModified() < 12L * 3600 * 1000) return;
-                      String resp = callServerRaw(c, "avatar", chatId, (uid == null || uid.isEmpty()) ? null : uid, 3500);
+                      String resp = callServerRaw(c, "avatar", chatId, null, 3500);
                       if (resp == null) return;
                       String av = new JSONObject(resp).optString("avatar", "");
                       if (av.isEmpty()) return;
@@ -1544,29 +1427,12 @@ jobs:
             if ! grep -q "android.intent.action.SEND" "$MANIFEST_PATH"; then
               sed -i 's#</activity>#    <intent-filter>\n        <action android:name="android.intent.action.SEND" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <data android:mimeType="image/*" />\n    </intent-filter>\n    <intent-filter>\n        <action android:name="android.intent.action.SEND_MULTIPLE" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <data android:mimeType="image/*" />\n    </intent-filter>\n</activity>#' "$MANIFEST_PATH"
             fi
-                        # Direct Share: Paylaş menüsünde son sohbetler kişi olarak görünsün
+            # Direct Share: Paylaş menüsünde son sohbetler kişi olarak görünsün
             if ! grep -q "android.app.shortcuts" "$MANIFEST_PATH"; then
               sed -i 's#</activity>#    <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />\n</activity>#' "$MANIFEST_PATH"
             fi
             mkdir -p android/app/src/main/res/xml
-            {
-              echo '<?xml version="1.0" encoding="utf-8"?>'
-              echo '<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">'
-              for n in 0 1 2 3 4 5; do
-                echo "    <share-target android:targetClass=\"com.aurachat.app.ShareSlot$n\">"
-                echo '        <data android:mimeType="image/*" />'
-                echo "        <category android:name=\"com.aurachat.slot$n\" />"
-                echo '    </share-target>'
-              done
-              echo '</shortcuts>'
-            } > android/app/src/main/res/xml/shortcuts.xml
-            if ! grep -q "ShareSlot0" "$MANIFEST_PATH"; then
-              ALIASES=""
-              for n in 0 1 2 3 4 5; do
-                ALIASES="$ALIASES    <activity-alias android:name=\".ShareSlot$n\" android:targetActivity=\".MainActivity\" android:exported=\"true\" android:label=\"AuraChat\" />\n"
-              done
-              sed -i "s#</application>#${ALIASES}</application>#" "$MANIFEST_PATH"
-            fi
+            printf '<?xml version="1.0" encoding="utf-8"?>\n<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">\n    <share-target android:targetClass="com.aurachat.app.MainActivity">\n        <data android:mimeType="image/*" />\n        <category android:name="com.aurachat.sharetarget" />\n    </share-target>\n</shortcuts>\n' > android/app/src/main/res/xml/shortcuts.xml
             add_perm "android.permission.ACCESS_FINE_LOCATION"
             add_perm "android.permission.ACCESS_COARSE_LOCATION"
           fi
@@ -1581,6 +1447,9 @@ jobs:
           if [ -f "$APP_BUILD_GRADLE" ]; then
             if ! grep -q "com.google.gms.google-services" "$APP_BUILD_GRADLE"; then
               echo 'apply plugin: "com.google.gms.google-services"' >> "$APP_BUILD_GRADLE"
+            fi
+            if ! grep -q "play-services-auth:" "$APP_BUILD_GRADLE"; then
+              printf '\ndependencies {\n    implementation "com.google.android.gms:play-services-auth:20.7.0"\n}\n' >> "$APP_BUILD_GRADLE"
             fi
             if ! grep -q "firebase-messaging:" "$APP_BUILD_GRADLE"; then
               printf '\ndependencies {\n    implementation "com.google.firebase:firebase-messaging:23.3.1"\n}\n' >> "$APP_BUILD_GRADLE"
@@ -2027,20 +1896,3 @@ jobs:
         with:
           name: AuraChat-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 1
-
-      - name: Eski Çıktıları ve Kayıtları Temizle
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set +e
-          gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
-            --jq '.artifacts[] | select(.workflow_run.id != ${{ github.run_id }}) | .id' | while read id; do
-            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" > /dev/null || echo "SILINEMEDI artifact: $id"
-          done
-          gh api --paginate "repos/${{ github.repository }}/actions/runs?per_page=100" \
-            --jq '.workflow_runs[] | select(.status=="completed") | .id' \
-            | grep -v "^${{ github.run_id }}$" | tail -n +3 | while read id; do
-            gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$id" > /dev/null || echo "SILINEMEDI kayit: $id"
-          done
-          exit 0
