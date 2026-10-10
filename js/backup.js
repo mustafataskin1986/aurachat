@@ -42,6 +42,7 @@ async function getTokenWeb() {
     if (!user) throw new Error('Giriş yapılmamış.');
     const provider = new GoogleAuthProvider();
     provider.addScope(DRIVE_SCOPE);
+    if (user.email) provider.setCustomParameters({ login_hint: user.email, prompt: 'consent' });
     const result = await reauthenticateWithPopup(user, provider);
     const cred = GoogleAuthProvider.credentialFromResult(result);
     if (!cred || !cred.accessToken) throw new Error('Drive izni alınamadı.');
