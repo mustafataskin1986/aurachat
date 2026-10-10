@@ -93,12 +93,16 @@ function openPanel() {
             <h2 class="text-white font-medium text-base">Uygulama ikonu</h2>
         </div>
         <div class="flex-1 overflow-y-auto px-4 py-5">
-            <p class="text-gray-400 text-sm mb-5">Bir ikona dokununca ana ekrandaki uygulama ikonu değişir. Telefonun ana ekranı birkaç saniye içinde yenilenir.</p>
+            <p class="text-gray-400 text-sm mb-5">Bir ikon seç ve Tamam'a bas. Ana ekrandaki uygulama ikonu, uygulamadan çıkınca (ana ekrana ya da geri dönünce) değişir.</p>
             <div data-grid style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-items:center;"></div>
+        </div>
+        <div class="flex-shrink-0 px-4 py-3 flex justify-end border-t border-gray-800" style="background:${black ? '#000' : '#202c33'};">
+            <button type="button" data-ok style="background:none;border:1px solid ${accent()};border-radius:9999px;color:${accent()};font-size:16px;padding:9px 28px;cursor:pointer;">Tamam</button>
         </div>`;
     document.body.appendChild(panelEl);
         loadAvailable().then(() => { if (panelEl) renderGrid(currentIcon()); });
     panelEl.querySelector('[data-back]').addEventListener('click', () => closePanel(false));
+    panelEl.querySelector('[data-ok]').addEventListener('click', () => closePanel(false));
     panelEl.addEventListener('click', (e) => {
         const b = e.target.closest('[data-icon]');
         if (!b) return;
@@ -108,7 +112,6 @@ function openPanel() {
         try { ok = bridge().set(n); } catch (err) {}
         if (ok) {
             renderGrid(n);
-            showToast('Uygulama ikonu değişti', 2500);
         } else {
             showToast('İkon değiştirilemedi', 2500);
         }
