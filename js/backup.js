@@ -125,7 +125,25 @@ function openProgress(title) {
             fill.style.width = Math.max(4, Math.min(100, pct)) + '%';
             if (text != null) msg.textContent = text;
         },
-        close() { try { overlay.remove(); } catch (e) {} }
+        close() { try { overlay.remove(); } catch (e) {} },
+        // Sonucu aynı pencerede göster, altına Kapat butonu koy (pencere kendiliğinden kapanmaz)
+        done(text, isError) {
+            fill.style.width = '100%';
+            fill.style.background = isError ? '#ef4444' : auraAccent();
+            msg.textContent = text;
+            msg.style.color = isError ? '#fca5a5' : '#e9edef';
+            msg.style.fontSize = '14px';
+            msg.style.lineHeight = '1.4';
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;justify-content:flex-end;margin-top:18px;';
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = 'Kapat';
+            b.style.cssText = 'background:none;border:1px solid ' + auraAccent() + ';border-radius:999px;color:' + auraAccent() + ';font-size:16px;padding:9px 22px;cursor:pointer;';
+            b.addEventListener('click', () => { try { overlay.remove(); } catch (e) {} });
+            row.appendChild(b);
+            box.appendChild(row);
+        }
     };
 }
 
@@ -230,11 +248,9 @@ async function doBackup() {
         const total = data.chats.reduce((a, c) => a + c.messages.length, 0);
         try { localStorage.setItem(LAST_KEY, JSON.stringify({ t: Date.now(), size: json.length, msgs: total })); } catch (e) {}
         p.set(100, 'Tamamlandı');
-        p.close();
-        showToast('Yedeklendi: ' + total + ' mesaj, ' + fmtSize(json.length), 3500);
+        p.done('Yedeklendi: ' + total + ' mesaj, ' + fmtSize(json.length));
     } catch (e) {
-        p.close();
-        showToast(String((e && e.message) || e || 'Yedekleme başarısız'), 4500);
+        p.done(String((e && e.message) || e || 'Yedekleme başarısız'), true);
     }
 }
 
@@ -248,11 +264,10 @@ async function doRestore() {
         markDriveAllowed();
         p.set(10, 'Yedek indiriliyor…');
         const dl = await downloadBackup(token);
-        if (!dl) { p.close(); showToast('Drive\'da yedek bulunamadı', 3500); return; }
+        if (!dl) { p.done('Drive\'da yedek bulunamadı', true); return; }
         const data = JSON.parse(dl.text);
         if (!data || data.app !== 'AuraChat' || data.uid !== user.uid) {
-            p.close();
-            showToast('Bu yedek bu hesaba ait değil', 3500);
+            p.done('Bu yedek bu hesaba ait değil', true);
             return;
         }
         let restored = 0, failed = 0, skippedCleared = 0;
@@ -288,13 +303,11 @@ async function doRestore() {
             try { await setDoc(doc(db, 'users', user.uid, 'starred', s.id), reviveValue(s.data), { merge: true }); } catch (e) {}
         }
         p.set(100, 'Tamamlandı');
-        p.close();
         let txt = restored + ' mesaj geri yüklendi';
         if (failed) txt += ', ' + failed + ' mesaj yazılamadı';
-        showToast(txt, 5000);
+        p.done(txt);
     } catch (e) {
-        p.close();
-        showToast(String((e && e.message) || e || 'Geri yükleme başarısız'), 4500);
+        p.done(String((e && e.message) || e || 'Geri yükleme başarısız'), true);
     }
 }
 
