@@ -12,6 +12,7 @@ import { getCurrentUser, setCurrentUser, getPresenceHidden, setPresenceHidden, g
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
+import { addAppearanceRow } from "./app-icon.js";
 
 const profileBtn = document.getElementById('profile-btn');
 const profilePanel = document.getElementById('profile-panel');
@@ -132,6 +133,7 @@ function addPrivacySwitchRow(icon, label, getOn, setOn) {
 
 addPrivacySwitchRow('fa-eye', 'Son görülme', () => !getPresenceHidden(), (on) => setPresenceHidden(!on));
 addPrivacySwitchRow('fa-check-double', 'Okundu bilgisi', () => !getReadReceiptsHidden(), (on) => setReadReceiptsHidden(!on));
+addAppearanceRow(profileLogoutBtn);
 async function openProfilePanel() {
         let user = getCurrentUser();
     if (!user || !profilePanel) return;
