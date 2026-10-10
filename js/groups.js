@@ -14,6 +14,7 @@ import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
 import { openChatThemePicker } from "./chat-theme.js";
 import { auraDialog, auraAccent } from "./aura-dialog.js";
+import { openBackupMenu } from "./backup.js";
 
 const sidebar = document.getElementById('sidebar');
 const chatAreaEl = document.getElementById('chat-area');
@@ -50,6 +51,9 @@ function ensureMenu() {
         <button type="button" data-menu="settings" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-solid fa-gear text-gray-400 w-4"></i><span>Ayarlar</span>
         </button>
+        <button type="button" data-menu="backup" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-brands fa-google-drive text-emerald-400 w-4"></i><span>Drive yedeği</span>
+        </button>
         <button type="button" data-menu="eruda" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-solid fa-bug text-sky-400 w-4"></i><span id="aura-eruda-label">Eruda: Kapalı</span>
         </button>
@@ -65,6 +69,8 @@ function ensureMenu() {
             openStarredPanel();
         } else if (item.dataset.menu === 'settings' && window.openProfilePanel) {
             window.openProfilePanel();
+        } else if (item.dataset.menu === 'backup') {
+            openBackupMenu();
         } else if (item.dataset.menu === 'eruda') {
             toggleEruda();
         }
