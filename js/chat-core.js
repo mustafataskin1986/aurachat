@@ -209,7 +209,7 @@ function isUnsavedNumber(phone) {
     return !!l10 && !local.has(l10);
 }
 
-function openMemberSheet(uid, fallbackName) {
+export function openMemberSheet(uid, fallbackName) {
     if (!uid || !currentUser || uid === currentUser.uid) return;
     if (memberSheetEl) { memberSheetEl.remove(); memberSheetEl = null; }
     const um = window.__aurachatUsers;
