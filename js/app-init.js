@@ -14,6 +14,23 @@ import { loadContacts, initAdminPanel } from "./contacts.js";
 
 // ÖLÇÜM: sayfa açılışından bu dosyanın çalışmaya başladığı ana kadar geçen süre (ms)
 const T_MODULE = Math.round(performance.now());
+// Açılış süre etiketi: ekranın altında birkaç saniye görünür, dokununca kapanır
+const auraMarks = { 'JS yüklendi': T_MODULE };
+function auraMark(name) { auraMarks[name] = Math.round(performance.now()); }
+function auraShowTiming() {
+    try {
+        const nav = performance.getEntriesByType('navigation')[0];
+        if (nav && nav.responseEnd) auraMarks['HTML indi'] = Math.round(nav.responseEnd);
+        const rows = Object.keys(auraMarks).sort((x, y) => auraMarks[x] - auraMarks[y])
+            .map((k) => k + ': ' + auraMarks[k] + ' ms');
+        const box = document.createElement('div');
+        box.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:2147483647;background:rgba(0,0,0,.82);color:#a7f3d0;font:12px/1.5 monospace;padding:8px 10px;border-radius:10px;white-space:pre-wrap;';
+        box.textContent = 'Açılış süresi\n' + rows.join('\n');
+        box.addEventListener('click', () => box.remove());
+        document.body.appendChild(box);
+        setTimeout(() => box.remove(), 10000);
+    } catch (e) {}
+}
 
 const sidebar = document.getElementById('sidebar');
 const chatArea = document.getElementById('chat-area');
@@ -207,7 +224,7 @@ window.initApp = async function () {
         }
     } catch (e) {}
 
-    currentUser = await ensureUid(currentUser);
+    currentUser = await ensureUid(currentUser);    auraMark('Oturum hazır');
 
     setCurrentUser(currentUser);
     initAdminPanel();
@@ -236,6 +253,9 @@ window.initApp = async function () {
         const tPaint = Math.round(performance.now());
         await hideNativeSplash();
         const tHide = Math.round(performance.now());
+                auraMarks['Sohbet çizildi'] = tPaint;
+        auraMark('Splash kapandı');
+        auraShowTiming();
 
         await chatPromise;
         try { await loadContacts(); } catch (e) {}
@@ -260,8 +280,11 @@ window.initApp = async function () {
     window.__aurachatReady = true;
 
     // Arayüz tam olarak yüklendi, kişilerin çekilmesi vs. bitti!
+    auraMark('Liste hazır');
     // Splash ekranını şimdi yumuşak bir animasyonla kaldırıyoruz:
     await hideNativeSplash();
+    auraMark('Splash kapandı');
+    auraShowTiming();
 };
 
 const existingUser = JSON.parse(localStorage.getItem('aurachat_user'));
