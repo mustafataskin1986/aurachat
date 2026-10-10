@@ -956,7 +956,10 @@ if (currentChatId === chatId && !session.waitingFirst) {
                if (!tempArrived && Date.now() - tempIncoming.at < 4000) return;
                                 const keepDividerId = (unreadDivider && unreadDivider.chatId === chatId) ? unreadDivider.msgId : null;
                 unreadDivider = findUnreadDivider(session);
-                if (keepDividerId && session.messages.some((m) => m.id === keepDividerId)) {
+                               const calcFirstId = unreadDivider ? unreadDivider.msgId : null;
+                const calcFirstIdx = calcFirstId ? session.olderMessagesPrepended.concat(session.messages).findIndex((m) => m.id === calcFirstId) : -1;
+                const keepFirstIdx = keepDividerId ? session.olderMessagesPrepended.concat(session.messages).findIndex((m) => m.id === keepDividerId) : -1;
+                if (keepDividerId && keepFirstIdx !== -1 && !(calcFirstIdx !== -1 && calcFirstIdx <= keepFirstIdx)) {
                     const allForDivider = session.olderMessagesPrepended.concat(session.messages);
                     const keepIdx = allForDivider.findIndex((m) => m.id === keepDividerId);
                     const keepCount = allForDivider.slice(keepIdx).filter((m) => m.data.senderUid !== currentUser.uid && m.data.type !== 'system').length;
