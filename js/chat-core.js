@@ -1756,9 +1756,14 @@ function appendLaunchTemps(session) {
                 if (c.el) fragment.appendChild(c.el);
                 tempLabel = c.label;
             }
+            // "📷 Fotoğraf" / "📷 2 Fotoğraf" bildirimleri: yazı yerine resim şeklinde yer tutucu (gerçek resimler gelince yerini alır)
+            const mm = /^📷\s*(\d+)?\s*Fotoğraf$/.exec(i.text.trim());
+            const phCount = mm ? Math.max(1, Math.min(Number(mm[1] || 1), 10)) : 0;
+            const phExtra = phCount > 1
+                ? { type: 'image', images: [], imagesCount: phCount, text: '' }
+                : (phCount === 1 ? { type: 'image', imageDelivered: true, text: '' } : { type: 'text', text: i.text });
             fragment.appendChild(buildMessageElement({
-                type: 'text',
-                text: i.text,
+                ...phExtra,
                 senderUid: currentOtherUid || 'other',
                 senderName: currentChatName || '',
                 createdAt: Timestamp.fromMillis(i.t || Date.now()),
@@ -3112,7 +3117,10 @@ async function pwaDbSet(key, value) {
 // içinde olduğu için ayrı indekse gerek yok; klasör taranarak her
 // resim kendi mesajına geri bağlanır.
 // ------------------------------------------
-const GALLERY_DIR = 'Pictures/AuraChat';
+// Uygulama silinse bile kalan klasör: Android/media/<paket>/ (WhatsApp ile aynı mantık). Galeride görünmez.
+const GALLERY_DIR = 'Android/media/com.aurachat.app/AuraChat/Media/AuraChat Images';
+const GALLERY_DIR_OLD = 'Pictures/AuraChat'; // eski kayıtlar buradan okunmaya devam eder
+const GALLERY_SAVE_DIR = 'Pictures/AuraChat'; // "Kaydet" ile galeriye inenler
 const GALLERY_NAME_RE = /^AuraChat_\d{8}_\d{6}_([A-Za-z0-9]{20})(?:_(\d+))?\.jpg$/;
 let galleryFileMap = null; // "msgId" veya "msgId_idx" -> dosya adı
 let galleryFileMapPromise = null;
@@ -3129,18 +3137,21 @@ function loadGalleryFileMap() {
         galleryFileMap = new Map();
         const Filesystem = getFilesystemPlugin();
         if (!Filesystem) return galleryFileMap;
-        try {
-            const dir = await Filesystem.readdir({ path: GALLERY_DIR, directory: 'EXTERNAL_STORAGE' });
-            for (const f of (dir.files || [])) {
-                const name = typeof f === 'string' ? f : f.name;
-                const m = name && name.match(GALLERY_NAME_RE);
-                if (m) {
-                    const idx = m[2] ? parseInt(m[2], 10) - 1 : null;
-                    galleryFileMap.set(galleryKey(m[1], idx), name);
+        // Önce eski klasör, sonra yeni klasör (aynı resim ikisinde de varsa yeni olan kazanır)
+        for (const baseDir of [GALLERY_DIR_OLD, GALLERY_DIR]) {
+            try {
+                const dir = await Filesystem.readdir({ path: baseDir, directory: 'EXTERNAL_STORAGE' });
+                for (const f of (dir.files || [])) {
+                    const name = typeof f === 'string' ? f : f.name;
+                    const m = name && name.match(GALLERY_NAME_RE);
+                    if (m) {
+                        const idx = m[2] ? parseInt(m[2], 10) - 1 : null;
+                        galleryFileMap.set(galleryKey(m[1], idx), `${baseDir}/${name}`);
+                    }
                 }
+            } catch (e) {
+                // klasör henüz yok, ilk resim yazılınca oluşur
             }
-        } catch (e) {
-            // klasör henüz yok, ilk resim yazılınca oluşur
         }
         return galleryFileMap;
     })();
@@ -3200,7 +3211,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
             if (knownName) {
                 try {
                     const found = await Filesystem.readFile({
-                        path: `${GALLERY_DIR}/${knownName}`,
+                        path: knownName,
                         directory: 'EXTERNAL_STORAGE'
                     });
                     const src = toImageSrc(found.data);
@@ -3226,13 +3237,19 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
                 const fileName = buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx);
 
-                await Filesystem.writeFile({
-                    path: `${GALLERY_DIR}/${fileName}`,
-                    data: pureBase64,
-                    directory: 'EXTERNAL_STORAGE',
-                    recursive: true
-                });
-                map.set(key, fileName);
+                let savedPath = `${GALLERY_DIR}/${fileName}`;
+                try {
+                    await Filesystem.writeFile({ path: savedPath, data: pureBase64, directory: 'EXTERNAL_STORAGE', recursive: true });
+                } catch (e1) {
+                    // Yeni klasöre yazılamazsa eski yola düş
+                    savedPath = `${GALLERY_DIR_OLD}/${fileName}`;
+                    await Filesystem.writeFile({ path: savedPath, data: pureBase64, directory: 'EXTERNAL_STORAGE', recursive: true });
+                }
+                if (savedPath.startsWith(GALLERY_DIR)) {
+                    // Galeri uygulamaları bu klasörü göstermesin
+                    Filesystem.writeFile({ path: `${GALLERY_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
+                }
+                map.set(key, savedPath);
 
                 const src = `data:image/jpeg;base64,${pureBase64}`;
                 mediaUriCache.set(cacheKey, src);
@@ -5382,7 +5399,19 @@ function openViewer(o) {
         if (viewerBackActive) { viewerBackActive = false; popBackState(); }
     };
     o.onDownload = (it) => {
-        if (getFilesystemPlugin()) { showToast('Resim galerine kaydedildi (Pictures/AuraChat)'); return; }
+        const FsPlug = getFilesystemPlugin();
+        if (FsPlug) {
+            const rawSrc = String(it.src || '');
+            if (!rawSrc.startsWith('data:')) { showToast('Resim henüz hazır değil'); return; }
+            FsPlug.writeFile({
+                path: `${GALLERY_SAVE_DIR}/AuraChat_${Date.now()}.jpg`,
+                data: rawSrc.split(',')[1],
+                directory: 'EXTERNAL_STORAGE',
+                recursive: true
+            }).then(() => showToast('Resim galerine kaydedildi (Pictures/AuraChat)'))
+              .catch(() => showToast('Resim galeriye kaydedilemedi'));
+            return;
+        }
         const a = document.createElement('a');
         a.href = it.src;
         a.download = 'AuraChat_' + Date.now() + '.jpg';
