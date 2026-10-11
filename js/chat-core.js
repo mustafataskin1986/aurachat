@@ -6661,3 +6661,114 @@ function groupMessageReadByAll(msg) {
     const others = members.filter((uid) => uid !== msg.senderUid);
     return others.length > 0 && others.every((uid) => readBy.includes(uid));
 }
+
+// ------------------------------------------
+// Karşıdan gelen resimleri sohbeti açmadan galeriye kaydet (sadece Android uygulaması)
+// ------------------------------------------
+export async function autoSaveIncomingImages(chatId, otherUid) {
+    try {
+        if (!getFilesystemPlugin() || !currentUser || !chatId) return;
+        const session = await ensureChatSession(chatId, otherUid || null);
+        const nowMs = Date.now();
+        const lastReadMs = getChatLastReadMs(chatId);
+        for (const { id, data: msg } of session.messages) {
+            if (msg.type !== 'image' || msg.viewOnce) continue;
+            if (msg.senderUid === currentUser.uid) continue;
+            // Sadece yeni gelenler: son 15 dk içinde gelmiş ya da henüz görmediğim resimler
+            // (galeriden silinmiş eski resimler tekrar yazılmasın)
+            const t = msgCreatedMs(msg);
+            const readBy = Array.isArray(msg.readBy) ? msg.readBy : [];
+            const notSeen = !readBy.includes(currentUser.uid) && t > lastReadMs;
+            if (!(t > 0 && nowMs - t < 900000) && !notSeen) continue;
+
+            const imagesCount = msg.imagesCount || 0;
+            if (imagesCount > 1) {
+                const arr = Array.isArray(msg.images) ? msg.images : [];
+                for (let i = 0; i < imagesCount; i++) {
+                    if (!arr[i]) continue;
+                    try { await resolveLocalMedia(chatId, id, arr[i], i); } catch (e) {}
+                }
+                maybeStripAlbumImages(chatId, id, msg, imagesCount);
+            } else if (msg.imageUrl) {
+                try {
+                    const localSrc = await resolveLocalMedia(chatId, id, msg.imageUrl);
+                    if (localSrc) maybeStripDeliveredImage(chatId, id, msg);
+                } catch (e) {}
+            }
+        }
+    } catch (e) {}
+}
+
+// ------------------------------------------
+// Bildirimle açılışta: Firebase oturumu hazır olmadan, telefondaki mesajlarla sohbeti hemen çiz.
+// Sunucuya hiç istek atmaz. Gerçek açılış sonra aynı görüntüyü kendisi yeniden çizer.
+// ------------------------------------------
+export async function paintLaunchFromDisk(L) {
+    try {
+        if (!L || !L.uid || !L.chatId || L.chatId === L.uid || currentChatId) return false;
+        let u = currentUser;
+        if (!u) { try { u = JSON.parse(localStorage.getItem('aurachat_user')); } catch (e) {} }
+        if (!u || !u.uid || getChatId(u.uid, L.uid) !== L.chatId) return false;
+
+        const disk = await readChatDiskCache(L.chatId);
+        if (!disk || !disk.messages.length || currentChatId) return false;
+        if (!currentUser) currentUser = u;
+
+        // Diskteki mesajlarda zaten okunmamış varsa güvenli yola bırak
+        if (findUnreadDivider({ chatId: L.chatId, isGroup: false, messages: disk.messages, olderMessagesPrepended: [] })) return false;
+
+        const clr = disk.clearedAtMillis;
+        const nowMs = Date.now();
+        const visible = disk.messages.filter(({ data: m }) => {
+            if (Array.isArray(m.deletedFor) && m.deletedFor.includes(u.uid)) return false;
+            if (clr && m.createdAt && m.createdAt.toMillis() <= clr) return false;
+            if (m.expiresAtMs && m.expiresAtMs <= nowMs) return false;
+            return true;
+        });
+
+        messageContainer.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+        let lastDayKey = null;
+        visible.forEach(({ id, data: msg }) => {
+            const msgDate = msg.createdAt ? msg.createdAt.toDate() : new Date();
+            const dayKey = dayKeyOf(msgDate);
+            if (dayKey !== lastDayKey) {
+                fragment.appendChild(buildDateChipElement(msgDate));
+                lastDayKey = dayKey;
+            }
+            fragment.appendChild(buildMessageElement(msg, msg.senderUid === u.uid, id));
+        });
+        messageContainer.appendChild(fragment);
+
+        window.__auraLaunch = L;
+        window.__auraLaunchPending = Number(L.pending || 0);
+        if (!appendLaunchTemps({ chatId: L.chatId, messages: disk.messages })) {
+            messageContainer.innerHTML = '';
+            return false;
+        }
+
+        const name = L.name || 'Sohbet';
+        let av = L.avatar || '';
+        if (!av) { try { av = localStorage.getItem('aura_av_' + L.uid) || ''; } catch (e) {} }
+        activeChatName.textContent = name;
+        activeChatStatus.textContent = '';
+        if (av) {
+            activeChatAvatar.style.backgroundColor = '';
+            activeChatAvatar.className = "w-10 h-10 rounded-full overflow-hidden shadow flex-shrink-0";
+            activeChatAvatar.innerHTML = `<img src="${av}" class="w-full h-full object-cover">`;
+        } else {
+            activeChatAvatar.style.backgroundColor = getUserColor(name);
+            activeChatAvatar.className = "w-10 h-10 rounded-full flex items-center text-white font-bold justify-center shadow flex-shrink-0 text-sm";
+            activeChatAvatar.innerHTML = `<span>${getInitials(name)}</span>`;
+        }
+        if (window.innerWidth < 1024) {
+            sidebar.classList.add('-translate-x-full');
+            chatArea.classList.remove('translate-x-full');
+        }
+        scrollToUnreadOrBottom();
+        return true;
+    } catch (e) {
+        try { messageContainer.innerHTML = ''; } catch (e2) {}
+        return false;
+    }
+}
