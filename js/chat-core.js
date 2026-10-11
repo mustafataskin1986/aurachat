@@ -908,6 +908,7 @@ let firstSnapResolve = null;
     const prevIdsForUnread = new Set(session.messages.map((m) => m.id));
     if (firstSnapResolve) { firstSnapResolve(); firstSnapResolve = null; }
         if (!window.__auraTSnap) window.__auraTSnap = Math.round(performance.now()) + (snapshot.metadata.fromCache ? ' önbellekten' : ' sunucudan');
+                session.lastSnapAt = Date.now();
         if (isIncremental) {
             snapshot.docChanges().forEach((change) => {
                 const entry = { id: change.doc.id, data: change.doc.data() };
@@ -1044,6 +1045,11 @@ if (chatId !== 'global' && document.documentElement.hasAttribute('data-aura-laun
         session.waitingFirst = true;
         try {
             await Promise.race([firstSnap, new Promise((r) => setTimeout(r, 2000))]);
+                        // İlk veriden sonra yeni parçalar peş peşe gelebilir: kısa süre sessizlik olana kadar bekle (en çok 1,2 sn), sayfa tek seferde çizilsin
+            const settleStart = Date.now();
+            while (session.lastSnapAt && Date.now() - session.lastSnapAt < 350 && Date.now() - settleStart < 1200) {
+                await new Promise((r) => setTimeout(r, 80));
+            }
         } finally {
             session.waitingFirst = false;
         }
@@ -1653,7 +1659,7 @@ composer.clearImages();
 
         activeChatName.textContent = chatName;
 
-     if (otherUser.avatar) {
+         if (otherAvatar) {
             activeChatAvatar.style.backgroundColor = '';
             activeChatAvatar.className = "w-10 h-10 rounded-full overflow-hidden shadow flex-shrink-0";
             activeChatAvatar.innerHTML = `<img src="${otherAvatar}" class="w-full h-full object-cover">`;
@@ -1806,7 +1812,10 @@ export function previewLaunchChat(L) {
         const firstChip = tempDayChipFor(items[0].t, undefined);
         if (firstChip.el) fragment.appendChild(firstChip.el);
         let label = firstChip.label;
-        fragment.appendChild(buildUnreadDividerElement(items.length));
+                const prevDivider = buildUnreadDividerElement(items.length);
+        const prevSpan = prevDivider.querySelector('span');
+        if (prevSpan) prevSpan.textContent = 'Okunmamış mesajlar';
+        fragment.appendChild(prevDivider);
         items.forEach((i, idx) => {
             if (idx > 0) {
                 const c = tempDayChipFor(i.t, label);
