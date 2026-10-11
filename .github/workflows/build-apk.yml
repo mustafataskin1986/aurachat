@@ -645,6 +645,7 @@ jobs:
                       } catch (Throwable ignore2) {}
                       if (storedChat != null && !storedChat.isEmpty()) {
                           org.json.JSONArray st = AuraNotif.stored(this, storedChat);
+                          if (st.length() == 0) { st = AuraNotif.gone(this, storedChat); dbgInfo += " yedek=" + st.length(); }
                           dbgInfo += " depo=" + st.length();
                           try { org.json.JSONObject lj = new org.json.JSONObject(launchChatJson); lj.put("dbg", dbgInfo); launchChatJson = lj.toString(); } catch (Throwable ignore) {}
                           if (st.length() > 0) {
@@ -1128,6 +1129,28 @@ jobs:
                   }
               }
 
+              // Bildirim kapanırken (dokunma dahil) silinmeden önce kısa süreliğine yedeklenir; bildirimle açılışta okunur
+              static synchronized void stashAndForget(Context c, String chatId) {
+                  try {
+                      JSONArray arr = stored(c, chatId);
+                      if (arr.length() > 0) {
+                          sp(c).edit().putString("gone_" + chatId, arr.toString()).putLong("gone_t_" + chatId, System.currentTimeMillis()).apply();
+                      }
+                  } catch (Throwable t) {}
+                  forget(c, chatId);
+              }
+
+              static synchronized JSONArray gone(Context c, String chatId) {
+                  try {
+                      long t = sp(c).getLong("gone_t_" + chatId, 0);
+                      if (t == 0 || System.currentTimeMillis() - t > 20000) return new JSONArray();
+                      String s = sp(c).getString("gone_" + chatId, null);
+                      return s == null ? new JSONArray() : new JSONArray(s);
+                  } catch (Throwable e) {
+                      return new JSONArray();
+                  }
+              }
+
               // Sadece depoyu temizler (bildirim kullanıcı tarafından kaydırılıp kapatıldığında)
               static synchronized void forget(Context c, String chatId) {
                   sp(c).edit().remove("chat_" + chatId).remove("meta_" + chatId).putLong("dbg_forget", System.currentTimeMillis()).apply();
@@ -1137,6 +1160,7 @@ jobs:
               static void clearChat(Context c, String chatId) {
                   if (chatId == null || chatId.isEmpty()) return;
                   forget(c, chatId);
+                  try { sp(c).edit().remove("gone_" + chatId).remove("gone_t_" + chatId).apply(); } catch (Throwable t) {}
                   try {
                       NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
                       if (nm != null) nm.cancel("chat_" + chatId, 1);
@@ -1617,7 +1641,7 @@ jobs:
                   final Context app = context.getApplicationContext();
 
                   if (AuraNotif.ACT_CLEAR.equals(action)) {
-                      AuraNotif.forget(app, chatId);
+                      AuraNotif.stashAndForget(app, chatId);
                       return;
                   }
 
