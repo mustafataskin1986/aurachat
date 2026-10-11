@@ -244,8 +244,8 @@ window.initApp = async function () {
     const PL = window.pendingOpenChat;
     const plMsgs = Array.isArray(PL.msgs) ? PL.msgs : [];
     const plHave = plMsgs.length;
-    const plComplete = plHave > 0 && plHave < 15 && plHave >= Number(PL.pending || 0) &&
-        plMsgs.every((m) => m && m.text && String(m.text).length <= 400 && !/^(📷|🎤|📍|🚫)/.test(String(m.text)));
+        const plComplete = plHave > 0 && plHave < 15 && plHave >= Number(PL.pending || 0) &&
+        plMsgs.every((m) => m && m.text && String(m.text).length <= 400 && !/^🚫/.test(String(m.text)));;
     // Bekleyen mesajların hepsi telefonda ve düz yazıysa sohbet yerelden hemen çizilir; değilse eski güvenli yol
     if (!plComplete) window.__auraPreviewChatId = PL.chatId;
     auraMarks['Yerel çizim: ' + (plComplete ? 'evet' : 'hayir')] = Math.round(performance.now());
