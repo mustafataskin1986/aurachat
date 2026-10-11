@@ -18,6 +18,7 @@ const T_MODULE = Math.round(performance.now());
 const auraMarks = { 'JS yüklendi': T_MODULE };
 function auraMark(name) { auraMarks[name] = Math.round(performance.now()); }
 function auraShowTiming() {
+    try { if (localStorage.getItem('aura_timing') !== '1') return; } catch (e) { return; }
     try {
         const nav = performance.getEntriesByType('navigation')[0];
         if (nav && nav.responseEnd) auraMarks['HTML indi'] = Math.round(nav.responseEnd);
