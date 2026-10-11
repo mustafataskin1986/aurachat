@@ -635,6 +635,14 @@ jobs:
                       // Yeni sistem: bekleyen mesajlar AuraNotif deposunda
                       String storedChat = intent.getStringExtra("chatId");
                       String dbgInfo = "cid=" + (storedChat == null || storedChat.isEmpty() ? "yok" : "var");
+                      try {
+                          String mid = intent.getStringExtra("google.message_id");
+                          dbgInfo += " kaynak=" + (mid != null && mid.startsWith("aura-") ? "bizim" : "fcm");
+                          android.content.SharedPreferences dsp = getSharedPreferences(AuraNotif.PREFS, Context.MODE_PRIVATE);
+                          long dnow = System.currentTimeMillis();
+                          long ds = dsp.getLong("dbg_save", 0), df = dsp.getLong("dbg_forget", 0);
+                          dbgInfo += " yaz=" + (ds == 0 ? "hic" : ((dnow - ds) / 1000) + "sn") + " sil=" + (df == 0 ? "hic" : ((dnow - df) / 1000) + "sn");
+                      } catch (Throwable ignore2) {}
                       if (storedChat != null && !storedChat.isEmpty()) {
                           org.json.JSONArray st = AuraNotif.stored(this, storedChat);
                           dbgInfo += " depo=" + st.length();
@@ -1108,7 +1116,7 @@ jobs:
                   JSONArray out = new JSONArray();
                   int start = Math.max(0, arr.length() - MAX_MSGS);
                   for (int i = start; i < arr.length(); i++) out.put(arr.opt(i));
-                  sp(c).edit().putString("chat_" + chatId, out.toString()).apply();
+                  sp(c).edit().putString("chat_" + chatId, out.toString()).putLong("dbg_save", System.currentTimeMillis()).apply();
               }
 
               private static synchronized JSONObject meta(Context c, String chatId) {
@@ -1122,7 +1130,7 @@ jobs:
 
               // Sadece depoyu temizler (bildirim kullanıcı tarafından kaydırılıp kapatıldığında)
               static synchronized void forget(Context c, String chatId) {
-                  sp(c).edit().remove("chat_" + chatId).remove("meta_" + chatId).apply();
+                  sp(c).edit().remove("chat_" + chatId).remove("meta_" + chatId).putLong("dbg_forget", System.currentTimeMillis()).apply();
               }
 
               // Bildirimi kaldırır ve depoyu temizler (sohbet açıldığında / okundu işaretlendiğinde)
