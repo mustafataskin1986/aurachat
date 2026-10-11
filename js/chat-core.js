@@ -906,9 +906,9 @@ let firstSnapResolve = null;
     const firstSnap = new Promise((r) => { firstSnapResolve = r; });
     session.unsubscribeMessages = onSnapshot(q, (snapshot) => {
     const prevIdsForUnread = new Set(session.messages.map((m) => m.id));
-    if (firstSnapResolve) { firstSnapResolve(); firstSnapResolve = null; }
+     if (firstSnapResolve && !snapshot.metadata.fromCache) { firstSnapResolve(); firstSnapResolve = null; }
         if (!window.__auraTSnap) window.__auraTSnap = Math.round(performance.now()) + (snapshot.metadata.fromCache ? ' önbellekten' : ' sunucudan');
-                session.lastSnapAt = Date.now();
+                        if (!snapshot.metadata.fromCache) session.lastSnapAt = Date.now();
         if (isIncremental) {
             snapshot.docChanges().forEach((change) => {
                 const entry = { id: change.doc.id, data: change.doc.data() };
@@ -1047,7 +1047,7 @@ if (chatId !== 'global' && document.documentElement.hasAttribute('data-aura-laun
             await Promise.race([firstSnap, new Promise((r) => setTimeout(r, 2000))]);
                         // İlk veriden sonra yeni parçalar peş peşe gelebilir: kısa süre sessizlik olana kadar bekle (en çok 1,2 sn), sayfa tek seferde çizilsin
             const settleStart = Date.now();
-            while (session.lastSnapAt && Date.now() - session.lastSnapAt < 350 && Date.now() - settleStart < 1200) {
+                        while (session.lastSnapAt && Date.now() - session.lastSnapAt < 200 && Date.now() - settleStart < 1200) {
                 await new Promise((r) => setTimeout(r, 80));
             }
         } finally {
