@@ -1372,7 +1372,7 @@ jobs:
                               .setStyle(style)
                               .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                               .setPriority(NotificationCompat.PRIORITY_HIGH)
-                              .setAutoCancel(true)
+                              .setAutoCancel(false)
                               .setShowWhen(true)
                               .setWhen(lastT)
                               .setOnlyAlertOnce(quiet)
