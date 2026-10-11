@@ -238,7 +238,7 @@ window.initApp = async function () {
     }
            // Bildirimle açılışta ara görüntü olmasın: splash, sohbet tek seferde hazır olunca kapanır.
     readLaunchChatFromNative();
-        try { const LL = window.pendingOpenChat; if (LL) auraMarks['Bildirim: msgs=' + (Array.isArray(LL.msgs) ? LL.msgs.length : 'yok') + ' pending=' + LL.pending] = Math.round(performance.now()); } catch (e) {}
+        try { const LL = window.pendingOpenChat; if (LL) auraMarks['Bildirim: msgs=' + (Array.isArray(LL.msgs) ? LL.msgs.length : 'yok') + ' pending=' + LL.pending + ' [' + (LL.dbg || 'dbg yok') + ']'] = Math.round(performance.now()); } catch (e) {}
     if (!earlyReveal && window.pendingOpenChat && window.pendingOpenChat.chatId) {
         window.__auraPreviewChatId = window.pendingOpenChat.chatId;
     }
