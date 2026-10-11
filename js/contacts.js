@@ -20,7 +20,7 @@ import {
     collection, onSnapshot, query, orderBy, doc, getDocs, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
-import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, showToast, openMemberSheet } from "./chat-core.js";
+import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, showToast, openMemberSheet, autoSaveIncomingImages } from "./chat-core.js";
 import { auraDialog } from "./aura-dialog.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -938,7 +938,7 @@ export async function loadContacts() {
         usersLoaded = true;
         renderAll();
     });
-
+    const autoSavedStamps = new Set();
         onSnapshot(query(collection(db, "users", currentUser.uid, "chats"), orderBy("updatedAt", "desc")), (snapshot) => {
         // Sadece "yazıyor..." değiştiyse listeyi yeniden çizme, o satırı yerinde güncelle
         if (chatsLoaded) {
@@ -956,6 +956,25 @@ export async function loadContacts() {
                 return;
             }
         }
+                // Karşıdan resim geldiyse sohbeti açmadan galeriye kaydet (sadece Android uygulaması)
+        try {
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+                const firstLoad = !chatsLoaded;
+                snapshot.docChanges().forEach((ch) => {
+                    if (ch.type === 'removed') return;
+                    const d = ch.doc.data();
+                    if (!d || d.lastSenderUid === currentUser.uid) return;
+                    const lm = String(d.lastMessage || '');
+                    if (lm.indexOf('📷') !== 0 || lm.indexOf('Bir kez') !== -1) return;
+                    if (firstLoad && !(d.unreadCount > 0)) return;
+                    const stamp = ch.doc.id + '|' + (d.lastMessageTime && d.lastMessageTime.toMillis ? d.lastMessageTime.toMillis() : 0);
+                    if (autoSavedStamps.has(stamp)) return;
+                    autoSavedStamps.add(stamp);
+                    const oUid = d.isGroup ? null : (d.otherUid || null);
+                    [0, 2500, 7000].forEach((ms) => setTimeout(() => autoSaveIncomingImages(ch.doc.id, oUid), ms));
+                });
+            }
+        } catch (e) {}
         myChats.clear();
         if (!window.__aurachatGroupIds) window.__aurachatGroupIds = new Set();
         snapshot.forEach((docSnap) => {
