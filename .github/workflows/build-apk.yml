@@ -1939,7 +1939,6 @@ jobs:
           add("AppTheme.NoActionBarLaunch", '<item name="android:windowBackground">@android:color/black</item>')
           if "Theme.SplashScreen" in s:
               add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenBackground">@android:color/black</item>')
-              add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenAnimatedIcon">@drawable/aura_transparent</item>')
           open(p, "w", encoding="utf-8").write(s)
           PY
           
@@ -1993,7 +1992,7 @@ jobs:
               public static void show(final Activity activity, WebView webView) {
                   try {
                       hidden = false;
-                      overlay = new SplashView(activity);
+                      overlay = buildIconOverlay(activity);
                       activity.addContentView(overlay, new ViewGroup.LayoutParams(
                               ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                       if (webView != null) webView.addJavascriptInterface(new Bridge(activity), "AuraSplash");
@@ -2003,6 +2002,34 @@ jobs:
                           public void run() { hide(activity); }
                       }, 8000);
                   } catch (Throwable t) {}
+              }
+
+              // Sistem açılış penceresiyle aynı görünüm: siyah zemin + o an seçili uygulama ikonu (hareketsiz)
+              static View buildIconOverlay(Activity a) {
+                  android.widget.FrameLayout root = new android.widget.FrameLayout(a);
+                  root.setBackgroundColor(Color.BLACK);
+                  root.setClickable(true);
+                  try {
+                      android.content.pm.PackageManager pm = a.getPackageManager();
+                      android.graphics.drawable.Drawable ic = null;
+                      for (int n = 0; n <= 15 && ic == null; n++) {
+                          try {
+                              android.content.ComponentName cn = new android.content.ComponentName(a.getPackageName(),
+                                  "com.aurachat.app." + (n == 0 ? "IconDefault" : "IconAlt" + n));
+                              int st = pm.getComponentEnabledSetting(cn);
+                              boolean on = st == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                                  || (st == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && n == 0);
+                              if (on) ic = pm.getActivityIcon(cn);
+                          } catch (Throwable t) {}
+                      }
+                      if (ic == null) ic = pm.getApplicationIcon(a.getPackageName());
+                      android.widget.ImageView iv = new android.widget.ImageView(a);
+                      iv.setImageDrawable(ic);
+                      iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                      int px = (int) (240f * a.getResources().getDisplayMetrics().density);
+                      root.addView(iv, new android.widget.FrameLayout.LayoutParams(px, px, android.view.Gravity.CENTER));
+                  } catch (Throwable t) {}
+                  return root;
               }
 
               public static void hide(final Activity activity) {
