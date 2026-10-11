@@ -1742,7 +1742,7 @@ function appendLaunchTemps(session) {
         const have = new Set(session.messages.map((m) => m.id));
         const fresh = items.filter((i) => !have.has(i.id));
         if (!fresh.length) return false;
-        if (fresh.some((i) => !i.text || i.text.length > 400 || /^(📷|🎤|📍|🚫)/.test(i.text))) return false;
+          if (fresh.some((i) => !i.text || i.text.length > 400 || /^🚫/.test(i.text))) return false;
                 const fragment = document.createDocumentFragment();
         const firstChip = tempDayChipFor(fresh[0].t, undefined);
         if (firstChip.el) fragment.appendChild(firstChip.el);
