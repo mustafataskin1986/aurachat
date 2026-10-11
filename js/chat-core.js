@@ -840,7 +840,7 @@ if (!window.__auraTBuild) window.__auraTBuild = Math.round(performance.now());
     if (!chatSessions.has(chatId)) return session;
 
    // Disk önbelleğindeki mesajları ağ cevabını beklemeden hemen göster (sohbet boş görünmesin)
-    if (diskCache && diskCache.messages.length && currentChatId === chatId) {
+      if (diskCache && diskCache.messages.length && currentChatId === chatId && window.__auraPreviewChatId !== chatId) {
         unreadDivider = findUnreadDivider(session);
         renderSession(session);
         if (!appendLaunchTemps(session) && document.documentElement.hasAttribute('data-aura-launch') && !unreadDivider && Number(window.__auraLaunchPending) > 0) {
@@ -1694,7 +1694,7 @@ composer.clearImages();
     const session = await ensureChatSession(chatId, otherUid);
 
     if (currentChatId !== chatId) return;
-
+        window.__auraPreviewChatId = null;
     session.lastUsed = ++sessionTick;
 if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.photo);
     updateMicToggle();
@@ -1838,6 +1838,7 @@ export function previewLaunchChat(L) {
             chatArea.classList.remove('translate-x-full');
         }
         scrollToUnreadOrBottom();
+                window.__auraPreviewChatId = L.chatId;
         return true;
     } catch (e) {
         return false;
