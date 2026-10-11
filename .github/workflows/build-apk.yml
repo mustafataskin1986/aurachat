@@ -641,10 +641,27 @@ jobs:
                           android.content.SharedPreferences dsp = getSharedPreferences(AuraNotif.PREFS, Context.MODE_PRIVATE);
                           long dnow = System.currentTimeMillis();
                           long ds = dsp.getLong("dbg_save", 0), df = dsp.getLong("dbg_forget", 0);
+                          String ejd = intent.getStringExtra("msgsJson");
+                          dbgInfo += " v3 ej=" + (ejd == null ? "yok" : String.valueOf(ejd.length())) + " son=" + dsp.getString("dbg_last", "hic");
                           dbgInfo += " yaz=" + (ds == 0 ? "hic" : ((dnow - ds) / 1000) + "sn") + " sil=" + (df == 0 ? "hic" : ((dnow - df) / 1000) + "sn");
                       } catch (Throwable ignore2) {}
                       if (storedChat != null && !storedChat.isEmpty()) {
                           org.json.JSONArray st = AuraNotif.stored(this, storedChat);
+                          try {
+                              String ej = intent.getStringExtra("msgsJson");
+                              if (ej != null && !ej.isEmpty()) {
+                                  org.json.JSONArray ea = new org.json.JSONArray(ej);
+                                  if (ea.length() > 0) {
+                                      dbgInfo += " intent=" + ea.length();
+                                      org.json.JSONObject eo = new org.json.JSONObject(launchChatJson);
+                                      eo.put("pending", Math.max(1, ea.length()));
+                                      eo.put("msgs", ea);
+                                      eo.put("dbg", dbgInfo);
+                                      launchChatJson = eo.toString();
+                                      return;
+                                  }
+                              }
+                          } catch (Throwable ignore3) {}
                           if (st.length() == 0) { st = AuraNotif.gone(this, storedChat); dbgInfo += " yedek=" + st.length(); }
                           dbgInfo += " depo=" + st.length();
                           try { org.json.JSONObject lj = new org.json.JSONObject(launchChatJson); lj.put("dbg", dbgInfo); launchChatJson = lj.toString(); } catch (Throwable ignore) {}
@@ -1221,6 +1238,7 @@ jobs:
                           arr.put(o);
                       }
                       save(c, chatId, arr);
+                      try { sp(c).edit().putString("dbg_last", "n=" + arr.length() + " tag=" + (tag == null ? "yok" : (tag.length() > 6 ? tag.substring(0, 6) : tag))).apply(); } catch (Throwable ignoreD) {}
 
                       JSONObject m = new JSONObject();
                       m.put("title", title);
@@ -1350,6 +1368,22 @@ jobs:
                       open.putExtra("body", meta.optString("body", ""));
                       open.putExtra("tag", meta.optString("tag", ""));
                       open.putExtra("msgType", meta.optString("msgType", ""));
+                      // Bekleyen mesajlar bildirimin kendi bilgisine de konur: dokununca depoya bağlı kalmaz
+                      try {
+                          JSONArray pm = new JSONArray();
+                          for (int pi2 = 0; pi2 < arr.length(); pi2++) {
+                              JSONObject po = arr.optJSONObject(pi2);
+                              if (po == null || po.optBoolean("me", false)) continue;
+                              String ptg = po.optString("tag", "");
+                              if (!ptg.startsWith("msg-")) continue;
+                              JSONObject pj = new JSONObject();
+                              pj.put("tag", ptg);
+                              pj.put("text", po.optString("raw", po.optString("text", "")));
+                              pj.put("t", po.optLong("t", 0));
+                              pm.put(pj);
+                          }
+                          open.putExtra("msgsJson", pm.toString());
+                      } catch (Exception ignoreP) {}
                       int imm = Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0;
                       PendingIntent openPi = PendingIntent.getActivity(c, chatId.hashCode(), open, PendingIntent.FLAG_UPDATE_CURRENT | imm);
 
