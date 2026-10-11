@@ -6700,6 +6700,43 @@ export async function autoSaveIncomingImages(chatId, otherUid) {
 }
 
 // ------------------------------------------
+// Karşıdan gelen resimleri sohbeti açmadan galeriye kaydet (sadece Android uygulaması)
+// ------------------------------------------
+export async function autoSaveIncomingImages(chatId, otherUid) {
+    try {
+        if (!getFilesystemPlugin() || !currentUser || !chatId) return;
+        const session = await ensureChatSession(chatId, otherUid || null);
+        const nowMs = Date.now();
+        const lastReadMs = getChatLastReadMs(chatId);
+        for (const { id, data: msg } of session.messages) {
+            if (msg.type !== 'image' || msg.viewOnce) continue;
+            if (msg.senderUid === currentUser.uid) continue;
+            // Sadece yeni gelenler: son 15 dk içinde gelmiş ya da henüz görmediğim resimler
+            // (galeriden silinmiş eski resimler tekrar yazılmasın)
+            const t = msgCreatedMs(msg);
+            const readBy = Array.isArray(msg.readBy) ? msg.readBy : [];
+            const notSeen = !readBy.includes(currentUser.uid) && t > lastReadMs;
+            if (!(t > 0 && nowMs - t < 900000) && !notSeen) continue;
+
+            const imagesCount = msg.imagesCount || 0;
+            if (imagesCount > 1) {
+                const arr = Array.isArray(msg.images) ? msg.images : [];
+                for (let i = 0; i < imagesCount; i++) {
+                    if (!arr[i]) continue;
+                    try { await resolveLocalMedia(chatId, id, arr[i], i); } catch (e) {}
+                }
+                maybeStripAlbumImages(chatId, id, msg, imagesCount);
+            } else if (msg.imageUrl) {
+                try {
+                    const localSrc = await resolveLocalMedia(chatId, id, msg.imageUrl);
+                    if (localSrc) maybeStripDeliveredImage(chatId, id, msg);
+                } catch (e) {}
+            }
+        }
+    } catch (e) {}
+}
+
+// ------------------------------------------
 // Bildirimle açılışta: Firebase oturumu hazır olmadan, telefondaki mesajlarla sohbeti hemen çiz.
 // Sunucuya hiç istek atmaz. Gerçek açılış sonra aynı görüntüyü kendisi yeniden çizer.
 // ------------------------------------------
@@ -6726,18 +6763,40 @@ export async function paintLaunchFromDisk(L) {
             return true;
         });
 
+        // Telefondaki (galeri) resimleri çizimden önce hazırla: en fazla 400 ms beklenir
+        try {
+            const jobs = [];
+            visible.slice(-12).forEach(({ id, data: m }) => {
+                if (m.type !== 'image' || m.viewOnce) return;
+                const cnt = m.imagesCount || 0;
+                if (cnt > 1) {
+                    for (let i = 0; i < Math.min(cnt, 4); i++) jobs.push(resolveLocalMedia(L.chatId, id, null, i).catch(() => null));
+                } else if (m.imageUrl || m.imageDelivered) {
+                    jobs.push(resolveLocalMedia(L.chatId, id, null).catch(() => null));
+                }
+            });
+            if (jobs.length) await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 400))]);
+        } catch (e) {}
+        if (currentChatId) return false;
+
         messageContainer.innerHTML = '';
         const fragment = document.createDocumentFragment();
         let lastDayKey = null;
-        visible.forEach(({ id, data: msg }) => {
-            const msgDate = msg.createdAt ? msg.createdAt.toDate() : new Date();
-            const dayKey = dayKeyOf(msgDate);
-            if (dayKey !== lastDayKey) {
-                fragment.appendChild(buildDateChipElement(msgDate));
-                lastDayKey = dayKey;
-            }
-            fragment.appendChild(buildMessageElement(msg, msg.senderUid === u.uid, id));
-        });
+        // buildMessageElement önbellek anahtarı için currentChatId'ye bakar; çizim boyunca (senkron) geçici atanır
+        currentChatId = L.chatId;
+        try {
+            visible.forEach(({ id, data: msg }) => {
+                const msgDate = msg.createdAt ? msg.createdAt.toDate() : new Date();
+                const dayKey = dayKeyOf(msgDate);
+                if (dayKey !== lastDayKey) {
+                    fragment.appendChild(buildDateChipElement(msgDate));
+                    lastDayKey = dayKey;
+                }
+                fragment.appendChild(buildMessageElement(msg, msg.senderUid === u.uid, id));
+            });
+        } finally {
+            currentChatId = null;
+        }
         messageContainer.appendChild(fragment);
 
         window.__auraLaunch = L;
