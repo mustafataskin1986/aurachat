@@ -634,8 +634,11 @@ jobs:
                       if (launchChatJson == null || launchChatJson.isEmpty() || intent == null) return;
                       // Yeni sistem: bekleyen mesajlar AuraNotif deposunda
                       String storedChat = intent.getStringExtra("chatId");
+                      String dbgInfo = "cid=" + (storedChat == null || storedChat.isEmpty() ? "yok" : "var");
                       if (storedChat != null && !storedChat.isEmpty()) {
                           org.json.JSONArray st = AuraNotif.stored(this, storedChat);
+                          dbgInfo += " depo=" + st.length();
+                          try { org.json.JSONObject lj = new org.json.JSONObject(launchChatJson); lj.put("dbg", dbgInfo); launchChatJson = lj.toString(); } catch (Throwable ignore) {}
                           if (st.length() > 0) {
                               org.json.JSONArray smsgs = new org.json.JSONArray();
                               for (int i = 0; i < st.length(); i++) {
