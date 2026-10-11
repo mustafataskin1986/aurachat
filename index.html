@@ -90,6 +90,8 @@ body :has(#sidebar),body :has(#chat-area){border-width:0 !important}
 html[data-aura-black] #sidebar{background-color:#000 !important}
 html[data-aura-black] #sidebar [class*="bg-[#202c33]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#111b21]"]:not(input):not(textarea),html[data-aura-black] #sidebar [class*="bg-[#0b141a]"]:not(input):not(textarea){background-color:#000 !important}
 html[data-aura-black] #chat-area [class*="bg-[#202c33]"]:not(input):not(textarea):not(#message-container *){background-color:#000 !important}
+html[data-aura-black] #sidebar .contact-list-item.chat-selected{background-color:rgba(16,185,129,.22) !important}
+html[data-aura-black] #chat-selection-toolbar{background-color:#000 !important}
 html[data-aura-black] #chat-area [class*="bg-[#111b21]"]:not(input):not(textarea):not(#message-container *):not(#message-container){background-color:#000 !important}
 *{accent-color:var(--aura-btn,#22c55e)}
 ::selection{background:var(--aura-btn,#22c55e) !important;color:#ffffff !important}
@@ -111,6 +113,10 @@ html[data-aura-theme] #chat-area::before{display:none}
 <script>
 try {
     var auraRoot = document.documentElement;
+        if (localStorage.getItem('aurachat_black_ui') === null && localStorage.getItem('aurachat_dark_init') === null) {
+        localStorage.setItem('aurachat_black_ui', '1');
+        localStorage.setItem('aurachat_dark_init', '1');
+    }
     if (localStorage.getItem('aurachat_black_ui') === '1') auraRoot.setAttribute('data-aura-black', '1');
     if (localStorage.getItem('aurachat_is_admin') === '1') auraRoot.setAttribute('data-aura-admin', '1');
 } catch (e) {}
