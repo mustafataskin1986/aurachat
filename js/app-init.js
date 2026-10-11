@@ -236,17 +236,10 @@ window.initApp = async function () {
         await hideNativeSplash();
         auraMark('Splash kapandı');
     }
-        // Bildirimle açılış: oturumu beklemeden başlığı ve bildirimdeki yazıları hemen göster, splash'i kaldır.
-    // Hazır olana kadar dokunmalar kapalı. Gerçek sohbet açılınca bu görüntü kendiliğinden yenilenir.
+           // Bildirimle açılışta ara görüntü olmasın: splash, sohbet tek seferde hazır olunca kapanır.
     readLaunchChatFromNative();
-    if (!earlyReveal && window.pendingOpenChat && previewLaunchChat(window.pendingOpenChat)) {
-        const bootStyle2 = document.createElement('style');
-        bootStyle2.textContent = 'html[data-aura-booting] #chat-area{pointer-events:none}';
-        document.head.appendChild(bootStyle2);
-        document.documentElement.setAttribute('data-aura-booting', '1');
-        setTimeout(() => document.documentElement.removeAttribute('data-aura-booting'), 8000);
-        await hideNativeSplash();
-        auraMark('Önizleme çizildi');
+    if (!earlyReveal && window.pendingOpenChat && window.pendingOpenChat.chatId) {
+        window.__auraPreviewChatId = window.pendingOpenChat.chatId;
     }
         // Firebase oturumu diskten yüklenene kadar bekle: bitmeden istek atılırsa
     // Firestore "permission-denied" verir ve dinleyiciler kalıcı olarak kapanır
