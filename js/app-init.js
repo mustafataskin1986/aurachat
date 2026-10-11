@@ -6,7 +6,7 @@
 
 import { db, auth } from "./firebase-init.js";
 import { collection, query, where, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showTempIncomingBubble, showToast, previewLaunchChat } from "./chat-core.js";
+import { setCurrentUser, selectChat, startPresence, getCurrentChatId, showTempIncomingBubble, showToast, previewLaunchChat, paintLaunchFromDisk } from "./chat-core.js";
 import { watchCallForChat } from "./video-call.js";
 import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
@@ -248,6 +248,17 @@ window.initApp = async function () {
     // Bekleyen mesajların hepsi telefonda ve düz yazıysa sohbet yerelden hemen çizilir; değilse eski güvenli yol
     if (!plComplete) window.__auraPreviewChatId = PL.chatId;
     auraMarks['Yerel çizim: ' + (plComplete ? 'evet' : 'hayir')] = Math.round(performance.now());
+    // Her şey telefonda hazırsa: Firebase oturumunu beklemeden sohbeti diskten çiz ve splash'i kapat
+    if (plComplete) {
+        const bootStyle2 = document.createElement('style');
+        bootStyle2.textContent = 'html[data-aura-booting] #chat-area{pointer-events:none}';
+        document.head.appendChild(bootStyle2);
+        document.documentElement.setAttribute('data-aura-booting', '1');
+        setTimeout(() => document.documentElement.removeAttribute('data-aura-booting'), 8000);
+        const earlyPainted = await paintLaunchFromDisk(PL);
+        auraMarks['Erken çizim: ' + (earlyPainted ? 'evet' : 'hayir')] = Math.round(performance.now());
+        if (earlyPainted) { await hideNativeSplash(); auraMark('Splash kapandı'); }
+    }
 }
         // Firebase oturumu diskten yüklenene kadar bekle: bitmeden istek atılırsa
     // Firestore "permission-denied" verir ve dinleyiciler kalıcı olarak kapanır
@@ -288,7 +299,7 @@ window.initApp = async function () {
         await hideNativeSplash();
         const tHide = Math.round(performance.now());
                 auraMarks['Sohbet çizildi'] = tPaint;
-        auraMark('Splash kapandı');
+                if (!auraMarks['Splash kapandı']) auraMark('Splash kapandı');
         auraShowTiming();
 
         await chatPromise;
