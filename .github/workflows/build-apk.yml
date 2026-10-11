@@ -1939,6 +1939,7 @@ jobs:
           add("AppTheme.NoActionBarLaunch", '<item name="android:windowBackground">@android:color/black</item>')
           if "Theme.SplashScreen" in s:
               add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenBackground">@android:color/black</item>')
+              add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenAnimatedIcon">@drawable/aura_transparent</item>')
           open(p, "w", encoding="utf-8").write(s)
           PY
           
