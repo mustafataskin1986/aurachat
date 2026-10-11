@@ -1428,6 +1428,7 @@ export async function clearChatForMe(chatId) {
             chatSessions.delete(chatId);
         }
         await deleteChatDiskCache(chatId);
+        if (!currentChatId || currentChatId === chatId) { messageInput.value = ''; composer.clearImages(); }
     } catch (err) {
         console.error("Sohbet temizlenemedi:", err);
         throw err;
@@ -1469,6 +1470,7 @@ export async function wipeChat(chatId) {
     }
     await deleteChatDiskCache(chatId);
     await removeStarredForChat(chatId);
+    if (!currentChatId || currentChatId === chatId) { messageInput.value = ''; composer.clearImages(); }
 
     // Herkes sohbeti temizlediyse, hepsinin temizlediği zamana kadarki mesajlar sunucudan da silinir
     try {
@@ -3154,6 +3156,14 @@ function getMessageTimeMs(chatId, msgId) {
     return Date.now();
 }
 
+function isOwnMessage(chatId, msgId) {
+    if (!currentUser) return false;
+    const s = chatSessions.get(chatId);
+    if (!s) return false;
+    const m = s.messages.find((x) => x.id === msgId) || s.olderMessagesPrepended.find((x) => x.id === msgId);
+    return !!(m && m.data && m.data.senderUid === currentUser.uid);
+}
+
 function buildGalleryFileName(timeMs, msgId, idx) {
     const d = new Date(timeMs);
     const p = (n) => String(n).padStart(2, '0');
@@ -3204,7 +3214,14 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
             // 2. Galeride yok, sunucudan gelen veri de yoksa gösterilecek bir şey kalmadı
             if (!base64Data) return null;
 
-            // 3. Yeni kayıt: sadece galeriye yaz
+            // 3. Kendi gönderdiğim resim galeriye yazılmaz (sadece alınanlar yazılır)
+            if (isOwnMessage(chatId, msgId)) {
+                const ownSrc = toImageSrc(base64Data);
+                mediaUriCache.set(cacheKey, ownSrc);
+                return ownSrc;
+            }
+
+            // 4. Yeni kayıt: sadece galeriye yaz
             try {
                 const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
                 const fileName = buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx);
@@ -6660,43 +6677,6 @@ function groupMessageReadByAll(msg) {
     const readBy = Array.isArray(msg.readBy) ? msg.readBy : [];
     const others = members.filter((uid) => uid !== msg.senderUid);
     return others.length > 0 && others.every((uid) => readBy.includes(uid));
-}
-
-// ------------------------------------------
-// Karşıdan gelen resimleri sohbeti açmadan galeriye kaydet (sadece Android uygulaması)
-// ------------------------------------------
-export async function autoSaveIncomingImages(chatId, otherUid) {
-    try {
-        if (!getFilesystemPlugin() || !currentUser || !chatId) return;
-        const session = await ensureChatSession(chatId, otherUid || null);
-        const nowMs = Date.now();
-        const lastReadMs = getChatLastReadMs(chatId);
-        for (const { id, data: msg } of session.messages) {
-            if (msg.type !== 'image' || msg.viewOnce) continue;
-            if (msg.senderUid === currentUser.uid) continue;
-            // Sadece yeni gelenler: son 15 dk içinde gelmiş ya da henüz görmediğim resimler
-            // (galeriden silinmiş eski resimler tekrar yazılmasın)
-            const t = msgCreatedMs(msg);
-            const readBy = Array.isArray(msg.readBy) ? msg.readBy : [];
-            const notSeen = !readBy.includes(currentUser.uid) && t > lastReadMs;
-            if (!(t > 0 && nowMs - t < 900000) && !notSeen) continue;
-
-            const imagesCount = msg.imagesCount || 0;
-            if (imagesCount > 1) {
-                const arr = Array.isArray(msg.images) ? msg.images : [];
-                for (let i = 0; i < imagesCount; i++) {
-                    if (!arr[i]) continue;
-                    try { await resolveLocalMedia(chatId, id, arr[i], i); } catch (e) {}
-                }
-                maybeStripAlbumImages(chatId, id, msg, imagesCount);
-            } else if (msg.imageUrl) {
-                try {
-                    const localSrc = await resolveLocalMedia(chatId, id, msg.imageUrl);
-                    if (localSrc) maybeStripDeliveredImage(chatId, id, msg);
-                } catch (e) {}
-            }
-        }
-    } catch (e) {}
 }
 
 // ------------------------------------------
