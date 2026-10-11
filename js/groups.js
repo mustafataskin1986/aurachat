@@ -58,6 +58,9 @@ function ensureMenu() {
         <button type="button" data-menu="eruda" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-solid fa-bug text-sky-400 w-4"></i><span id="aura-eruda-label">Eruda: Kapalı</span>
         </button>
+                <button type="button" data-menu="timing" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid fa-stopwatch text-sky-400 w-4"></i><span id="aura-timing-label">Süre etiketi: Kapalı</span>
+        </button>
     `;
     sidebar.appendChild(el);
     el.addEventListener('click', (e) => {
@@ -72,8 +75,10 @@ function ensureMenu() {
             window.openProfilePanel();
         } else if (item.dataset.menu === 'backup') {
             openBackupMenu();
-        } else if (item.dataset.menu === 'eruda') {
+               } else if (item.dataset.menu === 'eruda') {
             toggleEruda();
+        } else if (item.dataset.menu === 'timing') {
+            toggleTiming();
         }
     });
     menuEl = el;
@@ -95,6 +100,10 @@ function refreshErudaLabel() {
     // Yalnızca yönetici hesapta görünür (AuraChat başlığıyla aynı koşul)
     const btn = menuEl && menuEl.querySelector('[data-menu="eruda"]');
     if (btn) btn.classList.toggle('hidden', !document.documentElement.hasAttribute('data-aura-admin'));
+    const tl = document.getElementById('aura-timing-label');
+    if (tl) tl.textContent = timingOn() ? 'Süre etiketi: Açık' : 'Süre etiketi: Kapalı';
+    const tbtn = menuEl && menuEl.querySelector('[data-menu="timing"]');
+    if (tbtn) tbtn.classList.toggle('hidden', !document.documentElement.hasAttribute('data-aura-admin'));
 }
 
 function toggleEruda() {
@@ -116,7 +125,19 @@ function toggleEruda() {
     s.onload = () => { try { window.eruda.init(); } catch (e) {} };
     document.head.appendChild(s);
 }
+// Açılış süre etiketi: yalnızca yönetici menüsünden açılır, seçim hatırlanır
+function timingOn() {
+    try { return localStorage.getItem('aura_timing') === '1'; } catch (e) { return false; }
+}
 
+function toggleTiming() {
+    try {
+        if (timingOn()) localStorage.removeItem('aura_timing');
+        else localStorage.setItem('aura_timing', '1');
+    } catch (e) {}
+    refreshErudaLabel();
+    showToast(timingOn() ? 'Süre etiketi açıldı: sonraki açılışta görünür' : 'Süre etiketi kapatıldı', 2500);
+}
 if (menuBtn) {
     menuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
