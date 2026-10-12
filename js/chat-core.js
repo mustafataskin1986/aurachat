@@ -3339,7 +3339,7 @@ function maybeStripAlbumImages(chatId, msgId, msg, imagesCount) {
 
 // WhatsApp tarzı 2 sütunlu albüm ızgarası. 4'ten fazla resim varsa
 // son görünen karede "+N" bindirmesi gösterilir.
-function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
+function buildAlbumTilesHtml(chatId, msgId, imagesCount, thumbs) {
     const maxTiles = Math.min(imagesCount, 4);
     const extra = imagesCount - maxTiles;
     let tiles = '';
@@ -3349,7 +3349,7 @@ function buildAlbumTilesHtml(chatId, msgId, imagesCount) {
         const showOverlay = i === maxTiles - 1 && extra > 0;
         const inner = cachedSrc
      ? `<img src="${cachedSrc}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" oncontextmenu="return false" draggable="false" style="-webkit-user-drag:none;" onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})">`
-            : `<div class="w-full h-full flex items-center justify-center bg-black/20" data-media-msg="${msgId}" data-media-idx="${i}" onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})"><i class="fa-solid fa-image text-gray-500"></i></div>`;
+            : buildBlurPlaceholder((Array.isArray(thumbs) ? thumbs[i] : '') || '', `data-media-msg="${msgId}" data-media-idx="${i}"`, 'width:100%;height:100%;', `onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})"`);
         tiles += `
             <div class="relative overflow-hidden" style="aspect-ratio:1/1;">
                 ${inner}
@@ -3419,12 +3419,12 @@ if (isViewOnce) {
             </span>
         </div>`;
     } else if (isAlbum) {
-        bodyHtml = buildAlbumTilesHtml(currentChatId, msgId, imagesCount);
+        bodyHtml = buildAlbumTilesHtml(currentChatId, msgId, imagesCount, msg.thumbs);
         if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
     } else if (isSingleImage) {
         bodyHtml = initialImgSrc
             ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;-webkit-user-drag:none;" data-media-msg="${msgId}" oncontextmenu="return false" draggable="false" onclick="openImageLightbox(this.src)">`
-            : `<div class="rounded-lg bg-black/20 flex items-center justify-center" data-media-msg="${msgId}" style="width:220px;height:220px;max-width:100%;"><i class="fa-solid fa-image text-gray-500"></i></div>`;
+            : buildBlurPlaceholder(msg.thumb || '', `data-media-msg="${msgId}"`, 'width:220px;height:220px;max-width:100%;', '');
         if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
 } else if (msg.type === 'location') {
         bodyHtml = `<div class="cursor-pointer" style="min-width:200px;" onclick="openLocation(${Number(msg.lat)},${Number(msg.lng)})">
@@ -5747,6 +5747,37 @@ if (!currentChatId || currentChatId === 'global' || !currentUser) return;
 // ------------------------------------------
 // GÖRSEL GÖNDERME (tek resim = tam boyut / birden fazla resim = tek albüm mesajı)
 // ------------------------------------------
+// Mesaja konan minik (yaklaşık 24 px) bulanık önizleme: resim dosyası telefonda yoksa balonda bu gösterilir
+function makeTinyThumb(dataUrl) {
+    return new Promise((resolve) => {
+        try {
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const max = 24;
+                    const k = Math.min(1, max / Math.max(img.width, img.height));
+                    const w = Math.max(1, Math.round(img.width * k));
+                    const h = Math.max(1, Math.round(img.height * k));
+                    const c = document.createElement('canvas');
+                    c.width = w; c.height = h;
+                    c.getContext('2d').drawImage(img, 0, 0, w, h);
+                    resolve(c.toDataURL('image/jpeg', 0.5));
+                } catch (e) { resolve(''); }
+            };
+            img.onerror = () => resolve('');
+            img.src = dataUrl;
+        } catch (e) { resolve(''); }
+    });
+}
+
+// Bulanık önizleme balonu (resim henüz/artık telefonda yok)
+function buildBlurPlaceholder(thumb, extraAttrs, sizeStyle, onclickAttr) {
+    const bg = thumb
+        ? `<img src="${thumb}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:blur(10px);transform:scale(1.25);" draggable="false">`
+        : '';
+    return `<div class="rounded-lg bg-black/20 flex items-center justify-center" ${extraAttrs} ${onclickAttr || ''} style="position:relative;overflow:hidden;${sizeStyle}">${bg}<i class="fa-solid fa-image text-gray-300" style="position:relative;opacity:.8;"></i></div>`;
+}
+
 function compressImageToDataUrl(file, targetBytes = 300 * 1024) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -5905,10 +5936,14 @@ if (attachBtn && imageInput) {
                 return;
             }
 
+            // Bulanık önizlemeler (resim sonradan silinirse balonda bu görünür)
+            const thumbList = viewOnce ? [] : (await Promise.all(compressed.slice(0, 4).map((c) => makeTinyThumb(c)))).map((t) => t || '');
+
        if (compressed.length === 1) {
                 await addDoc(collection(db, "chats", currentChatId, "messages"), {
                     type: 'image',
                     imageUrl: compressed[0],
+                    ...(thumbList[0] ? { thumb: thumbList[0] } : {}),
                     ...(viewOnce ? { viewOnce: true } : {}),
                     // Grupta açılmamış fotoğraf 48 saat sonra herkesten ve sunucudan kalkar
                     ...(viewOnce && currentIsGroup ? { expiresAtMs: Date.now() + 48 * 3600 * 1000 } : {}),
@@ -5925,6 +5960,7 @@ if (attachBtn && imageInput) {
                     images: compressed,
                     imagesCount: compressed.length,
                     imagesDelivered: false,
+                    ...(thumbList.some((t) => t) ? { thumbs: thumbList } : {}),
                     text: caption,
                     senderUid: currentUser.uid,
                     senderName: currentUser.name,
@@ -6863,8 +6899,15 @@ export async function paintLaunchFromDisk(L) {
             activeChatAvatar.innerHTML = `<span>${getInitials(name)}</span>`;
         }
         if (window.innerWidth < 1024) {
+            // Bildirimle açılışta kayma animasyonu olmasın: arkadaki boş gri alan görünmesin
+            chatArea.style.transition = 'none';
+            sidebar.style.transition = 'none';
             sidebar.classList.add('-translate-x-full');
             chatArea.classList.remove('translate-x-full');
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                chatArea.style.transition = '';
+                sidebar.style.transition = '';
+            }));
         }
         scrollToUnreadOrBottom();
         return true;
