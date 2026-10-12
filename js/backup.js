@@ -7,7 +7,7 @@
 // ==========================================
 
 import { db, auth } from "./firebase-init.js";
-import { collection, doc, getDoc, getDocs, setDoc, serverTimestamp, query, orderBy, limit, startAfter, Timestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { collection, doc, getDoc, getDocs, setDoc, deleteField, serverTimestamp, query, orderBy, limit, startAfter, Timestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { GoogleAuthProvider, reauthenticateWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { showToast, getCurrentUser } from "./chat-core.js";
 import { auraAccent } from "./aura-dialog.js";
@@ -118,16 +118,29 @@ function openProgress(title) {
     const msg = document.createElement('div');
     msg.style.cssText = 'font-size:13px;color:#8696a0;margin-top:12px;min-height:18px;';
     box.appendChild(h); box.appendChild(bar); box.appendChild(msg);
+    let hidden = false;
+    const bgRow = document.createElement('div');
+    bgRow.style.cssText = 'display:flex;justify-content:flex-end;margin-top:16px;';
+    const bgBtn = document.createElement('button');
+    bgBtn.type = 'button';
+    bgBtn.textContent = 'Arka planda devam et';
+    bgBtn.style.cssText = 'background:none;border:1px solid ' + auraAccent() + ';border-radius:999px;color:' + auraAccent() + ';font-size:14px;padding:8px 18px;cursor:pointer;';
+    bgBtn.addEventListener('click', () => { hidden = true; try { overlay.remove(); } catch (e) {} showToast('İşlem arka planda sürüyor, bitince haber vereceğim', 3500); });
+    bgRow.appendChild(bgBtn);
+    box.appendChild(bgRow);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     return {
         set(pct, text) {
+            if (hidden) return;
             fill.style.width = Math.max(4, Math.min(100, pct)) + '%';
             if (text != null) msg.textContent = text;
         },
         close() { try { overlay.remove(); } catch (e) {} },
         // Sonucu aynı pencerede göster, altına Kapat butonu koy (pencere kendiliğinden kapanmaz)
         done(text, isError) {
+            if (hidden) { showToast(text, 6000); return; }
+            try { bgRow.remove(); } catch (e) {}
             fill.style.width = '100%';
             fill.style.background = isError ? '#ef4444' : auraAccent();
             msg.textContent = text;
@@ -282,12 +295,47 @@ async function doRestore() {
                 const snap = await getDocs(collection(db, 'chats', c.id, 'messages'));
                 snap.forEach((d) => have.add(d.id));
             } catch (e) {}
+            // Sohbet bende silinmiş/temizlenmişse (sunucuda mesajlar durur ama gizlidir) yedekteki duruma döndür
             let myClear = 0;
+            let rowExists = false;
             try {
-                const s = await getDoc(doc(db, 'users', user.uid, 'chats', c.id));
-                if (s.exists() && s.data().clearedAt && s.data().clearedAt.toMillis) myClear = s.data().clearedAt.toMillis();
+                const s0 = await getDoc(doc(db, 'users', user.uid, 'chats', c.id));
+                rowExists = s0.exists();
+                if (rowExists && s0.data().clearedAt && s0.data().clearedAt.toMillis) myClear = s0.data().clearedAt.toMillis();
             } catch (e) {}
-            let lastRestored = null;
+            const backupClear = c.clearedAt || 0;
+            let unhid = false;
+            if (myClear > backupClear || !rowExists) {
+                try {
+                    const lastMsg = c.messages.length ? reviveValue(c.messages[c.messages.length - 1].data) : null;
+                    const lastText = lastMsg ? (lastMsg.type === 'image' ? '📷 Fotoğraf' : String(lastMsg.text || '')).slice(0, 100) : '';
+                    const rowPatch = {
+                        clearedAt: backupClear ? Timestamp.fromMillis(backupClear) : deleteField(),
+                        keepRow: true
+                    };
+                    const parts0 = String(c.id).split('_');
+                    if (parts0.length === 2 && parts0.includes(user.uid)) {
+                        rowPatch.otherUid = parts0[0] === user.uid ? parts0[1] : parts0[0];
+                        if (lastMsg) {
+                            rowPatch.lastMessage = lastText;
+                            rowPatch.lastMessageTime = lastMsg.createdAt || serverTimestamp();
+                            rowPatch.lastSenderUid = lastMsg.senderUid || rowPatch.otherUid;
+                            rowPatch.updatedAt = lastMsg.createdAt || serverTimestamp();
+                        }
+                        rowPatch.unreadCount = 0;
+                    }
+                    await setDoc(doc(db, 'users', user.uid, 'chats', c.id), rowPatch, { merge: true });
+                    try {
+                        if (backupClear) localStorage.setItem('aura_clr_' + user.uid + '_' + c.id, String(backupClear));
+                        else localStorage.removeItem('aura_clr_' + user.uid + '_' + c.id);
+                    } catch (e) {}
+                    myClear = backupClear;
+                    unhid = true;
+                    rowsMade++;
+                } catch (e) {
+                    if (!firstErr) firstErr = 'liste: ' + String((e && (e.code || e.message)) || e);
+                }
+            }
             for (const m of c.messages) {
                 if (have.has(m.id)) { existing++; continue; }
                 const d = reviveValue(m.data);
@@ -296,35 +344,10 @@ async function doRestore() {
                 try {
                     await setDoc(doc(db, 'chats', c.id, 'messages', m.id), d);
                     restored++;
-                    lastRestored = { id: m.id, d };
                 } catch (e) {
                     failed++;
                     if (!firstErr) firstErr = String((e && (e.code || e.message)) || e);
                 }
-            }
-            // Sohbet listesi satırı yoksa (uygulama silinip yeniden kurulduysa) yeniden oluştur
-            try {
-                const rowRef = doc(db, 'users', user.uid, 'chats', c.id);
-                const rowSnap = await getDoc(rowRef);
-                const parts = String(c.id).split('_');
-                const anyMsg = c.messages.length ? c.messages[c.messages.length - 1] : null;
-                if (!rowSnap.exists() && parts.length === 2 && parts.includes(user.uid) && anyMsg) {
-                    const other = parts[0] === user.uid ? parts[1] : parts[0];
-                    const ld = reviveValue(anyMsg.data);
-                    const lt = ld.type === 'image' ? '📷 Fotoğraf' : (ld.text || '');
-                    await setDoc(rowRef, {
-                        otherUid: other,
-                        lastMessage: String(lt).slice(0, 100),
-                        lastMessageTime: ld.createdAt || serverTimestamp(),
-                        lastSenderUid: ld.senderUid || other,
-                        lastMessageRead: true,
-                        unreadCount: 0,
-                        updatedAt: ld.createdAt || serverTimestamp()
-                    }, { merge: true });
-                    rowsMade++;
-                }
-            } catch (e) {
-                if (!firstErr) firstErr = 'liste: ' + String((e && (e.code || e.message)) || e);
             }
         }
         for (const s of (data.starred || [])) {
@@ -333,7 +356,7 @@ async function doRestore() {
         p.set(100, 'Tamamlandı');
         let txt = restored + ' mesaj geri yüklendi';
         if (existing) txt += ', ' + existing + ' mesaj zaten vardı';
-        if (rowsMade) txt += ', ' + rowsMade + ' sohbet listeye eklendi';
+        if (rowsMade) txt += ', ' + rowsMade + ' sohbet geri getirildi';
         if (failed) txt += ', ' + failed + ' mesaj yazılamadı';
         if (firstErr) txt += ' (hata: ' + firstErr + ')';
         if (restored || rowsMade) txt += '. Uygulamayı kapatıp açarsan görünür.';
