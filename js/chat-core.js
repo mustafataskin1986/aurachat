@@ -6786,20 +6786,13 @@ export async function paintLaunchFromDisk(L) {
             return true;
         });
 
-        // Telefondaki (galeri) resimleri çizimden önce hazırla: en fazla 400 ms beklenir
+        // Telefondaki resimleri çizimden önce hazırla. Önce ekranda görünecek olanlar (yeni gelenler, sonra en son 2 resimli mesaj);
+        // eski mesajlar beklenmez. En fazla 400 ms beklenir, hazır olanlar çizilir.
         try {
             const jobs = [];
-            visible.slice(-12).forEach(({ id, data: m }) => {
-                if (m.type !== 'image' || m.viewOnce) return;
-                const cnt = m.imagesCount || 0;
-                if (cnt > 1) {
-                    for (let i = 0; i < Math.min(cnt, 4); i++) jobs.push(resolveLocalMedia(L.chatId, id, null, i).catch(() => null));
-                } else if (m.imageUrl || m.imageDelivered) {
-                    jobs.push(resolveLocalMedia(L.chatId, id, null).catch(() => null));
-                }
-            });
-            // Bildirimdeki yeni fotoğraflar: Android kodu telefona yazdıysa bulunur
-            (Array.isArray(L.msgs) ? L.msgs : []).forEach((lm) => {
+            // 1) Bildirimdeki yeni fotoğraflar (Android kodu telefona yazdıysa bulunur)
+            const lmList = (Array.isArray(L.msgs) ? L.msgs.slice() : []).sort((x, y) => (y.t || 0) - (x.t || 0));
+            lmList.forEach((lm) => {
                 const mm2 = lm && lm.tag && /^📷\s*(\d+)?\s*Fotoğraf$/.exec(String(lm.text || '').trim());
                 if (!mm2) return;
                 const nid = String(lm.tag).slice(4);
@@ -6810,7 +6803,21 @@ export async function paintLaunchFromDisk(L) {
                     jobs.push(resolveLocalMedia(L.chatId, nid, null).catch(() => null));
                 }
             });
-            if (jobs.length) await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 500))]);
+            // 2) Diskteki en son 2 resimli mesaj (en yeniden eskiye)
+            let imgMsgs = 0;
+            for (let k = visible.length - 1; k >= 0 && imgMsgs < 2 && jobs.length < 12; k--) {
+                const { id, data: m } = visible[k];
+                if (m.type !== 'image' || m.viewOnce) continue;
+                const cnt = m.imagesCount || 0;
+                if (cnt > 1) {
+                    for (let i = 0; i < Math.min(cnt, 4); i++) jobs.push(resolveLocalMedia(L.chatId, id, null, i).catch(() => null));
+                    imgMsgs++;
+                } else if (m.imageUrl || m.imageDelivered) {
+                    jobs.push(resolveLocalMedia(L.chatId, id, null).catch(() => null));
+                    imgMsgs++;
+                }
+            }
+            if (jobs.length) await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 400))]);
         } catch (e) {}
         if (currentChatId) return false;
 
