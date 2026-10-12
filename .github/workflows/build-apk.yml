@@ -2070,8 +2070,7 @@ jobs:
               set_items("AppTheme.NoActionBarLaunch", bars + [
                   ("android:background", "@drawable/splash"),
                   ("windowSplashScreenBackground", black),
-                  ("windowSplashScreenAnimatedIcon", "@drawable/aura_transparent"),
-                  ("windowSplashScreenIconBackgroundColor", black),
+                  ("windowSplashScreenAnimatedIcon", "@drawable/aura_splash_icon"),
                   ("postSplashScreenTheme", "@style/AppTheme.NoActionBar"),
               ])
           open(p, "w", encoding="utf-8").write(s)
@@ -2142,45 +2141,7 @@ jobs:
                   try {
                       hidden = false;
                       keep = true;
-                      // Siyah zemin + logo (kalp atışı gibi atar). Sistem ekranı bu çizilene kadar tutulur, sonra bırakılır
-                      sysKeep = true;
-                      try {
-                          final android.widget.FrameLayout root = new android.widget.FrameLayout(activity);
-                          root.setBackgroundColor(Color.BLACK);
-                          root.setClickable(true);
-                          int resId = activity.getResources().getIdentifier("aura_splash_icon", "drawable", activity.getPackageName());
-                          if (resId != 0) {
-                              final android.widget.ImageView iv = new android.widget.ImageView(activity);
-                              iv.setImageResource(resId);
-                              iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-                              int px = (int) (288f * activity.getResources().getDisplayMetrics().density);
-                              root.addView(iv, new android.widget.FrameLayout.LayoutParams(px, px, android.view.Gravity.CENTER));
-                              beat = ValueAnimator.ofFloat(0f, 1f);
-                              beat.setDuration(1200);
-                              beat.setRepeatCount(ValueAnimator.INFINITE);
-                              beat.setInterpolator(new android.view.animation.LinearInterpolator());
-                              beat.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
-                                  @Override
-                                  public void onAnimationUpdate(ValueAnimator a) {
-                                      float t = (Float) a.getAnimatedValue();
-                                      float sc = 1f;
-                                      if (t < 0.15f) sc = 1f + 0.10f * (t / 0.15f);
-                                      else if (t < 0.30f) sc = 1.10f - 0.10f * ((t - 0.15f) / 0.15f);
-                                      else if (t < 0.45f) sc = 1f + 0.07f * ((t - 0.30f) / 0.15f);
-                                      else if (t < 0.60f) sc = 1.07f - 0.07f * ((t - 0.45f) / 0.15f);
-                                      iv.setScaleX(sc);
-                                      iv.setScaleY(sc);
-                                  }
-                              });
-                              beat.start();
-                          }
-                          overlay = root;
-                          activity.addContentView(root, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                          root.post(new Runnable() {
-                              @Override
-                              public void run() { sysKeep = false; }
-                          });
-                      } catch (Throwable t) { sysKeep = false; }
+                      sysKeep = true; // sistem açılış ekranı (tek logo) liste/sohbet çizilene kadar tutulur
                       if (webView != null) webView.addJavascriptInterface(new Bridge(activity), "AuraSplash");
                       // Güvenlik: sayfa hiç yüklenmezse bile splash sonsuza kadar kalmasın
                       new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
@@ -2583,8 +2544,84 @@ jobs:
           out.save(p + "/aura_splash_icon.png")
           print("aura_splash_icon.png uretildi")
 
-          # Kendi açılış logonu kullanmak için: static/icons/splash-logo.png dosyasını ekle (şeffaf PNG, kare önerilir)
+          # Varsayılan: halka içinde sihirli değnek, kalp atışı gibi atan ANİMASYONLU vektör (sistem açılış ekranı oynatır)
+          RESD = "android/app/src/main/res"
           custom = "static/icons/splash-logo.png"
+          if not os.path.exists(custom):
+              os.makedirs(RESD + "/animator", exist_ok=True)
+              os.makedirs(RESD + "/drawable", exist_ok=True)
+              try:
+                  os.remove(RESD + "/drawable-xxhdpi/aura_splash_icon.png")
+              except OSError:
+                  pass
+              open(RESD + "/animator/aura_beat.xml", "w").write('''<?xml version="1.0" encoding="utf-8"?>
+          <objectAnimator xmlns:android="http://schemas.android.com/apk/res/android"
+              android:duration="1300"
+              android:repeatCount="-1">
+              <propertyValuesHolder android:propertyName="scaleX">
+                  <keyframe android:fraction="0" android:value="1"/>
+                  <keyframe android:fraction="0.14" android:value="1.12"/>
+                  <keyframe android:fraction="0.28" android:value="1"/>
+                  <keyframe android:fraction="0.42" android:value="1.08"/>
+                  <keyframe android:fraction="0.56" android:value="1"/>
+                  <keyframe android:fraction="1" android:value="1"/>
+              </propertyValuesHolder>
+              <propertyValuesHolder android:propertyName="scaleY">
+                  <keyframe android:fraction="0" android:value="1"/>
+                  <keyframe android:fraction="0.14" android:value="1.12"/>
+                  <keyframe android:fraction="0.28" android:value="1"/>
+                  <keyframe android:fraction="0.42" android:value="1.08"/>
+                  <keyframe android:fraction="0.56" android:value="1"/>
+                  <keyframe android:fraction="1" android:value="1"/>
+              </propertyValuesHolder>
+          </objectAnimator>
+          ''')
+              open(RESD + "/drawable/aura_splash_vec.xml", "w").write('''<?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:aapt="http://schemas.android.com/aapt"
+              android:width="288dp"
+              android:height="288dp"
+              android:viewportWidth="288"
+              android:viewportHeight="288">
+              <group android:name="pulse" android:pivotX="144" android:pivotY="144">
+                  <path android:pathData="M92,144 A52,52 0 1,1 196,144 A52,52 0 1,1 92,144 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="92" android:startY="92" android:endX="196" android:endY="196">
+                    <item android:offset="0" android:color="#FF4F46E5"/>
+                    <item android:offset="0.4" android:color="#FF9333EA"/>
+                    <item android:offset="0.7" android:color="#FFDB2777"/>
+                    <item android:offset="1" android:color="#FF06B6D4"/>
+                </gradient>
+            </aapt:attr>
+                  </path>
+                  <path android:fillColor="#FF000000" android:pathData="M95,144 A49,49 0 1,1 193,144 A49,49 0 1,1 95,144 Z"/>
+                  <group android:translateX="123" android:translateY="123" android:scaleX="1.75" android:scaleY="1.75">
+            <path
+                android:strokeWidth="1.8"
+                android:strokeLineCap="round"
+                android:strokeLineJoin="round"
+                android:pathData="M15,4 L15,2 M15,16 L15,14 M8,9 L10,9 M20,9 L22,9 M17.8,11.8 L19,13 M17.8,6.2 L19,5 M12.2,6.2 L11,5 M3,21 L12,12 M12.2,11.8 L11,13">
+                <aapt:attr name="android:strokeColor">
+                    <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="24" android:endY="24">
+                        <item android:offset="0" android:color="#FFC084FC"/>
+                        <item android:offset="0.5" android:color="#FFF472B6"/>
+                        <item android:offset="1" android:color="#FF38BDF8"/>
+                    </gradient>
+                </aapt:attr>
+            </path>
+                  </group>
+              </group>
+          </vector>
+          ''')
+              open(RESD + "/drawable/aura_splash_icon.xml", "w").write('''<?xml version="1.0" encoding="utf-8"?>
+          <animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:drawable="@drawable/aura_splash_vec">
+              <target android:name="pulse" android:animation="@animator/aura_beat"/>
+          </animated-vector>
+          ''')
+              print("Animasyonlu acilis logosu yazildi")
+
+          # Kendi açılış logonu kullanmak için: static/icons/splash-logo.png dosyasını ekle (şeffaf PNG, kare önerilir; sabit durur)
           if os.path.exists(custom):
               lg = Image.open(custom).convert("RGBA")
               box = 432
