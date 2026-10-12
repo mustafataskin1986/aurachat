@@ -883,7 +883,7 @@ jobs:
                       androidx.core.splashscreen.SplashScreen ss = androidx.core.splashscreen.SplashScreen.installSplashScreen(this);
                       ss.setKeepOnScreenCondition(new androidx.core.splashscreen.SplashScreen.KeepOnScreenCondition() {
                           @Override
-                          public boolean shouldKeepOnScreen() { return AuraSplash.keep; }
+                          public boolean shouldKeepOnScreen() { return AuraSplash.sysKeep; }
                       });
                       ss.setOnExitAnimationListener(new androidx.core.splashscreen.SplashScreen.OnExitAnimationListener() {
                           @Override
@@ -2070,6 +2070,7 @@ jobs:
               set_items("AppTheme.NoActionBarLaunch", bars + [
                   ("android:background", "@drawable/splash"),
                   ("windowSplashScreenBackground", black),
+                  ("windowSplashScreenAnimatedIcon", "@drawable/aura_splash_icon"),
                   ("windowSplashScreenIconBackgroundColor", black),
                   ("postSplashScreenTheme", "@style/AppTheme.NoActionBar"),
               ])
@@ -2133,12 +2134,14 @@ jobs:
               private static boolean hidden = false;
               // true: sistem açılış ekranı (logo) ekranda kalır; JS "hide" deyince kalkar
               static volatile boolean keep = true;
+              // true: sistem açılış ekranı (siyah) tutulur; kendi ikon ekranımız çizilince bırakılır
+              static volatile boolean sysKeep = true;
 
               public static void show(final Activity activity, WebView webView) {
                   try {
                       hidden = false;
                       keep = true;
-                      // Ayrı bir splash çizmiyoruz: sistem açılış ekranı yeterli
+                      sysKeep = true; // sistem açılış ekranı (logo) liste/sohbet çizilene kadar tutulur
                       if (webView != null) webView.addJavascriptInterface(new Bridge(activity), "AuraSplash");
                       // Güvenlik: sayfa hiç yüklenmezse bile splash sonsuza kadar kalmasın
                       new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
@@ -2178,6 +2181,7 @@ jobs:
 
               public static void hide(final Activity activity) {
                   keep = false;
+                  sysKeep = false;
                   activity.runOnUiThread(new Runnable() {
                       @Override
                       public void run() {
@@ -2538,6 +2542,17 @@ jobs:
           os.makedirs(p, exist_ok=True)
           out.save(p + "/aura_splash_icon.png")
           print("aura_splash_icon.png uretildi")
+
+          # Kendi açılış logonu kullanmak için: static/icons/splash-logo.png dosyasını ekle (şeffaf PNG, kare önerilir)
+          custom = "static/icons/splash-logo.png"
+          if os.path.exists(custom):
+              lg = Image.open(custom).convert("RGBA")
+              box = 432
+              lg.thumbnail((box, box), Image.LANCZOS)
+              cv = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+              cv.paste(lg, ((PX - lg.width) // 2, (PX - lg.height) // 2), lg)
+              cv.save("android/app/src/main/res/drawable-xxhdpi/aura_splash_icon.png")
+              print("Ozel acilis logosu kullanildi:", custom)
 
           # Seçilebilir uygulama ikonları için açılış ekranı logoları + temaları (ikon değişince açılışta o ikon görünür)
           RESX = "android/app/src/main/res"
