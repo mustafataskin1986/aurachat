@@ -984,6 +984,14 @@ jobs:
                           AuraNotif.showSimple(this, data);
                       } else {
                           AuraNotif.show(this, data);
+                          // Fotoğraf geldiyse telefona (Android/media/.../AuraChat Images) hemen indir: sohbet açılınca hazır olsun
+                          try {
+                              String pb = data.get("body");
+                              if (pb != null && pb.length() > 0 && pb.codePointAt(0) == 0x1F4F7
+                                      && !pb.contains("Bir kez") && !"1".equals(data.get("isGroup"))) {
+                                  AuraNotif.fetchImages(this, data.get("chatId"));
+                              }
+                          } catch (Throwable t) {}
                       }
                       return;
                   }
@@ -1609,6 +1617,87 @@ jobs:
                       out.compress(Bitmap.CompressFormat.PNG, 100, fo);
                       fo.close();
                   } catch (Throwable t) {}
+              }
+
+              // ---------- fotoğrafı telefona indir ----------
+              static void fetchImages(Context c, String chatId) {
+                  try {
+                      if (chatId == null || chatId.isEmpty()) return;
+                      String resp = callServerExtra(c, "images", chatId, null, 15000);
+                      if (resp == null) return;
+                      JSONArray items = new JSONObject(resp).optJSONArray("items");
+                      if (items == null || items.length() == 0) return;
+                      File[] dirs = c.getExternalMediaDirs();
+                      if (dirs == null || dirs.length == 0 || dirs[0] == null) return;
+                      File outDir = new File(dirs[0], "AuraChat/Media/AuraChat Images");
+                      if (!outDir.exists() && !outDir.mkdirs()) return;
+                      try { new File(outDir, ".nomedia").createNewFile(); } catch (Throwable t) {}
+                      java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US);
+                      JSONArray acked = new JSONArray();
+                      for (int i = 0; i < items.length(); i++) {
+                          JSONObject it = items.optJSONObject(i);
+                          if (it == null) continue;
+                          String id = it.optString("id", "");
+                          JSONArray imgs = it.optJSONArray("imgs");
+                          if (id.isEmpty() || imgs == null || imgs.length() == 0) continue;
+                          boolean album = it.optBoolean("album", false);
+                          String stamp = fmt.format(new java.util.Date(it.optLong("t", System.currentTimeMillis())));
+                          boolean ok = true;
+                          for (int k = 0; k < imgs.length(); k++) {
+                              String b = imgs.optString(k, "");
+                              int comma = b.indexOf(',');
+                              if (comma >= 0) b = b.substring(comma + 1);
+                              byte[] bytes = Base64.decode(b, Base64.DEFAULT);
+                              String name = "AuraChat_" + stamp + "_" + id + (album ? "_" + (k + 1) : "") + ".jpg";
+                              File f = new File(outDir, name);
+                              FileOutputStream fo = null;
+                              try {
+                                  fo = new FileOutputStream(f);
+                                  fo.write(bytes);
+                              } catch (Throwable t) {
+                                  ok = false;
+                              } finally {
+                                  try { if (fo != null) fo.close(); } catch (Throwable t) {}
+                              }
+                              if (!f.exists() || f.length() != bytes.length) ok = false;
+                          }
+                          if (ok) acked.put(id);
+                      }
+                      if (acked.length() > 0) callServerExtra(c, "ackimages", chatId, acked, 8000);
+                  } catch (Throwable t) {}
+              }
+
+              static String callServerExtra(Context c, String action, String chatId, JSONArray ids, int timeoutMs) {
+                  try {
+                      SharedPreferences s = sp(c);
+                      String rt = s.getString("rt", "");
+                      if (rt == null || rt.isEmpty()) return null;
+                      JSONObject j = new JSONObject();
+                      j.put("refreshToken", rt);
+                      j.put("action", action);
+                      j.put("chatId", chatId);
+                      if (ids != null) j.put("ids", ids);
+                      HttpURLConnection con = (HttpURLConnection) new URL(API).openConnection();
+                      con.setRequestMethod("POST");
+                      con.setConnectTimeout(timeoutMs);
+                      con.setReadTimeout(timeoutMs);
+                      con.setDoOutput(true);
+                      con.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                      OutputStream os = con.getOutputStream();
+                      os.write(j.toString().getBytes("UTF-8"));
+                      os.close();
+                      if (con.getResponseCode() != 200) { con.disconnect(); return null; }
+                      InputStream in = con.getInputStream();
+                      java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                      byte[] buf = new byte[16384];
+                      int n;
+                      while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+                      in.close();
+                      con.disconnect();
+                      return bos.toString("UTF-8");
+                  } catch (Throwable t) {
+                      return null;
+                  }
               }
 
               // ---------- sunucuya istek ----------
