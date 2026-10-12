@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   }
 
   const { refreshToken, action, chatId, text } = req.body || {};
-  if (typeof refreshToken !== 'string' || !refreshToken || !['reply', 'read', 'mute', 'avatar'].includes(action)) {
+  if (typeof refreshToken !== 'string' || !refreshToken || !['reply', 'read', 'mute', 'avatar', 'images', 'ackimages'].includes(action)) {
     return res.status(400).json({ error: 'Eksik parametre.' });
   }
   if (typeof chatId !== 'string' || !ID_RE.test(chatId)) {
@@ -101,20 +101,49 @@ export default async function handler(req, res) {
 
     if (action === 'avatar') {
       // Sadece doğrudan sohbette karşı kişinin profil resmi
-          if (isGroup) {
-        const wanted = typeof text === 'string' ? text : '';
-        let gav = '';
-        if (wanted && ID_RE.test(wanted) && members.includes(wanted)) {
-          const gu = await db.doc(`users/${wanted}`).get();
-          gav = gu.exists && typeof gu.data().avatar === 'string' ? gu.data().avatar : '';
-        } else {
-          gav = typeof groupData.photo === 'string' ? groupData.photo : '';
-        }
-        return res.status(200).json({ avatar: gav.length < 2000000 ? gav : '' });
-      }
+      if (isGroup) return res.status(200).json({ avatar: '' });
       const o = await db.doc(`users/${otherUid}`).get();
       const av = o.exists && typeof o.data().avatar === 'string' ? o.data().avatar : '';
       return res.status(200).json({ avatar: av.length < 2000000 ? av : '' });
+    }
+
+    // Android kodu: yeni gelen (okunmamış) fotoğrafları telefona indirmek için verir
+    if (action === 'images') {
+      if (isGroup) return res.status(200).json({ items: [] });
+      const q = await db.collection(`chats/${chatId}/messages`)
+        .where('senderUid', '==', otherUid).where('read', '==', false).limit(30).get();
+      const items = [];
+      let total = 0;
+      q.docs.forEach((d) => {
+        const m = d.data();
+        if (m.type !== 'image' || m.viewOnce) return;
+        const imgs = Array.isArray(m.images)
+          ? m.images.filter((x) => typeof x === 'string' && x)
+          : (typeof m.imageUrl === 'string' && m.imageUrl ? [m.imageUrl] : []);
+        if (!imgs.length) return;
+        const size = imgs.reduce((a, b) => a + b.length, 0);
+        if (total + size > 3500000) return;
+        total += size;
+        const t = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
+        items.push({ id: d.id, t, album: (m.imagesCount || 0) > 1, imgs });
+      });
+      return res.status(200).json({ items });
+    }
+
+    // Telefona yazıldığı bildirilen fotoğrafların sunucudaki kopyasını temizler (sadece alıcı tarafı, sadece doğrudan sohbet)
+    if (action === 'ackimages') {
+      if (isGroup) return res.status(200).json({ success: true });
+      const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).filter((x) => typeof x === 'string' && /^[A-Za-z0-9]{20}$/.test(x)).slice(0, 30);
+      for (const mid of ids) {
+        const ref = db.doc(`chats/${chatId}/messages/${mid}`);
+        const snap = await ref.get();
+        if (!snap.exists) continue;
+        const m = snap.data();
+        if (m.senderUid !== otherUid || m.type !== 'image' || m.viewOnce) continue;
+        if ((m.imagesCount || 0) > 1) await ref.update({ images: null, imagesDelivered: true });
+        else await ref.update({ imageUrl: null, imageDelivered: true });
+      }
+      return res.status(200).json({ success: true });
     }
 
     if (action === 'read') {
@@ -124,14 +153,6 @@ export default async function handler(req, res) {
 
     const msgText = typeof text === 'string' ? text.trim().slice(0, MAX_TEXT) : '';
     if (!msgText) return res.status(400).json({ error: 'Boş mesaj.' });
-        if (!isGroup) {
-      const oSnap = await db.doc(`users/${otherUid}`).get();
-      const oBlocked = oSnap.exists && Array.isArray(oSnap.data().blockedUids) ? oSnap.data().blockedUids : [];
-      const myBlocked = Array.isArray(me.blockedUids) ? me.blockedUids : [];
-      if (oBlocked.includes(uid) || myBlocked.includes(otherUid)) {
-        return res.status(403).json({ error: 'Engelli.' });
-      }
-    }
 
     const msgRef = await db.collection(`chats/${chatId}/messages`).add({
       text: msgText,
