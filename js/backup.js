@@ -7,7 +7,7 @@
 // ==========================================
 
 import { db, auth } from "./firebase-init.js";
-import { collection, doc, getDoc, getDocs, setDoc, query, orderBy, limit, startAfter, Timestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { collection, doc, getDoc, getDocs, setDoc, serverTimestamp, query, orderBy, limit, startAfter, Timestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { GoogleAuthProvider, reauthenticateWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { showToast, getCurrentUser } from "./chat-core.js";
 import { auraAccent } from "./aura-dialog.js";
@@ -270,7 +270,8 @@ async function doRestore() {
             p.done('Bu yedek bu hesaba ait değil', true);
             return;
         }
-        let restored = 0, failed = 0, skippedCleared = 0;
+        let restored = 0, failed = 0, skippedCleared = 0, rowsMade = 0, existing = 0;
+        let firstErr = '';
         let idx = 0;
         for (const c of data.chats) {
             p.set(15 + (idx / Math.max(1, data.chats.length)) * 80, 'Sohbet ' + (idx + 1) + '/' + data.chats.length);
@@ -286,17 +287,44 @@ async function doRestore() {
                 const s = await getDoc(doc(db, 'users', user.uid, 'chats', c.id));
                 if (s.exists() && s.data().clearedAt && s.data().clearedAt.toMillis) myClear = s.data().clearedAt.toMillis();
             } catch (e) {}
+            let lastRestored = null;
             for (const m of c.messages) {
-                if (have.has(m.id)) continue;
+                if (have.has(m.id)) { existing++; continue; }
                 const d = reviveValue(m.data);
                 const ms = d.createdAt && d.createdAt.toMillis ? d.createdAt.toMillis() : 0;
                 if (myClear && ms <= myClear) { skippedCleared++; continue; }
                 try {
                     await setDoc(doc(db, 'chats', c.id, 'messages', m.id), d);
                     restored++;
+                    lastRestored = { id: m.id, d };
                 } catch (e) {
                     failed++;
+                    if (!firstErr) firstErr = String((e && (e.code || e.message)) || e);
                 }
+            }
+            // Sohbet listesi satırı yoksa (uygulama silinip yeniden kurulduysa) yeniden oluştur
+            try {
+                const rowRef = doc(db, 'users', user.uid, 'chats', c.id);
+                const rowSnap = await getDoc(rowRef);
+                const parts = String(c.id).split('_');
+                const anyMsg = c.messages.length ? c.messages[c.messages.length - 1] : null;
+                if (!rowSnap.exists() && parts.length === 2 && parts.includes(user.uid) && anyMsg) {
+                    const other = parts[0] === user.uid ? parts[1] : parts[0];
+                    const ld = reviveValue(anyMsg.data);
+                    const lt = ld.type === 'image' ? '📷 Fotoğraf' : (ld.text || '');
+                    await setDoc(rowRef, {
+                        otherUid: other,
+                        lastMessage: String(lt).slice(0, 100),
+                        lastMessageTime: ld.createdAt || serverTimestamp(),
+                        lastSenderUid: ld.senderUid || other,
+                        lastMessageRead: true,
+                        unreadCount: 0,
+                        updatedAt: ld.createdAt || serverTimestamp()
+                    }, { merge: true });
+                    rowsMade++;
+                }
+            } catch (e) {
+                if (!firstErr) firstErr = 'liste: ' + String((e && (e.code || e.message)) || e);
             }
         }
         for (const s of (data.starred || [])) {
@@ -304,7 +332,11 @@ async function doRestore() {
         }
         p.set(100, 'Tamamlandı');
         let txt = restored + ' mesaj geri yüklendi';
+        if (existing) txt += ', ' + existing + ' mesaj zaten vardı';
+        if (rowsMade) txt += ', ' + rowsMade + ' sohbet listeye eklendi';
         if (failed) txt += ', ' + failed + ' mesaj yazılamadı';
+        if (firstErr) txt += ' (hata: ' + firstErr + ')';
+        if (restored || rowsMade) txt += '. Uygulamayı kapatıp açarsan görünür.';
         p.done(txt);
     } catch (e) {
         p.done(String((e && e.message) || e || 'Geri yükleme başarısız'), true);
