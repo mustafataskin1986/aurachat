@@ -3202,9 +3202,10 @@ export async function writeGalleryImageBase64(name, base64) {
     const Filesystem = getFilesystemPlugin();
     if (!Filesystem || !GALLERY_NAME_RE.test(name)) return false;
     try {
-        await Filesystem.writeFile({ path: `${GALLERY_SAVE_DIR}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
-    } catch (e) {
         await Filesystem.writeFile({ path: `${GALLERY_DIR}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
+        Filesystem.writeFile({ path: `${GALLERY_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
+    } catch (e) {
+        await Filesystem.writeFile({ path: `${GALLERY_DIR_OLD}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
     }
     galleryFileMapPromise = null;
     return true;
@@ -3297,12 +3298,12 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
                 const fileName = buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx);
 
-                // Önce Galeri klasörü (Pictures/AuraChat): uygulama silinse de kalır. Yazılamazsa uygulama medya klasörüne düş
-                let savedPath = `${GALLERY_SAVE_DIR}/${fileName}`;
+                // WhatsApp gibi: gelen resimler uygulama medya klasörüne yazılır (galeride görünmez). Yazılamazsa eski yola düş
+                let savedPath = `${GALLERY_DIR}/${fileName}`;
                 try {
                     await Filesystem.writeFile({ path: savedPath, data: pureBase64, directory: 'EXTERNAL_STORAGE', recursive: true });
                 } catch (e1) {
-                    savedPath = `${GALLERY_DIR}/${fileName}`;
+                    savedPath = `${GALLERY_DIR_OLD}/${fileName}`;
                     await Filesystem.writeFile({ path: savedPath, data: pureBase64, directory: 'EXTERNAL_STORAGE', recursive: true });
                 }
                 if (savedPath.startsWith(GALLERY_DIR)) {
