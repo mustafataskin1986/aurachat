@@ -102,7 +102,7 @@ async function downloadBackup(token) {
 }
 
 // ---------- İlerleme penceresi ----------
-function openProgress(title) {
+function openProgress(title, doneTitle) {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;z-index:320;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.65);';
     const box = document.createElement('div');
@@ -119,27 +119,35 @@ function openProgress(title) {
     msg.style.cssText = 'font-size:13px;color:#8696a0;margin-top:12px;min-height:18px;';
     box.appendChild(h); box.appendChild(bar); box.appendChild(msg);
     let hidden = false;
+    // Arka plandayken ekranın üstünde (durum çubuğunun altında) tema renginde ilerleme çubuğu
+    const topBar = document.createElement('div');
+    topBar.style.cssText = 'position:fixed;top:0;left:0;height:3px;width:0;z-index:400;background:' + auraAccent() + ';transition:width .25s;pointer-events:none;';
     const bgRow = document.createElement('div');
     bgRow.style.cssText = 'display:flex;justify-content:flex-end;margin-top:16px;';
     const bgBtn = document.createElement('button');
     bgBtn.type = 'button';
     bgBtn.textContent = 'Arka planda devam et';
     bgBtn.style.cssText = 'background:none;border:1px solid ' + auraAccent() + ';border-radius:999px;color:' + auraAccent() + ';font-size:14px;padding:8px 18px;cursor:pointer;';
-    bgBtn.addEventListener('click', () => { hidden = true; try { overlay.remove(); } catch (e) {} showToast('İşlem arka planda sürüyor, bitince haber vereceğim', 3500); });
+    bgBtn.addEventListener('click', () => { hidden = true; try { overlay.remove(); } catch (e) {} try { document.body.appendChild(topBar); topBar.style.width = fill.style.width; } catch (e2) {} });
     bgRow.appendChild(bgBtn);
     box.appendChild(bgRow);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     return {
         set(pct, text) {
-            if (hidden) return;
+            if (hidden) { topBar.style.width = Math.max(4, Math.min(100, pct)) + '%'; return; }
             fill.style.width = Math.max(4, Math.min(100, pct)) + '%';
             if (text != null) msg.textContent = text;
         },
         close() { try { overlay.remove(); } catch (e) {} },
         // Sonucu aynı pencerede göster, altına Kapat butonu koy (pencere kendiliğinden kapanmaz)
         done(text, isError) {
-            if (hidden) { hidden = false; try { document.body.appendChild(overlay); } catch (e) {} }
+            if (hidden) {
+                hidden = false;
+                try { topBar.style.width = '100%'; setTimeout(() => { try { topBar.remove(); } catch (e3) {} }, 300); } catch (e) {}
+                try { document.body.appendChild(overlay); } catch (e) {}
+            }
+            h.textContent = isError ? 'İşlem tamamlanamadı' : (doneTitle || h.textContent);
             try { bgRow.remove(); } catch (e) {}
             fill.style.width = '100%';
             fill.style.background = isError ? '#ef4444' : auraAccent();
@@ -249,7 +257,7 @@ function fmtSize(n) {
 async function doBackup() {
     const user = getCurrentUser();
     if (!user) { showToast('Önce giriş yapmalısın'); return; }
-    const p = openProgress('Drive\'a yedekleniyor');
+    const p = openProgress('Drive\'a yedekleniyor', 'Yedeklendi');
     try {
         p.set(4, 'Google izni isteniyor…');
         const token = await getToken();
@@ -270,7 +278,7 @@ async function doBackup() {
 async function doRestore() {
     const user = getCurrentUser();
     if (!user) { showToast('Önce giriş yapmalısın'); return; }
-    const p = openProgress('Yedekten geri yükleniyor');
+    const p = openProgress('Yedekten geri yükleniyor', 'Geri yüklendi');
     try {
         p.set(4, 'Google izni isteniyor…');
         const token = await getToken();
