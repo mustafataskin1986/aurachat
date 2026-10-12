@@ -1,6 +1,6 @@
 // ==========================================
 // KARANLIK TEMA DÜĞMESİ
-// - Liste ekranındaki üst barda, üç noktanın yanındaki ay simgesi: dokununca açılır/kapanır
+// - Liste ekranındaki üst barda, "AuraChat" yazısındaki C harfi: dokununca açılır/kapanır
 // - Açıkken tüm tam ekran paneller (profil, yıldızlı mesajlar, grup bilgisi, kişiler, tema seçici...),
 //   açılır menüler ve alttan açılan kartlar da siyah olur
 // - Ayar eski "Siyah arayüz" ile aynı anahtarı kullanır (aurachat_black_ui); sohbet temasındaki eski satır gizlenir
@@ -20,7 +20,8 @@ html[data-aura-black] .fixed[class*="bg-[#0b141a]"] [class*="bg-[#202c33]"][clas
 html[data-aura-black] .fixed[class*="bg-[#0b141a]"] [class*="bg-[#111b21]"]:not(input):not(textarea){background-color:#121212 !important}
 html[data-aura-black] .fixed.items-end > [class*="bg-[#202c33]"]{background-color:#121212 !important}
 html[data-aura-black] [class*="bg-[#233138]"]{background-color:#121212 !important}
-html[data-aura-black] #dark-toggle-btn{color:var(--aura-btn,#22c55e) !important}`;
+#dark-toggle-btn{cursor:pointer;display:inline-block;padding:6px 1px;margin:-6px -1px;transition:color .2s,text-shadow .2s}
+html[data-aura-black] #dark-toggle-btn{color:#fff !important;text-shadow:0 0 10px var(--aura-btn,#22c55e)}`;
     document.head.appendChild(s);
 })();
 
@@ -36,7 +37,6 @@ function apply() {
 function paint() {
     const b = document.getElementById('dark-toggle-btn');
     if (!b) return;
-    b.className = (isOn() ? 'fa-solid' : 'fa-regular') + ' fa-moon cursor-pointer hover:text-white transition';
     b.setAttribute('aria-pressed', isOn() ? 'true' : 'false');
 }
 
@@ -44,7 +44,8 @@ function init() {
     const b = document.getElementById('dark-toggle-btn');
     if (!b || b.dataset.bound) return;
     b.dataset.bound = '1';
-    b.addEventListener('click', () => {
+    b.addEventListener('click', (ev) => {
+        ev.stopPropagation(); // başlığın (yönetici) tıklamasını tetiklemesin
         try {
             if (isOn()) localStorage.removeItem(BLACK_KEY);
             else localStorage.setItem(BLACK_KEY, '1');
