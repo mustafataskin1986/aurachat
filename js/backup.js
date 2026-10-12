@@ -9,7 +9,7 @@
 import { db, auth } from "./firebase-init.js";
 import { collection, doc, getDoc, getDocs, setDoc, deleteField, serverTimestamp, query, orderBy, limit, startAfter, Timestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { GoogleAuthProvider, reauthenticateWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { showToast, getCurrentUser } from "./chat-core.js";
+import { showToast, getCurrentUser, resetChatSession } from "./chat-core.js";
 import { auraAccent } from "./aura-dialog.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -139,7 +139,7 @@ function openProgress(title) {
         close() { try { overlay.remove(); } catch (e) {} },
         // Sonucu aynı pencerede göster, altına Kapat butonu koy (pencere kendiliğinden kapanmaz)
         done(text, isError) {
-            if (hidden) { showToast(text, 6000); return; }
+            if (hidden) { hidden = false; try { document.body.appendChild(overlay); } catch (e) {} }
             try { bgRow.remove(); } catch (e) {}
             fill.style.width = '100%';
             fill.style.background = isError ? '#ef4444' : auraAccent();
@@ -151,7 +151,7 @@ function openProgress(title) {
             row.style.cssText = 'display:flex;justify-content:flex-end;margin-top:18px;';
             const b = document.createElement('button');
             b.type = 'button';
-            b.textContent = 'Kapat';
+            b.textContent = 'Tamam';
             b.style.cssText = 'background:none;border:1px solid ' + auraAccent() + ';border-radius:999px;color:' + auraAccent() + ';font-size:16px;padding:9px 22px;cursor:pointer;';
             b.addEventListener('click', () => { try { overlay.remove(); } catch (e) {} });
             row.appendChild(b);
@@ -324,11 +324,14 @@ async function doRestore() {
                         }
                         rowPatch.unreadCount = 0;
                     }
-                    await setDoc(doc(db, 'users', user.uid, 'chats', c.id), rowPatch, { merge: true });
+                    // Önce cihazdaki temizleme işaretini düzelt (liste güncellenince açılan hazırlık eski işareti okumasın)
                     try {
                         if (backupClear) localStorage.setItem('aura_clr_' + user.uid + '_' + c.id, String(backupClear));
                         else localStorage.removeItem('aura_clr_' + user.uid + '_' + c.id);
                     } catch (e) {}
+                    await resetChatSession(c.id);
+                    await setDoc(doc(db, 'users', user.uid, 'chats', c.id), rowPatch, { merge: true });
+                    await resetChatSession(c.id);
                     myClear = backupClear;
                     unhid = true;
                     rowsMade++;
