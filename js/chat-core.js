@@ -1435,6 +1435,20 @@ export async function clearChatForMe(chatId) {
     }
 }
 
+// Yedekten geri yüklemede: bellekteki eski (temizlenmiş) oturumu ve disk önbelleğini at, sohbet baştan okunsun
+export async function resetChatSession(chatId) {
+    try {
+        const session = chatSessions.get(chatId);
+        if (session) {
+            if (session.unsubscribeMessages) session.unsubscribeMessages();
+            if (session.unsubscribeChatDoc) session.unsubscribeChatDoc();
+            if (session.unsubscribeGroupDoc) session.unsubscribeGroupDoc();
+            chatSessions.delete(chatId);
+        }
+        await deleteChatDiskCache(chatId);
+    } catch (e) {}
+}
+
 // Sohbet içinden "Sohbeti temizle": bende kalıcı olarak temizle, herkes temizlediyse Firestore'dan da sil
 export async function wipeChat(chatId) {
     if (!currentUser || !chatId || chatId === 'global') return;
