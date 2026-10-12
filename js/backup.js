@@ -3,13 +3,13 @@
 // - Yedek, kullanıcının Drive'ında gizli "uygulama verisi" klasörüne (appDataFolder) yazılır
 // - Drive izni giriş sırasında DEĞİL, sadece "Yedekle / Geri yükle"ye basılınca istenir
 // - Yedeklenenler: sohbet mesajları (metin + bilgi alanları) ve yıldızlı mesajlar
-// - Resim/belge içeriği yedeğe girmez (zaten Galeri / İndirilenler klasöründe)
+// - Telefondaki (Galeri) resimler de ayrı dosyalar olarak yedeklenir; geri yüklemede telefonda olmayanlar indirilir
 // ==========================================
 
 import { db, auth } from "./firebase-init.js";
 import { collection, doc, getDoc, getDocs, setDoc, deleteField, serverTimestamp, query, orderBy, limit, startAfter, Timestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { GoogleAuthProvider, reauthenticateWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { showToast, getCurrentUser, resetChatSession } from "./chat-core.js";
+import { showToast, getCurrentUser, resetChatSession, listGalleryImages, readGalleryImageBase64, writeGalleryImageBase64 } from "./chat-core.js";
 import { auraAccent } from "./aura-dialog.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -135,6 +135,97 @@ async function downloadBackup(token) {
     if (!f) return null;
     const res = await driveFetch(token, 'https://www.googleapis.com/drive/v3/files/' + f.id + '?alt=media');
     return { text: await res.text(), modifiedTime: f.modifiedTime };
+}
+
+// ---------- Resim yedeği (her resim Drive appData içinde ayrı dosya) ----------
+const IMG_PREFIX = 'aurachat-img-';
+
+async function listDriveImages(token) {
+    const out = new Map();
+    let pageToken = '';
+    do {
+        const q = encodeURIComponent("name contains '" + IMG_PREFIX + "'");
+        const url = 'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=' + q
+            + '&fields=nextPageToken,files(id,name)&pageSize=1000' + (pageToken ? '&pageToken=' + pageToken : '');
+        const j = await (await driveFetch(token, url)).json();
+        (j.files || []).forEach((f) => { if (f.name && f.name.indexOf(IMG_PREFIX) === 0) out.set(f.name.slice(IMG_PREFIX.length), f.id); });
+        pageToken = j.nextPageToken || '';
+    } while (pageToken);
+    return out;
+}
+
+function b64ToBytes(b64) {
+    const clean = String(b64).indexOf(',') >= 0 ? String(b64).split(',')[1] : String(b64);
+    const bin = atob(clean);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+}
+
+function bytesToB64(buf) {
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    const CH = 0x8000;
+    for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    return btoa(bin);
+}
+
+async function uploadDriveImage(token, name, b64) {
+    const boundary = 'auraimg' + Date.now() + Math.random().toString(36).slice(2);
+    const meta = { name: IMG_PREFIX + name, parents: ['appDataFolder'] };
+    const body = new Blob([
+        '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n',
+        '--' + boundary + '\r\nContent-Type: image/jpeg\r\n\r\n',
+        b64ToBytes(b64),
+        '\r\n--' + boundary + '--'
+    ]);
+    await driveFetch(token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'multipart/related; boundary=' + boundary },
+        body
+    });
+}
+
+// Kuyruktaki işleri en fazla 3 paralel çalıştırır
+async function runPool(items, worker, onStep) {
+    let i = 0, ok = 0, fail = 0;
+    const run = async () => {
+        while (i < items.length) {
+            const it = items[i++];
+            try { await worker(it); ok++; } catch (e) { fail++; }
+            if (onStep) onStep(ok + fail, items.length);
+        }
+    };
+    await Promise.all([run(), run(), run()]);
+    return { ok, fail };
+}
+
+async function backupImages(token, p, from, to) {
+    let local = [];
+    try { local = await listGalleryImages(); } catch (e) {}
+    if (!local.length) return { sent: 0, had: 0, fail: 0 };
+    const onDrive = await listDriveImages(token);
+    const todo = local.filter((x) => !onDrive.has(x.name));
+    const r = await runPool(todo, async (x) => {
+        const b64 = await readGalleryImageBase64(x.path);
+        if (!b64) throw new Error('okunamadı');
+        await uploadDriveImage(token, x.name, b64);
+    }, (n, total) => p.set(from + (n / Math.max(1, total)) * (to - from), 'Resimler yükleniyor… ' + n + '/' + total));
+    return { sent: r.ok, had: local.length - todo.length, fail: r.fail };
+}
+
+async function restoreImages(token, p, from, to) {
+    let local = new Set();
+    try { (await listGalleryImages()).forEach((x) => local.add(x.name)); } catch (e) {}
+    const onDrive = await listDriveImages(token);
+    const todo = [];
+    onDrive.forEach((id, name) => { if (!local.has(name)) todo.push({ id, name }); });
+    const r = await runPool(todo, async (x) => {
+        const res = await driveFetch(token, 'https://www.googleapis.com/drive/v3/files/' + x.id + '?alt=media');
+        const ok = await writeGalleryImageBase64(x.name, bytesToB64(await res.arrayBuffer()));
+        if (!ok) throw new Error('yazılamadı');
+    }, (n, total) => p.set(from + (n / Math.max(1, total)) * (to - from), 'Resimler indiriliyor… ' + n + '/' + total));
+    return { got: r.ok, had: local.size, fail: r.fail, driveCount: onDrive.size };
 }
 
 // ---------- İlerleme penceresi ----------
@@ -264,7 +355,7 @@ async function buildBackup(me, p) {
     let done = 0;
     for (const c of chats) {
         const cleared = c.data.clearedAt && c.data.clearedAt.toMillis ? c.data.clearedAt.toMillis() : 0;
-        p.set(10 + (done / Math.max(1, chats.length)) * 75, 'Sohbetler okunuyor… ' + (done + 1) + '/' + chats.length);
+        p.set(10 + (done / Math.max(1, chats.length)) * 68, 'Sohbetler okunuyor… ' + (done + 1) + '/' + chats.length);
         let msgs = [];
         try { msgs = await collectMessages(c.id, cleared); } catch (e) { msgs = []; }
         result.chats.push({ id: c.id, clearedAt: cleared || null, messages: msgs });
@@ -299,13 +390,18 @@ async function doBackup() {
         const token = await getToken();
         markDriveAllowed();
         const data = await buildBackup(user.uid, p);
-        p.set(90, 'Drive\'a yükleniyor…');
+        p.set(80, 'Drive\'a yükleniyor…');
         const json = JSON.stringify(data);
         await uploadBackup(token, json);
+        let imgInfo = { sent: 0, had: 0, fail: 0 };
+        try { imgInfo = await backupImages(token, p, 82, 99); } catch (e) { imgInfo.fail = 1; }
         const total = data.chats.reduce((a, c) => a + c.messages.length, 0);
         try { localStorage.setItem(LAST_KEY, JSON.stringify({ t: Date.now(), size: json.length, msgs: total })); } catch (e) {}
         p.set(100, 'Tamamlandı');
-        p.done('Yedeklendi: ' + total + ' mesaj, ' + fmtSize(json.length));
+        let doneTxt = 'Yedeklendi: ' + total + ' mesaj, ' + fmtSize(json.length);
+        const imgTotal = imgInfo.sent + imgInfo.had;
+        if (imgTotal || imgInfo.fail) doneTxt += ', ' + imgTotal + ' resim' + (imgInfo.fail ? ' (' + imgInfo.fail + ' resim yüklenemedi, tekrar dene)' : '');
+        p.done(doneTxt);
     } catch (e) {
         if (e && e.userCancelled) { p.close(); return; }
         p.done(String((e && e.message) || e || 'Yedekleme başarısız'), true);
@@ -332,7 +428,7 @@ async function doRestore() {
         let firstErr = '';
         let idx = 0;
         for (const c of data.chats) {
-            p.set(15 + (idx / Math.max(1, data.chats.length)) * 80, 'Sohbet ' + (idx + 1) + '/' + data.chats.length);
+            p.set(15 + (idx / Math.max(1, data.chats.length)) * 78, 'Sohbet ' + (idx + 1) + '/' + data.chats.length);
             idx++;
             // Şu an sunucuda olan mesajları bul, sadece eksikleri yaz
             const have = new Set();
@@ -401,13 +497,18 @@ async function doRestore() {
         for (const s of (data.starred || [])) {
             try { await setDoc(doc(db, 'users', user.uid, 'starred', s.id), reviveValue(s.data), { merge: true }); } catch (e) {}
         }
+        let imgR = { got: 0, had: 0, fail: 0, driveCount: 0 };
+        try { imgR = await restoreImages(token, p, 95, 99); } catch (e) { imgR.fail = 1; }
         p.set(100, 'Tamamlandı');
         let txt = restored + ' mesaj geri yüklendi';
+        if (imgR.got) txt += ', ' + imgR.got + ' resim telefona indirildi';
+        else if (imgR.driveCount) txt += ', resimler telefonda zaten vardı';
+        if (imgR.fail) txt += ', ' + imgR.fail + ' resim indirilemedi';
         if (existing) txt += ', ' + existing + ' mesaj zaten vardı';
         if (rowsMade) txt += ', ' + rowsMade + ' sohbet geri getirildi';
         if (failed) txt += ', ' + failed + ' mesaj yazılamadı';
         if (firstErr) txt += ' (hata: ' + firstErr + ')';
-        if (restored || rowsMade) txt += '. Uygulamayı kapatıp açarsan görünür.';
+        if (restored || rowsMade || imgR.got) txt += '. Uygulamayı kapatıp açarsan görünür.';
         p.done(txt);
     } catch (e) {
         if (e && e.userCancelled) { p.close(); return; }
