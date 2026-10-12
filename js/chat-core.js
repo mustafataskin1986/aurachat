@@ -3180,6 +3180,36 @@ function loadGalleryFileMap() {
     return galleryFileMapPromise;
 }
 
+// ---- Drive yedeği için: telefondaki galeri resimlerini listele / oku / yaz ----
+export async function listGalleryImages() {
+    const map = await loadGalleryFileMap();
+    const seen = new Map();
+    for (const path of map.values()) {
+        const name = String(path).split('/').pop();
+        if (!seen.has(name)) seen.set(name, path);
+    }
+    return Array.from(seen, ([name, path]) => ({ name, path }));
+}
+
+export async function readGalleryImageBase64(path) {
+    const Filesystem = getFilesystemPlugin();
+    if (!Filesystem) return null;
+    const r = await Filesystem.readFile({ path, directory: 'EXTERNAL_STORAGE' });
+    return r.data;
+}
+
+export async function writeGalleryImageBase64(name, base64) {
+    const Filesystem = getFilesystemPlugin();
+    if (!Filesystem || !GALLERY_NAME_RE.test(name)) return false;
+    try {
+        await Filesystem.writeFile({ path: `${GALLERY_SAVE_DIR}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
+    } catch (e) {
+        await Filesystem.writeFile({ path: `${GALLERY_DIR}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
+    }
+    galleryFileMapPromise = null;
+    return true;
+}
+
 function getMessageTimeMs(chatId, msgId) {
     const s = chatSessions.get(chatId);
     if (s) {
@@ -3267,12 +3297,12 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 const pureBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
                 const fileName = buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx);
 
-                let savedPath = `${GALLERY_DIR}/${fileName}`;
+                // Önce Galeri klasörü (Pictures/AuraChat): uygulama silinse de kalır. Yazılamazsa uygulama medya klasörüne düş
+                let savedPath = `${GALLERY_SAVE_DIR}/${fileName}`;
                 try {
                     await Filesystem.writeFile({ path: savedPath, data: pureBase64, directory: 'EXTERNAL_STORAGE', recursive: true });
                 } catch (e1) {
-                    // Yeni klasöre yazılamazsa eski yola düş
-                    savedPath = `${GALLERY_DIR_OLD}/${fileName}`;
+                    savedPath = `${GALLERY_DIR}/${fileName}`;
                     await Filesystem.writeFile({ path: savedPath, data: pureBase64, directory: 'EXTERNAL_STORAGE', recursive: true });
                 }
                 if (savedPath.startsWith(GALLERY_DIR)) {
