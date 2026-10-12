@@ -1762,13 +1762,19 @@ function appendLaunchTemps(session) {
             const phExtra = phCount > 1
                 ? { type: 'image', images: [], imagesCount: phCount, text: '' }
                 : (phCount === 1 ? { type: 'image', imageDelivered: true, text: '' } : { type: 'text', text: i.text });
-            fragment.appendChild(buildMessageElement({
-                ...phExtra,
-                senderUid: currentOtherUid || 'other',
-                senderName: currentChatName || '',
-                createdAt: Timestamp.fromMillis(i.t || Date.now()),
-                read: false
-            }, false, i.id));
+            const prevCid = currentChatId;
+            currentChatId = session.chatId; // resim önbelleği anahtarı için
+            try {
+                fragment.appendChild(buildMessageElement({
+                    ...phExtra,
+                    senderUid: currentOtherUid || 'other',
+                    senderName: currentChatName || '',
+                    createdAt: Timestamp.fromMillis(i.t || Date.now()),
+                    read: false
+                }, false, i.id));
+            } finally {
+                currentChatId = prevCid;
+            }
         });
         messageContainer.appendChild(fragment);
         unreadDivider = { chatId: session.chatId, msgId: fresh[0].id, count: fresh.length };
@@ -3130,6 +3136,8 @@ function galleryKey(msgId, idx) {
 }
 
 let galleryMapScannedAt = 0;
+// Uygulama arka plandan dönünce klasör yeniden taransın (Android kodu yeni resimleri yazmış olabilir)
+try { document.addEventListener('visibilitychange', () => { if (!document.hidden) galleryFileMapPromise = null; }); } catch (e) {}
 function loadGalleryFileMap() {
     if (galleryFileMapPromise) return galleryFileMapPromise;
     galleryMapScannedAt = Date.now();
@@ -3205,7 +3213,13 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
             if (map.size === 0 && Date.now() - galleryMapScannedAt > 5000) galleryFileMapPromise = null;
             map = await loadGalleryFileMap();
             const key = galleryKey(msgId, idx);
-            const knownName = map.get(key);
+            let knownName = map.get(key);
+            // Telefon (Android kodu) resmi arka planda yazmış olabilir: bulunamazsa klasörü yeniden tara (en fazla 2 sn'de bir)
+            if (!knownName && !base64Data && Date.now() - galleryMapScannedAt > 2000) {
+                galleryFileMapPromise = null;
+                map = await loadGalleryFileMap();
+                knownName = map.get(key);
+            }
 
             // 1. Galeride bu mesajın resmi varsa oradan oku
             if (knownName) {
@@ -6784,7 +6798,19 @@ export async function paintLaunchFromDisk(L) {
                     jobs.push(resolveLocalMedia(L.chatId, id, null).catch(() => null));
                 }
             });
-            if (jobs.length) await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 400))]);
+            // Bildirimdeki yeni fotoğraflar: Android kodu telefona yazdıysa bulunur
+            (Array.isArray(L.msgs) ? L.msgs : []).forEach((lm) => {
+                const mm2 = lm && lm.tag && /^📷\s*(\d+)?\s*Fotoğraf$/.exec(String(lm.text || '').trim());
+                if (!mm2) return;
+                const nid = String(lm.tag).slice(4);
+                const cnt2 = Math.max(1, Math.min(Number(mm2[1] || 1), 10));
+                if (cnt2 > 1) {
+                    for (let i = 0; i < Math.min(cnt2, 4); i++) jobs.push(resolveLocalMedia(L.chatId, nid, null, i).catch(() => null));
+                } else {
+                    jobs.push(resolveLocalMedia(L.chatId, nid, null).catch(() => null));
+                }
+            });
+            if (jobs.length) await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 500))]);
         } catch (e) {}
         if (currentChatId) return false;
 
