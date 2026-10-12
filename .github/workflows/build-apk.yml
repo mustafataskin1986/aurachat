@@ -1648,11 +1648,22 @@ jobs:
                       if (resp == null) return;
                       JSONArray items = new JSONObject(resp).optJSONArray("items");
                       if (items == null || items.length() == 0) return;
-                      File[] dirs = c.getExternalMediaDirs();
-                      if (dirs == null || dirs.length == 0 || dirs[0] == null) return;
-                      File outDir = new File(dirs[0], "AuraChat/Media/AuraChat Images");
-                      if (!outDir.exists() && !outDir.mkdirs()) return;
-                      try { new File(outDir, ".nomedia").createNewFile(); } catch (Throwable t) {}
+                      // Önce Galeri (Pictures/AuraChat): uygulama silinse de kalır. Yazılamazsa uygulama medya klasörüne düş
+                      File outDir = null;
+                      try {
+                          File pics = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "AuraChat");
+                          if (pics.exists() || pics.mkdirs()) {
+                              File probe = new File(pics, ".aura_probe");
+                              if (probe.createNewFile() || probe.exists()) { probe.delete(); outDir = pics; }
+                          }
+                      } catch (Throwable t) { outDir = null; }
+                      if (outDir == null) {
+                          File[] dirs = c.getExternalMediaDirs();
+                          if (dirs == null || dirs.length == 0 || dirs[0] == null) return;
+                          outDir = new File(dirs[0], "AuraChat/Media/AuraChat Images");
+                          if (!outDir.exists() && !outDir.mkdirs()) return;
+                          try { new File(outDir, ".nomedia").createNewFile(); } catch (Throwable t) {}
+                      }
                       java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US);
                       JSONArray acked = new JSONArray();
                       for (int i = 0; i < items.length(); i++) {
