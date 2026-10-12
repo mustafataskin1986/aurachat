@@ -2033,18 +2033,37 @@ jobs:
           import re
           p = "android/app/src/main/res/values/styles.xml"
           s = open(p, encoding="utf-8").read()
-          def add(name, item):
+
+          def set_items(name, items):
+              """Stilin içindeki öğeleri (varsa değiştirir, yoksa ekler). Stil yoksa oluşturur."""
               global s
-              m = re.search(r'(<style name="%s"[^>]*>)' % re.escape(name), s)
-              if m and item not in s:
-                  s = s.replace(m.group(1), m.group(1) + "\n        " + item, 1)
-          add("AppTheme.NoActionBar", '<item name="android:windowBackground">@android:color/black</item>')
-          add("AppTheme.NoActionBarLaunch", '<item name="android:windowBackground">@android:color/black</item>')
+              m = re.search(r'(<style name="%s"[^>]*>)(.*?)(</style>)' % re.escape(name), s, re.S)
+              if not m:
+                  return False
+              body = m.group(2)
+              for k, v in items:
+                  body = re.sub(r'\s*<item name="%s">[^<]*</item>' % re.escape(k), '', body)
+                  body += '\n        <item name="%s">%s</item>' % (k, v)
+              s = s[:m.start(2)] + body + "\n    " + s[m.end(2):]
+              return True
+
+          black = "@android:color/black"
+          bars = [("android:statusBarColor", black), ("android:navigationBarColor", black),
+                  ("android:windowBackground", black), ("android:windowLightStatusBar", "false")]
+          # Uygulama teması: üst/alt çubuk ve zemin siyah, başlık çubuğu (ActionBar) yok
+          set_items("AppTheme.NoActionBar", bars)
+          set_items("AppTheme", bars)
+          # Açılış teması: sistem açılış ekranı siyah zemin + logo; bitince AppTheme.NoActionBar'a geç
           if "Theme.SplashScreen" in s:
-              add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenBackground">@android:color/black</item>')
-              # Sistem açılış ekranı: seçili ikon (launcher ikonu) siyah zeminde görünsün; ikonun arkasındaki yuvarlak zemin de siyah olsun
-              add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenIconBackgroundColor">@android:color/black</item>')
+              set_items("AppTheme.NoActionBarLaunch", bars + [
+                  ("android:background", "@drawable/splash"),
+                  ("windowSplashScreenBackground", black),
+                  ("windowSplashScreenAnimatedIcon", "@drawable/aura_splash_icon"),
+                  ("windowSplashScreenIconBackgroundColor", black),
+                  ("postSplashScreenTheme", "@style/AppTheme.NoActionBar"),
+              ])
           open(p, "w", encoding="utf-8").write(s)
+          print(s)
           PY
           
       - name: Sistem açılış ekranı kütüphanesi (core-splashscreen)
