@@ -28,10 +28,35 @@ function getTokenNative() {
             reject(new Error('Bu özellik için uygulamanın yeni sürümü (APK) gerekli.'));
             return;
         }
-        const t = setTimeout(() => reject(new Error('Google izni zaman aşımına uğradı.')), 120000);
-        window.__auraDriveCb = (token, err) => {
+        let wasAway = false;
+        let grace = null;
+        const cleanup = () => {
             clearTimeout(t);
+            clearTimeout(grace);
+            document.removeEventListener('visibilitychange', onVis);
+            window.removeEventListener('focus', onFocus);
+            window.removeEventListener('blur', onBlur);
             window.__auraDriveCb = null;
+        };
+        // Google ekranı açılınca uygulama arka plana gider. Geri dönünce kısa süre içinde cevap gelmediyse kişi vazgeçmiştir
+        const back = () => {
+            if (!wasAway) return;
+            clearTimeout(grace);
+            grace = setTimeout(() => {
+                if (!window.__auraDriveCb) return;
+                cleanup();
+                reject(new Error('Google izni iptal edildi.'));
+            }, 2500);
+        };
+        const onVis = () => { if (document.hidden) { wasAway = true; clearTimeout(grace); } else back(); };
+        const onBlur = () => { wasAway = true; clearTimeout(grace); };
+        const onFocus = () => back();
+        const t = setTimeout(() => { cleanup(); reject(new Error('Google izni zaman aşımına uğradı.')); }, 120000);
+        document.addEventListener('visibilitychange', onVis);
+        window.addEventListener('focus', onFocus);
+        window.addEventListener('blur', onBlur);
+        window.__auraDriveCb = (token, err) => {
+            cleanup();
             if (token) resolve(token); else reject(new Error(err || 'Drive izni alınamadı.'));
         };
         window.AuraDrive.requestToken();
