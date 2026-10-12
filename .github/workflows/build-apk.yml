@@ -878,6 +878,20 @@ jobs:
               }
               @Override
               public void onCreate(Bundle savedInstanceState) {
+                  // Sistem açılış ekranı (logo) liste/sohbet çizilene kadar ekranda tutulur; kendi splash'ımız yok
+                  try {
+                      androidx.core.splashscreen.SplashScreen ss = androidx.core.splashscreen.SplashScreen.installSplashScreen(this);
+                      ss.setKeepOnScreenCondition(new androidx.core.splashscreen.SplashScreen.KeepOnScreenCondition() {
+                          @Override
+                          public boolean shouldKeepOnScreen() { return AuraSplash.keep; }
+                      });
+                      ss.setOnExitAnimationListener(new androidx.core.splashscreen.SplashScreen.OnExitAnimationListener() {
+                          @Override
+                          public void onSplashScreenExit(androidx.core.splashscreen.SplashScreenViewProvider provider) {
+                              try { provider.remove(); } catch (Throwable t) {}
+                          }
+                      });
+                  } catch (Throwable t) {}
                   super.onCreate(savedInstanceState);
                   AuraSplash.show(this, this.bridge.getWebView());
                   WebSettings settings = this.bridge.getWebView().getSettings();
@@ -2028,10 +2042,19 @@ jobs:
           add("AppTheme.NoActionBarLaunch", '<item name="android:windowBackground">@android:color/black</item>')
           if "Theme.SplashScreen" in s:
               add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenBackground">@android:color/black</item>')
-              add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenAnimatedIcon">@drawable/aura_transparent</item>')
+              # Sistem açılış ekranı: seçili ikon (launcher ikonu) siyah zeminde görünsün; ikonun arkasındaki yuvarlak zemin de siyah olsun
+              add("AppTheme.NoActionBarLaunch", '<item name="windowSplashScreenIconBackgroundColor">@android:color/black</item>')
           open(p, "w", encoding="utf-8").write(s)
           PY
           
+      - name: Sistem açılış ekranı kütüphanesi (core-splashscreen)
+        run: |
+          G="android/app/build.gradle"
+          if ! grep -q "core-splashscreen" "$G"; then
+            sed -i '0,/^dependencies {/s//dependencies {\n    implementation "androidx.core:core-splashscreen:1.0.1"/' "$G"
+          fi
+          grep -n "core-splashscreen" "$G" || true
+
       - name: Seçim Tutamaçları Renk Paleti (sohbet temasına göre)
         run: |
           python3 - << 'PY'
@@ -2078,13 +2101,14 @@ jobs:
           public class AuraSplash {
               private static View overlay = null;
               private static boolean hidden = false;
+              // true: sistem açılış ekranı (logo) ekranda kalır; JS "hide" deyince kalkar
+              static volatile boolean keep = true;
 
               public static void show(final Activity activity, WebView webView) {
                   try {
                       hidden = false;
-                      overlay = buildIconOverlay(activity);
-                      activity.addContentView(overlay, new ViewGroup.LayoutParams(
-                              ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                      keep = true;
+                      // Ayrı bir splash çizmiyoruz: sistem açılış ekranı yeterli
                       if (webView != null) webView.addJavascriptInterface(new Bridge(activity), "AuraSplash");
                       // Güvenlik: sayfa hiç yüklenmezse bile splash sonsuza kadar kalmasın
                       new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
@@ -2123,6 +2147,7 @@ jobs:
               }
 
               public static void hide(final Activity activity) {
+                  keep = false;
                   activity.runOnUiThread(new Runnable() {
                       @Override
                       public void run() {
