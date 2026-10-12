@@ -3230,6 +3230,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                     });
                     const src = toImageSrc(found.data);
                     mediaUriCache.set(cacheKey, src);
+                    rememberLocalThumb(cacheKey, src);
                     return src;
                 } catch (e) {
                     map.delete(key); // galeriden silinmiş
@@ -3243,6 +3244,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
             if (isOwnMessage(chatId, msgId)) {
                 const ownSrc = toImageSrc(base64Data);
                 mediaUriCache.set(cacheKey, ownSrc);
+                rememberLocalThumb(cacheKey, ownSrc);
                 return ownSrc;
             }
 
@@ -3267,6 +3269,7 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
 
                 const src = `data:image/jpeg;base64,${pureBase64}`;
                 mediaUriCache.set(cacheKey, src);
+                rememberLocalThumb(cacheKey, src);
                 return src;
             } catch (err) {
                 console.warn("Medya galeriye yazılamadı:", err);
@@ -3349,7 +3352,7 @@ function buildAlbumTilesHtml(chatId, msgId, imagesCount, thumbs) {
         const showOverlay = i === maxTiles - 1 && extra > 0;
         const inner = cachedSrc
      ? `<img src="${cachedSrc}" class="w-full h-full object-cover" data-media-msg="${msgId}" data-media-idx="${i}" oncontextmenu="return false" draggable="false" style="-webkit-user-drag:none;" onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})">`
-            : buildBlurPlaceholder((Array.isArray(thumbs) ? thumbs[i] : '') || '', `data-media-msg="${msgId}" data-media-idx="${i}"`, 'width:100%;height:100%;', `onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})"`);
+            : buildBlurPlaceholder((Array.isArray(thumbs) ? thumbs[i] : '') || getLocalThumb(`${chatId}/${msgId}_${i}`), `data-media-msg="${msgId}" data-media-idx="${i}"`, 'width:100%;height:100%;', `onclick="openAlbumLightbox('${chatId}','${msgId}',${imagesCount},${i})"`);
         tiles += `
             <div class="relative overflow-hidden" style="aspect-ratio:1/1;">
                 ${inner}
@@ -3424,7 +3427,7 @@ if (isViewOnce) {
     } else if (isSingleImage) {
         bodyHtml = initialImgSrc
             ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;-webkit-user-drag:none;" data-media-msg="${msgId}" oncontextmenu="return false" draggable="false" onclick="openImageLightbox(this.src)">`
-            : buildBlurPlaceholder(msg.thumb || '', `data-media-msg="${msgId}"`, 'width:220px;height:220px;max-width:100%;', '');
+            : buildBlurPlaceholder(msg.thumb || getLocalThumb(`${currentChatId}/${msgId}`), `data-media-msg="${msgId}"`, 'width:220px;height:220px;max-width:100%;', '');
         if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
 } else if (msg.type === 'location') {
         bodyHtml = `<div class="cursor-pointer" style="min-width:200px;" onclick="openLocation(${Number(msg.lat)},${Number(msg.lng)})">
@@ -5768,6 +5771,24 @@ function makeTinyThumb(dataUrl) {
             img.src = dataUrl;
         } catch (e) { resolve(''); }
     });
+}
+
+// Resim telefondan okunduğunda minik önizlemesini cihazda saklar (eski mesajlar için de bulanık önizleme olsun)
+function getLocalThumb(key) {
+    try { return localStorage.getItem('aura_th_' + key) || ''; } catch (e) { return ''; }
+}
+function rememberLocalThumb(key, src) {
+    try {
+        if (!src || localStorage.getItem('aura_th_' + key)) return;
+        const run = () => {
+            makeTinyThumb(src).then((t) => {
+                if (!t) return;
+                try { localStorage.setItem('aura_th_' + key, t); } catch (e) {}
+            });
+        };
+        if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 4000 });
+        else setTimeout(run, 1500);
+    } catch (e) {}
 }
 
 // Bulanık önizleme balonu (resim henüz/artık telefonda yok)
