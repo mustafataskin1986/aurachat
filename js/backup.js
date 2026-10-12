@@ -50,8 +50,19 @@ async function getTokenWeb() {
     return cred.accessToken;
 }
 
+// Google izin ekranından vazgeçilmesi (geri tuşu, pencereyi kapatma, "iptal") hata sayılmaz
+function isCancelError(e) {
+    const t = String((e && (e.code || e.message)) || e || '').toLowerCase();
+    return /cancel|iptal|vazge|12501|12502|closed-by-user|popup-closed|dismiss|reddedil|denied|access_denied/.test(t);
+}
+
 async function getToken() {
-    return isNative() ? getTokenNative() : getTokenWeb();
+    try {
+        return await (isNative() ? getTokenNative() : getTokenWeb());
+    } catch (e) {
+        if (isCancelError(e)) e.userCancelled = true;
+        throw e;
+    }
 }
 
 // ---------- Drive REST ----------
@@ -139,7 +150,7 @@ function openProgress(title, doneTitle) {
             fill.style.width = Math.max(4, Math.min(100, pct)) + '%';
             if (text != null) msg.textContent = text;
         },
-        close() { try { overlay.remove(); } catch (e) {} },
+        close() { try { overlay.remove(); } catch (e) {} try { topBar.remove(); } catch (e) {} },
         // Sonucu aynı pencerede göster, altına Kapat butonu koy (pencere kendiliğinden kapanmaz)
         done(text, isError) {
             if (hidden) {
@@ -271,6 +282,7 @@ async function doBackup() {
         p.set(100, 'Tamamlandı');
         p.done('Yedeklendi: ' + total + ' mesaj, ' + fmtSize(json.length));
     } catch (e) {
+        if (e && e.userCancelled) { p.close(); return; }
         p.done(String((e && e.message) || e || 'Yedekleme başarısız'), true);
     }
 }
@@ -373,6 +385,7 @@ async function doRestore() {
         if (restored || rowsMade) txt += '. Uygulamayı kapatıp açarsan görünür.';
         p.done(txt);
     } catch (e) {
+        if (e && e.userCancelled) { p.close(); return; }
         p.done(String((e && e.message) || e || 'Geri yükleme başarısız'), true);
     }
 }
