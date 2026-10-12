@@ -539,13 +539,6 @@ jobs:
                           } catch (Throwable t) {}
                       }
                   } catch (Throwable t) {}
-                  // Açılış ekranı logosu da seçilen ikona göre değişsin (Android 13+; sonraki açılıştan itibaren)
-                  try {
-                      if (android.os.Build.VERSION.SDK_INT >= 33) {
-                          int th = getResources().getIdentifier("AppTheme_Splash" + target, "style", getPackageName());
-                          if (th != 0) getSplashScreen().setSplashScreenTheme(th);
-                      }
-                  } catch (Throwable t) {}
               }
 
               @Override
@@ -1648,21 +1641,22 @@ jobs:
                       if (resp == null) return;
                       JSONArray items = new JSONObject(resp).optJSONArray("items");
                       if (items == null || items.length() == 0) return;
-                      // Önce Galeri (Pictures/AuraChat): uygulama silinse de kalır. Yazılamazsa uygulama medya klasörüne düş
+                      // WhatsApp gibi: uygulama medya klasörü (galeride görünmez). Olmazsa Pictures/AuraChat'e düş
                       File outDir = null;
                       try {
-                          File pics = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "AuraChat");
-                          if (pics.exists() || pics.mkdirs()) {
-                              File probe = new File(pics, ".aura_probe");
-                              if (probe.createNewFile() || probe.exists()) { probe.delete(); outDir = pics; }
+                          File[] dirs = c.getExternalMediaDirs();
+                          if (dirs != null && dirs.length > 0 && dirs[0] != null) {
+                              File md = new File(dirs[0], "AuraChat/Media/AuraChat Images");
+                              if (md.exists() || md.mkdirs()) {
+                                  outDir = md;
+                                  try { new File(md, ".nomedia").createNewFile(); } catch (Throwable t) {}
+                              }
                           }
                       } catch (Throwable t) { outDir = null; }
                       if (outDir == null) {
-                          File[] dirs = c.getExternalMediaDirs();
-                          if (dirs == null || dirs.length == 0 || dirs[0] == null) return;
-                          outDir = new File(dirs[0], "AuraChat/Media/AuraChat Images");
-                          if (!outDir.exists() && !outDir.mkdirs()) return;
-                          try { new File(outDir, ".nomedia").createNewFile(); } catch (Throwable t) {}
+                          File pics = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "AuraChat");
+                          if (!pics.exists() && !pics.mkdirs()) return;
+                          outDir = pics;
                       }
                       java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US);
                       JSONArray acked = new JSONArray();
@@ -2076,7 +2070,6 @@ jobs:
               set_items("AppTheme.NoActionBarLaunch", bars + [
                   ("android:background", "@drawable/splash"),
                   ("windowSplashScreenBackground", black),
-                  ("windowSplashScreenAnimatedIcon", "@drawable/aura_splash_icon"),
                   ("windowSplashScreenIconBackgroundColor", black),
                   ("postSplashScreenTheme", "@style/AppTheme.NoActionBar"),
               ])
@@ -2567,10 +2560,6 @@ jobs:
               themes += ['    <style name="AppTheme.Splash%d" parent="AppTheme.NoActionBarLaunch">' % n,
                          '        <item name="windowSplashScreenAnimatedIcon">@drawable/aura_splash_alt_%d</item>' % n,
                          '    </style>']
-          os.makedirs(RESX + "/values", exist_ok=True)
-          open(RESX + "/values/aura_splash_themes.xml", "w").write(
-              '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n' + "\n".join(themes) + '\n</resources>\n')
-          print("Splash temalari yazildi")
           PY
 
       - name: APK Derle (Gradle)
