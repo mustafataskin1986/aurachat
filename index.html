@@ -113,7 +113,7 @@ html[data-aura-black] #chat-area [class*="bg-[#111b21]"]:not(input):not(textarea
 html[data-aura-black]{--aura-composer-bg:#000}
 html[data-aura-black] #chat-scroll-wrapper div:has(> #search-contact){background-color:#202c33 !important}
 html[data-aura-black],html[data-aura-black] body{background:#000 !important}
-html[data-aura-admin] #app-title{color:#fbbf24 !important}
+html:not([data-aura-admin]) #app-title{color:#fff !important}
 html[data-aura-launch] #sidebar{visibility:hidden !important}
 #chat-scroll-wrapper{scrollbar-width:none;-ms-overflow-style:none}
 #chat-scroll-wrapper::-webkit-scrollbar{display:none;width:0;height:0}
@@ -434,7 +434,7 @@ try {
             <!-- SABİT ÜST BAR (WhatsApp gibi sadece başlık) -->
             <div class="bg-[#202c33] px-4 py-3.5 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
-                          <h1 id="app-title" class="text-emerald-500 font-bold text-xl tracking-wide select-none transition active:opacity-70">Aura<span id="dark-toggle-btn">C</span>hat</h1>
+                                    <h1 id="app-title" class="text-emerald-500 font-bold text-xl tracking-wide select-none transition active:opacity-70">Aura<i id="dark-toggle-btn" class="fa-regular fa-moon"></i>hat</h1>
                 </div>
              <div class="flex space-x-4 text-gray-400 text-lg items-center">
                             
