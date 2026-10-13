@@ -202,12 +202,14 @@ function ensurePanel() {
             </button>
             <h2 class="text-white font-medium text-base">Sohbet teması</h2>
         </div>
-        <div class="flex-1 overflow-y-auto min-h-0">
-            <div id="theme-preview" class="relative h-52 flex flex-col justify-center px-4 space-y-3">
-                <div class="flex justify-start"><div id="theme-prev-in" class="text-white text-sm px-4 py-2 rounded-xl shadow">Selam kanka 👋</div></div>
-                <div class="flex justify-end"><div id="theme-prev-out" class="text-white text-sm px-4 py-2 rounded-xl shadow">Tema nasıl olmuş?</div></div>
-            </div>
-            <div id="theme-black-row" class="flex items-center justify-between px-4 py-3 border-b border-gray-800/40 cursor-pointer">
+        <div id="theme-preview" class="relative flex-1 min-h-0 flex flex-col justify-center px-4 space-y-3 overflow-hidden">
+            <div class="flex justify-start"><div class="theme-prev-in text-white text-sm px-4 py-2 rounded-xl shadow">Selam kanka 👋</div></div>
+            <div class="flex justify-end"><div class="theme-prev-out text-white text-sm px-4 py-2 rounded-xl shadow">Tema nasıl olmuş?</div></div>
+            <div class="flex justify-start"><div class="theme-prev-in text-white text-sm px-4 py-2 rounded-xl shadow">Çok güzel olmuş, tam istediğim gibi</div></div>
+            <div class="flex justify-end"><div class="theme-prev-out text-white text-sm px-4 py-2 rounded-xl shadow">Süper, o zaman bunu kullanalım 😎</div></div>
+        </div>
+        <div class="flex-shrink-0 bg-[#0b141a]/95" style="padding-bottom:max(env(safe-area-inset-bottom),8px);">
+            <div id="theme-black-row" class="flex items-center justify-between px-4 py-2.5 border-t border-gray-800/40 cursor-pointer">
                 <div class="pr-3">
                     <p class="text-white text-sm">Siyah arayüz</p>
                     <p class="text-gray-400 text-xs mt-0.5">Üst bar, alt bar ve liste ekranı siyah olur (tüm sohbetlerde)</p>
@@ -216,9 +218,9 @@ function ensurePanel() {
                     <div id="theme-black-knob" style="position:absolute;top:2px;width:20px;height:20px;border-radius:10px;background:#fff;transition:left .15s;"></div>
                 </div>
             </div>
-            <p class="text-gray-400 text-xs px-4 pt-4 pb-1">Renkler ve arka planlar</p>
+            <p class="text-gray-400 text-xs px-4 pt-2 pb-0">Renkler ve arka planlar · dokununca uygulanır</p>
             <style>#theme-grid::-webkit-scrollbar{display:none;width:0;height:0}</style>
-            <div id="theme-grid" style="position:relative;display:flex;align-items:flex-start;gap:12px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:14px 0 22px;"></div>
+            <div id="theme-grid" style="position:relative;display:flex;align-items:flex-start;gap:12px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:10px 0 4px;"></div>
         </div>
     `;
     document.body.appendChild(el);
@@ -246,8 +248,8 @@ function paintBlackSwitch() {
 
 function setPreview(t) {
     panelEl.querySelector('#theme-preview').style.background = t ? t.bg : DEFAULT_BG;
-    panelEl.querySelector('#theme-prev-in').style.backgroundColor = DEFAULT_IN;
-    panelEl.querySelector('#theme-prev-out').style.backgroundColor = t ? t.out : DEFAULT_OUT;
+    panelEl.querySelectorAll('.theme-prev-in').forEach((x) => { x.style.backgroundColor = DEFAULT_IN; });
+    panelEl.querySelectorAll('.theme-prev-out').forEach((x) => { x.style.backgroundColor = t ? t.out : DEFAULT_OUT; });
 }
 
 function updatePreview() {
@@ -344,8 +346,6 @@ function renderGrid() {
             <i data-chk class="fa-solid fa-circle-check text-emerald-400 absolute top-1.5 right-1.5" style="display:none"></i>
         </div>`, 'Galeriden seç');
     gal.el.addEventListener('click', () => {
-        const idx = stripItems.indexOf(gal);
-        if (idx !== stripCenterIdx) { centerStripOn(idx, true); return; }
         pickFromGallery();
     });
 
@@ -357,11 +357,10 @@ function renderGrid() {
                 <i data-chk class="fa-solid fa-circle-check text-emerald-400 absolute top-1.5 right-1.5" style="display:none"></i>
             </div>`, t.name);
         item.el.addEventListener('click', () => {
+            // Dokununca hemen uygula ve sayfayı kapat
             saveSaved(pickerChatId, { id: t.id });
             applyTheme(pickerChatId);
-            centerStripOn(stripItems.indexOf(item), true);
-            setPreview(t.id === 'default' ? null : t);
-            paintStrip();
+            closePanel();
         });
     });
 
@@ -392,10 +391,7 @@ async function pickFromGallery() {
         if (!img) return;
         if (saveSaved(chatId, { id: 'custom', img: img })) {
             applyTheme(chatId);
-            if (panelOpen && pickerChatId === chatId) {
-                updatePreview();
-                renderGrid();
-            }
+            if (panelOpen && pickerChatId === chatId) closePanel();
         }
     });
     document.body.appendChild(input);
