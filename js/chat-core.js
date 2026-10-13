@@ -997,6 +997,7 @@ let firstSnapResolve = null;
         session.hasMoreOlderCandidate = session.messages.length >= 50;
 
         writeChatDiskCache(chatId, session);
+        deliverIncomingFiles(chatId, session);
 
 if (currentChatId === chatId && !session.waitingFirst) {
             // Sohbet yeni açıldıysa ve ilk veride okunmamış mesaj geldiyse çizgiyi şimdi kur
@@ -1114,6 +1115,7 @@ export function prewarmChatSession(chatId, otherUid) {
 
 export async function prewarmChatMedia(chatId, otherUid) {
     const session = await ensureChatSession(chatId, otherUid);
+    deliverIncomingFiles(chatId, session);
     for (const { id, data: msg } of session.messages) {
         if (msg.type !== 'image' || msg.viewOnce) continue;
 
@@ -3204,18 +3206,18 @@ const GALLERY_DIR = 'Android/media/com.aurachat.app/AuraChat/Media/AuraChat Imag
 const GALLERY_DIR_OLD = 'Pictures/AuraChat'; // eski kayıtlar buradan okunmaya devam eder
 const GALLERY_SENT_DIR = GALLERY_DIR + '/Sent'; // gönderdiğim resimlerin telefondaki kopyası (WhatsApp "Sent" gibi, galeride görünmez)
 const GALLERY_SAVE_DIR = 'Pictures/AuraChat'; // "Kaydet" ile galeriye inenler
-// Yeni resimler uygulamanın iç veri alanına yazılır: uygulama silinip "veriyi sakla" ile geri kurulunca (hasFragileUserData) resimler de kalır.
-// Eski klasörlerdeki (Android/media, Pictures) resimler okunmaya devam eder.
-const IMG_INT_DIR = 'AuraChat/Media/AuraChat Images';
-const IMG_INT_SENT_DIR = IMG_INT_DIR + '/Sent';
-const INT_PREFIX = '@DATA/';
+// Sesli mesajlar da aynı medya klasöründe (galeride görünmez): Media/AuraChat Audio ve Media/AuraChat Audio/Sent
+const AUDIO_DIR = 'Android/media/com.aurachat.app/AuraChat/Media/AuraChat Audio';
+const AUDIO_SENT_DIR = AUDIO_DIR + '/Sent';
+const AUDIO_NAME_RE = /^AuraChat_\d{8}_\d{6}_([A-Za-z0-9]{20})\.(webm|ogg|m4a|mp3|wav|aac)$/;
+const AUDIO_MIME_BY_EXT = { webm: 'audio/webm', ogg: 'audio/ogg', m4a: 'audio/mp4', mp3: 'audio/mpeg', wav: 'audio/wav', aac: 'audio/aac' };
 function fsLoc(path) {
-    const p = String(path);
-    return p.startsWith(INT_PREFIX) ? { path: p.slice(INT_PREFIX.length), directory: 'DATA' } : { path: p, directory: 'EXTERNAL_STORAGE' };
+    return { path: String(path), directory: 'EXTERNAL_STORAGE' };
 }
 const GALLERY_NAME_RE = /^AuraChat_\d{8}_\d{6}_([A-Za-z0-9]{20})(?:_(\d+))?\.jpg$/;
 let galleryFileMap = null; // "msgId" veya "msgId_idx" -> dosya adı
 let galleryFileMapPromise = null;
+let audioFileMap = new Map(); // msgId -> ses dosyasının yolu
 
 function galleryKey(msgId, idx) {
     return (idx === null || idx === undefined) ? msgId : `${msgId}_${idx}`;
@@ -3229,10 +3231,11 @@ function loadGalleryFileMap() {
     galleryMapScannedAt = Date.now();
     galleryFileMapPromise = (async () => {
         galleryFileMap = new Map();
+        audioFileMap = new Map();
         const Filesystem = getFilesystemPlugin();
         if (!Filesystem) return galleryFileMap;
         // Önce eski klasör, sonra yeni klasör (aynı resim ikisinde de varsa yeni olan kazanır)
-        for (const baseDir of [GALLERY_DIR_OLD, GALLERY_DIR, GALLERY_SENT_DIR, INT_PREFIX + IMG_INT_DIR, INT_PREFIX + IMG_INT_SENT_DIR]) {
+        for (const baseDir of [GALLERY_DIR_OLD, GALLERY_DIR, GALLERY_SENT_DIR, AUDIO_DIR, AUDIO_SENT_DIR]) {
             try {
                 const loc0 = fsLoc(baseDir);
                 const dir = await Filesystem.readdir({ path: loc0.path, directory: loc0.directory });
@@ -3242,7 +3245,10 @@ function loadGalleryFileMap() {
                     if (m) {
                         const idx = m[2] ? parseInt(m[2], 10) - 1 : null;
                         galleryFileMap.set(galleryKey(m[1], idx), `${baseDir}/${name}`);
+                        continue;
                     }
+                    const am = name && name.match(AUDIO_NAME_RE);
+                    if (am) audioFileMap.set(am[1], `${baseDir}/${name}`);
                 }
             } catch (e) {
                 // klasör henüz yok, ilk resim yazılınca oluşur
@@ -3257,7 +3263,7 @@ function loadGalleryFileMap() {
 export async function listGalleryImages() {
     const map = await loadGalleryFileMap();
     const seen = new Map();
-    for (const path of map.values()) {
+    for (const path of Array.from(map.values()).concat(Array.from(audioFileMap.values()))) {
         const name = String(path).split('/').pop();
         if (!seen.has(name)) seen.set(name, path);
     }
@@ -3274,9 +3280,17 @@ export async function readGalleryImageBase64(path) {
 
 export async function writeGalleryImageBase64(name, base64) {
     const Filesystem = getFilesystemPlugin();
-    if (!Filesystem || !GALLERY_NAME_RE.test(name)) return false;
+    if (!Filesystem) return false;
+    if (AUDIO_NAME_RE.test(name)) {
+        await Filesystem.writeFile({ path: `${AUDIO_DIR}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
+        Filesystem.writeFile({ path: `${AUDIO_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
+        galleryFileMapPromise = null;
+        return true;
+    }
+    if (!GALLERY_NAME_RE.test(name)) return false;
     try {
-        await Filesystem.writeFile({ path: `${IMG_INT_DIR}/${name}`, data: base64, directory: 'DATA', recursive: true });
+        await Filesystem.writeFile({ path: `${GALLERY_DIR}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
+        Filesystem.writeFile({ path: `${GALLERY_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
     } catch (e) {
         await Filesystem.writeFile({ path: `${GALLERY_DIR_OLD}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
     }
@@ -3367,9 +3381,10 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 // WhatsApp "Sent" gibi: gönderdiğim resmin kopyası telefonda durur (galeride görünmez, Drive yedeğine girer)
                 try {
                     const pureOwn = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-                    const ownRel = `${IMG_INT_SENT_DIR}/${buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx)}`;
-                    Filesystem.writeFile({ path: ownRel, data: pureOwn, directory: 'DATA', recursive: true }).then(() => {
-                        map.set(key, INT_PREFIX + ownRel);
+                    const ownPath = `${GALLERY_SENT_DIR}/${buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx)}`;
+                    Filesystem.writeFile({ path: ownPath, data: pureOwn, directory: 'EXTERNAL_STORAGE', recursive: true }).then(() => {
+                        map.set(key, ownPath);
+                        Filesystem.writeFile({ path: `${GALLERY_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
                     }).catch(() => {});
                 } catch (eOwn) {}
                 return ownSrc;
@@ -3381,12 +3396,16 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 const fileName = buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx);
 
                 // WhatsApp gibi: gelen resimler uygulama medya klasörüne yazılır (galeride görünmez). Yazılamazsa eski yola düş
-                let savedPath = INT_PREFIX + `${IMG_INT_DIR}/${fileName}`;
+                let savedPath = `${GALLERY_DIR}/${fileName}`;
                 try {
-                    await Filesystem.writeFile({ path: `${IMG_INT_DIR}/${fileName}`, data: pureBase64, directory: 'DATA', recursive: true });
+                    await Filesystem.writeFile({ path: savedPath, data: pureBase64, directory: 'EXTERNAL_STORAGE', recursive: true });
                 } catch (e1) {
                     savedPath = `${GALLERY_DIR_OLD}/${fileName}`;
                     await Filesystem.writeFile({ path: savedPath, data: pureBase64, directory: 'EXTERNAL_STORAGE', recursive: true });
+                }
+                if (savedPath.startsWith(GALLERY_DIR)) {
+                    // Galeri uygulamaları bu klasörü göstermesin
+                    Filesystem.writeFile({ path: `${GALLERY_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
                 }
                 map.set(key, savedPath);
 
@@ -6339,7 +6358,7 @@ async function sendVoiceMessage(dataUrl, durationSec) {
     }
     const replyPayload = consumeReplyPayload();
     try {
-        await addDoc(collection(db, "chats", currentChatId, "messages"), {
+        const audioRef = await addDoc(collection(db, "chats", currentChatId, "messages"), {
             type: 'audio',
             audio: dataUrl,
             audioDuration: durationSec,
@@ -6351,6 +6370,18 @@ async function sendVoiceMessage(dataUrl, durationSec) {
             ...(replyPayload ? { replyTo: replyPayload } : {})
         });
 
+        // WhatsApp "Sent" gibi: gönderdiğim sesin kopyası telefonda kalır (alıcıya teslim edilince sunucudan silinir)
+        try {
+            const FsA = getFilesystemPlugin();
+            if (FsA && audioRef && audioRef.id) {
+                const sentName = buildAudioFileName(Date.now(), audioRef.id, audioExtFromDataUrl(dataUrl));
+                const sentPath = `${AUDIO_SENT_DIR}/${sentName}`;
+                FsA.writeFile({ path: sentPath, data: dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl, directory: 'EXTERNAL_STORAGE', recursive: true }).then(() => {
+                    audioFileMap.set(audioRef.id, sentPath);
+                    FsA.writeFile({ path: `${AUDIO_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
+                }).catch(() => {});
+            }
+        } catch (eSa) {}
         await updateChatSummaries(`🎤 Sesli mesaj (${fmtAudioTime(durationSec)})`);
         pushToGroupMembers("🎤 Sesli mesaj gönderdi");
 
@@ -6395,6 +6426,89 @@ async function sendVoiceMessage(dataUrl, durationSec) {
     });
     updateMicToggle();
 })();
+
+// ------------------------------------------
+// SES / BELGE TESLİMİ: Firebase = kurye. Ses ve belge bu cihaza (diske) yazıldıysa ve ben ALICIYSAM,
+// sunucudaki kopya temizlenir (resimlerdeki gibi). Sadece birebir sohbetlerde; global oda ve gruplara dokunulmaz.
+// ------------------------------------------
+function audioExtFromDataUrl(u) {
+    const m = /^data:audio\/([a-z0-9.+-]+)/i.exec(String(u || ''));
+    const t = m ? m[1].toLowerCase() : '';
+    if (t === 'mp4' || t === 'x-m4a' || t === 'm4a') return 'm4a';
+    if (t === 'mpeg' || t === 'mp3') return 'mp3';
+    if (t === 'ogg') return 'ogg';
+    if (t === 'wav' || t === 'x-wav' || t === 'wave') return 'wav';
+    if (t === 'aac') return 'aac';
+    return 'webm';
+}
+
+function buildAudioFileName(timeMs, msgId, ext) {
+    return buildGalleryFileName(timeMs, msgId, null).replace(/\.jpg$/, '.' + ext);
+}
+
+async function loadLocalAudioDataUrl(msgId) {
+    const Filesystem = getFilesystemPlugin();
+    if (!Filesystem) return null;
+    let path = audioFileMap.get(msgId);
+    if (!path) {
+        galleryFileMapPromise = null;
+        await loadGalleryFileMap();
+        path = audioFileMap.get(msgId);
+    }
+    if (!path) return null;
+    try {
+        const r = await Filesystem.readFile({ path, directory: 'EXTERNAL_STORAGE' });
+        const ext = String(path).split('.').pop();
+        return `data:${AUDIO_MIME_BY_EXT[ext] || 'audio/webm'};base64,${r.data}`;
+    } catch (e) {
+        return null;
+    }
+}
+
+const deliverInFlight = new Set();
+async function deliverIncomingFiles(chatId, session) {
+    try {
+        const Filesystem = getFilesystemPlugin();
+        if (!Filesystem || !currentUser || !chatId || chatId === 'global' || isGroupChat(chatId)) return;
+        let changed = false;
+        for (const entry of session.messages.slice()) {
+            const msg = entry.data;
+            const id = entry.id;
+            if (!msg || !id || msg.senderUid === currentUser.uid) continue;
+            const isAudio = msg.type === 'audio' && typeof msg.audio === 'string' && msg.audio;
+            const isDoc = msg.type === 'document' && typeof msg.imageUrl === 'string' && msg.imageUrl;
+            if (!isAudio && !isDoc) continue;
+            const key = chatId + '/' + id;
+            if (deliverInFlight.has(key)) continue;
+            deliverInFlight.add(key);
+            try {
+                if (isAudio) {
+                    const pure = msg.audio.includes(',') ? msg.audio.split(',')[1] : msg.audio;
+                    const name = buildAudioFileName(getMessageTimeMs(chatId, id), id, audioExtFromDataUrl(msg.audio));
+                    const path = `${AUDIO_DIR}/${name}`;
+                    await Filesystem.writeFile({ path, data: pure, directory: 'EXTERNAL_STORAGE', recursive: true });
+                    Filesystem.writeFile({ path: `${AUDIO_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
+                    audioFileMap.set(id, path);
+                    await updateDoc(doc(db, "chats", chatId, "messages", id), { audio: null, audioDelivered: true });
+                    msg.audio = null;
+                    msg.audioDelivered = true;
+                } else {
+                    const pure = msg.imageUrl.includes(',') ? msg.imageUrl.split(',')[1] : msg.imageUrl;
+                    await Filesystem.writeFile({ path: `Download/AuraChat/${docSavedName(id, msg)}`, data: pure, directory: 'EXTERNAL_STORAGE', recursive: true });
+                    await updateDoc(doc(db, "chats", chatId, "messages", id), { imageUrl: null, imageDelivered: true });
+                    msg.imageUrl = null;
+                    msg.imageDelivered = true;
+                }
+                changed = true;
+            } catch (e) {
+                // yazılamadıysa sunucudaki kopya kalır, sonra tekrar denenir
+            } finally {
+                deliverInFlight.delete(key);
+            }
+        }
+        if (changed) writeChatDiskCache(chatId, session);
+    } catch (e) {}
+}
 
 // ------------------------------------------
 // SESLİ MESAJ BALONU (oynat / durdur + ilerleme çubuğu)
@@ -6445,17 +6559,20 @@ function bindAudioPlayer(msgDiv, msgId, msg) {
     };
     paintAudio(player);
 
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (selectionMode) return;
-        if (!msg.audio) { showToast('Sesli mesaj bulunamadı'); return; }
+        // Ses sunucudan temizlenmişse (teslim edildi) telefondaki dosyadan çalınır
+        let audioSrc = msg.audio;
+        if (!audioSrc && !player.audio) audioSrc = await loadLocalAudioDataUrl(msgId);
+        if (!audioSrc && !player.audio) { showToast('Sesli mesaj bulunamadı'); return; }
 
         if (currentPlayingPlayer && currentPlayingPlayer !== player && currentPlayingPlayer.audio) {
             currentPlayingPlayer.audio.pause();
         }
 
         if (!player.audio) {
-            const a = new Audio(msg.audio);
+            const a = new Audio(audioSrc);
             a.addEventListener('timeupdate', () => paintAudio(player));
             a.addEventListener('play', () => paintAudio(player));
             a.addEventListener('pause', () => paintAudio(player));
