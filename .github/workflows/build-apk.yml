@@ -998,6 +998,12 @@ jobs:
                           AuraNotif.showSimple(this, data);
                       } else {
                           AuraNotif.show(this, data);
+                          // Yazı/konum geldiyse mesajı telefondaki sohbet kaydına da yaz: sohbet açılınca hazır olsun
+                          try {
+                              String sb0 = data.get("body");
+                              boolean isPhoto = sb0 != null && sb0.length() > 0 && sb0.codePointAt(0) == 0x1F4F7;
+                              if (!isPhoto && !"1".equals(data.get("isGroup"))) AuraNotif.syncMessages(this, data.get("chatId"));
+                          } catch (Throwable t) {}
                           // Fotoğraf geldiyse telefona (Android/media/.../AuraChat Images) hemen indir: sohbet açılınca hazır olsun
                           try {
                               String pb = data.get("body");
@@ -1691,6 +1697,100 @@ jobs:
                       }
                       if (acked.length() > 0) callServerExtra(c, "ackimages", chatId, acked, 8000);
                   } catch (Throwable t) {}
+              }
+
+              // ---------- mesajı telefondaki sohbet kaydına yaz (msg_cache/<chatId>.json) ----------
+              // Kayıt dosyası yoksa ya da sunucu "kısmi" derse (resim/ses/belge var) hiçbir şey yazılmaz; uygulama açılınca normal yoldan gelir.
+              static void syncMessages(Context c, String chatId) {
+                  try {
+                      if (chatId == null || chatId.isEmpty() || chatId.contains("/") || chatId.contains("..")) return;
+                      File f = new File(new File(c.getFilesDir(), "msg_cache"), chatId + ".json");
+                      if (!f.exists() || f.length() == 0) return;
+                      java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                      InputStream fin = new java.io.FileInputStream(f);
+                      byte[] rb = new byte[16384];
+                      int rn;
+                      while ((rn = fin.read(rb)) > 0) bo.write(rb, 0, rn);
+                      fin.close();
+                      JSONObject root = new JSONObject(bo.toString("UTF-8"));
+                      JSONArray msgs = root.optJSONArray("messages");
+                      if (msgs == null || msgs.length() == 0) return;
+                      long last = 0;
+                      for (int i = 0; i < msgs.length(); i++) {
+                          JSONObject mo = msgs.optJSONObject(i);
+                          JSONObject md = mo == null ? null : mo.optJSONObject("data");
+                          if (md != null) last = Math.max(last, md.optLong("createdAt", 0));
+                      }
+                      if (last <= 0) return;
+                      String resp = callServerSync(c, chatId, last, 10000);
+                      if (resp == null) return;
+                      JSONObject rj = new JSONObject(resp);
+                      if (rj.optBoolean("partial", true)) return;
+                      JSONArray items = rj.optJSONArray("items");
+                      if (items == null || items.length() == 0) return;
+                      java.util.LinkedHashMap<String, JSONObject> byId = new java.util.LinkedHashMap<String, JSONObject>();
+                      for (int i = 0; i < msgs.length(); i++) {
+                          JSONObject mo = msgs.optJSONObject(i);
+                          if (mo != null) byId.put(mo.optString("id", ""), mo);
+                      }
+                      for (int i = 0; i < items.length(); i++) {
+                          JSONObject it = items.optJSONObject(i);
+                          if (it == null) continue;
+                          String id = it.optString("id", "");
+                          if (id.isEmpty() || it.optJSONObject("data") == null) continue;
+                          byId.put(id, it);
+                      }
+                      java.util.ArrayList<JSONObject> all = new java.util.ArrayList<JSONObject>(byId.values());
+                      java.util.Collections.sort(all, new java.util.Comparator<JSONObject>() {
+                          public int compare(JSONObject a, JSONObject b) {
+                              long ta = a.optJSONObject("data") == null ? 0 : a.optJSONObject("data").optLong("createdAt", 0);
+                              long tb = b.optJSONObject("data") == null ? 0 : b.optJSONObject("data").optLong("createdAt", 0);
+                              return ta < tb ? -1 : (ta > tb ? 1 : 0);
+                          }
+                      });
+                      int from = Math.max(0, all.size() - 50);
+                      JSONArray outArr = new JSONArray();
+                      for (int i = from; i < all.size(); i++) outArr.put(all.get(i));
+                      root.put("messages", outArr);
+                      File tmp = new File(f.getParentFile(), chatId + ".json.tmp");
+                      FileOutputStream fo = new FileOutputStream(tmp);
+                      fo.write(root.toString().getBytes("UTF-8"));
+                      fo.close();
+                      if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f); }
+                  } catch (Throwable t) {}
+              }
+
+              static String callServerSync(Context c, String chatId, long afterMs, int timeoutMs) {
+                  try {
+                      SharedPreferences s = sp(c);
+                      String rt = s.getString("rt", "");
+                      if (rt == null || rt.isEmpty()) return null;
+                      JSONObject j = new JSONObject();
+                      j.put("refreshToken", rt);
+                      j.put("action", "msgsync");
+                      j.put("chatId", chatId);
+                      j.put("afterMs", afterMs);
+                      HttpURLConnection con = (HttpURLConnection) new URL(API).openConnection();
+                      con.setRequestMethod("POST");
+                      con.setConnectTimeout(timeoutMs);
+                      con.setReadTimeout(timeoutMs);
+                      con.setDoOutput(true);
+                      con.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                      OutputStream os = con.getOutputStream();
+                      os.write(j.toString().getBytes("UTF-8"));
+                      os.close();
+                      if (con.getResponseCode() != 200) { con.disconnect(); return null; }
+                      InputStream in = con.getInputStream();
+                      java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                      byte[] buf = new byte[16384];
+                      int n;
+                      while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+                      in.close();
+                      con.disconnect();
+                      return bos.toString("UTF-8");
+                  } catch (Throwable t) {
+                      return null;
+                  }
               }
 
               static String callServerExtra(Context c, String action, String chatId, JSONArray ids, int timeoutMs) {
