@@ -1,8 +1,9 @@
 // ==========================================
-// PROFİL PANELİ
-// Üç nokta ikonuna tıklayınca açılır, kullanıcının kendi
-// bilgilerini gösterir. İsim, avatar ve durum düzenlenebilir.
-// Çıkış yap burada.
+// AYARLAR SAYFASI + PROFİL PANELİ
+// Üç nokta menüsündeki "Ayarlar" önce sade bir ayarlar sayfası açar:
+// büyük avatar + isim, altında sadece "Gizlilik" satırı.
+// Avatara dokununca profil paneli (isim, durum, avatar düzenleme, çıkış yap) açılır.
+// "Gizlilik" satırı son görülme ve okundu bilgisi anahtarlarını gösterir.
 // ==========================================
 
 import { db, auth } from "./firebase-init.js";
@@ -12,7 +13,6 @@ import { getCurrentUser, setCurrentUser, getPresenceHidden, setPresenceHidden, g
 import { getUserColor, getInitials } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { openImageCropper } from "./image-cropper.js";
-import { addAppearanceRow } from "./app-icon.js";
 
 const profileBtn = document.getElementById('profile-btn');
 const profilePanel = document.getElementById('profile-panel');
@@ -108,14 +108,17 @@ function updatePrivacyLabel() {
     });
 }
 
-function addPrivacySwitchRow(icon, label, getOn, setOn) {
-    if (!profileLogoutBtn) return;
+function addPrivacySwitchRow(container, icon, label, desc, getOn, setOn) {
+    if (!container) return;
     const row = document.createElement('div');
-    row.className = 'w-full max-w-sm mt-3 bg-[#202c33] text-gray-100 rounded-xl px-4 py-3 flex items-center justify-between';
+    row.className = 'w-full px-5 py-3.5 flex items-center justify-between';
     row.innerHTML = `
-        <span class="flex items-center space-x-3 min-w-0">
-            <i class="fa-solid ${icon} text-gray-400 w-4"></i>
-            <span class="text-sm">${label}</span>
+        <span class="flex items-center space-x-4 min-w-0">
+            <i class="fa-solid ${icon} text-gray-400 w-5 text-center"></i>
+            <span class="min-w-0">
+                <span class="block text-white text-[15px]">${label}</span>
+                <span class="block text-gray-400 text-xs mt-0.5">${desc}</span>
+            </span>
         </span>
         <button type="button" role="switch" aria-checked="true" class="flex-shrink-0 ml-3" style="width:44px;height:24px;border-radius:9999px;padding:2px;transition:background .15s;">
             <span style="display:block;width:20px;height:20px;border-radius:9999px;background:#fff;transition:transform .15s;"></span>
@@ -127,13 +130,130 @@ function addPrivacySwitchRow(icon, label, getOn, setOn) {
         updatePrivacyLabel();
     });
     privacySwitches.push({ el, getOn });
-    profileLogoutBtn.insertAdjacentElement('beforebegin', row);
+    container.appendChild(row);
     updatePrivacyLabel();
 }
 
-addPrivacySwitchRow('fa-eye', 'Son görülme', () => !getPresenceHidden(), (on) => setPresenceHidden(!on));
-addPrivacySwitchRow('fa-check-double', 'Okundu bilgisi', () => !getReadReceiptsHidden(), (on) => setReadReceiptsHidden(!on));
-addAppearanceRow(profileLogoutBtn);
+// ---------- Ayarlar sayfası (avatar + isim + Gizlilik) ----------
+let settingsEl = null;
+let settingsOpen = false;
+let privacyEl = null;
+let privacyOpen = false;
+
+function renderAvatarInto(el, user) {
+    if (!el) return;
+    if (user.avatar) {
+        el.style.backgroundColor = '';
+        el.innerHTML = `<img src="${user.avatar}" class="w-full h-full object-cover">`;
+    } else {
+        el.style.backgroundColor = getUserColor(user.name || '');
+        el.innerHTML = `<span>${getInitials(user.name || '')}</span>`;
+    }
+}
+
+function refreshSettingsHeader() {
+    if (!settingsEl) return;
+    const user = getCurrentUser();
+    if (!user) return;
+    renderAvatarInto(settingsEl.querySelector('#settings-avatar'), user);
+    const nameEl = settingsEl.querySelector('#settings-name');
+    const subEl = settingsEl.querySelector('#settings-sub');
+    if (nameEl) nameEl.textContent = user.name || '';
+    if (subEl) subEl.textContent = user.about || user.email || '';
+}
+
+function closeSettingsFromBack() {
+    if (settingsEl) {
+        settingsEl.classList.add('hidden');
+        settingsEl.classList.remove('flex');
+    }
+    settingsOpen = false;
+}
+
+function closePrivacyFromBack() {
+    if (privacyEl) {
+        privacyEl.classList.add('hidden');
+        privacyEl.classList.remove('flex');
+    }
+    privacyOpen = false;
+}
+
+function openPrivacyPage() {
+    if (!privacyEl) {
+        const el = document.createElement('div');
+        el.className = 'fixed inset-0 bg-[#0b141a] hidden flex-col';
+        el.style.zIndex = '47';
+        el.innerHTML = `
+            <div class="bg-[#202c33] px-4 py-3.5 flex items-center space-x-4 border-b border-gray-800 flex-shrink-0">
+                <button type="button" id="privacy-back-btn" class="text-gray-400 hover:text-white transition text-lg px-1"><i class="fa-solid fa-arrow-left"></i></button>
+                <h2 class="text-white font-medium text-base">Gizlilik</h2>
+            </div>
+            <div id="privacy-list" class="flex-1 overflow-y-auto pt-2"></div>
+        `;
+        document.body.appendChild(el);
+        el.querySelector('#privacy-back-btn').addEventListener('click', () => {
+            closePrivacyFromBack();
+            popBackState();
+        });
+        const list = el.querySelector('#privacy-list');
+        addPrivacySwitchRow(list, 'fa-eye', 'Son görülme', 'Kapalıyken kimse son görülmeni görmez', () => !getPresenceHidden(), (on) => setPresenceHidden(!on));
+        addPrivacySwitchRow(list, 'fa-check-double', 'Okundu bilgisi', 'Kapalıyken okundu tikini ne sen gönderirsin ne de görürsün', () => !getReadReceiptsHidden(), (on) => setReadReceiptsHidden(!on));
+        privacyEl = el;
+    }
+    updatePrivacyLabel();
+    if (privacyOpen) return;
+    privacyEl.classList.remove('hidden');
+    privacyEl.classList.add('flex');
+    privacyOpen = true;
+    pushBackState(closePrivacyFromBack);
+}
+
+function openSettingsPage() {
+    const user = getCurrentUser();
+    if (!user) return;
+    if (!settingsEl) {
+        const el = document.createElement('div');
+        el.className = 'fixed inset-0 bg-[#0b141a] hidden flex-col';
+        el.style.zIndex = '45';
+        el.innerHTML = `
+            <div class="bg-[#0b141a] px-4 py-3.5 flex items-center space-x-4 flex-shrink-0">
+                <button type="button" id="settings-back-btn" class="text-white text-lg px-1"><i class="fa-solid fa-arrow-left"></i></button>
+                <h2 class="text-white font-medium text-base">Ayarlar</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+                <div class="flex flex-col items-center pt-6 pb-8 px-6">
+                    <button type="button" id="settings-avatar-btn" class="relative" aria-label="Profili aç">
+                        <div id="settings-avatar" class="rounded-full flex items-center justify-center text-white font-bold text-5xl shadow-lg overflow-hidden" style="width:136px;height:136px;"></div>
+                    </button>
+                    <h2 id="settings-name" class="text-white text-2xl mt-5 text-center break-words max-w-full"></h2>
+                    <p id="settings-sub" class="text-gray-400 text-base mt-1 text-center break-words max-w-full"></p>
+                </div>
+                <button type="button" id="settings-privacy-row" class="w-full px-5 py-4 flex items-center space-x-5 text-left active:bg-white/5 transition">
+                    <i class="fa-solid fa-lock text-gray-400 text-xl w-6 text-center"></i>
+                    <span class="min-w-0">
+                        <span class="block text-white text-[17px]">Gizlilik</span>
+                        <span class="block text-gray-400 text-sm mt-0.5">Son görülme, okundu bilgisi</span>
+                    </span>
+                </button>
+            </div>
+        `;
+        document.body.appendChild(el);
+        el.querySelector('#settings-back-btn').addEventListener('click', () => {
+            closeSettingsFromBack();
+            popBackState();
+        });
+        el.querySelector('#settings-avatar-btn').addEventListener('click', () => openProfilePanel());
+        el.querySelector('#settings-privacy-row').addEventListener('click', openPrivacyPage);
+        settingsEl = el;
+    }
+    refreshSettingsHeader();
+    if (settingsOpen) return;
+    settingsEl.classList.remove('hidden');
+    settingsEl.classList.add('flex');
+    settingsOpen = true;
+    pushBackState(closeSettingsFromBack);
+}
+
 async function openProfilePanel() {
         let user = getCurrentUser();
     if (!user || !profilePanel) return;
@@ -192,11 +312,14 @@ function closeProfilePanel() {
     profilePanel.classList.remove('flex');
 }
 
-window.openProfilePanel = openProfilePanel;
+// Menüdeki "Ayarlar" bunu çağırır: önce sade ayarlar sayfası; avatara dokununca profil paneli açılır
+window.openProfilePanel = openSettingsPage;
+window.openProfileEditPanel = openProfilePanel;
 if (profileBackBtn) {
     profileBackBtn.addEventListener('click', () => {
         closeProfilePanel();
         popBackState();
+        refreshSettingsHeader();
     });
 }
 
