@@ -3204,6 +3204,15 @@ const GALLERY_DIR = 'Android/media/com.aurachat.app/AuraChat/Media/AuraChat Imag
 const GALLERY_DIR_OLD = 'Pictures/AuraChat'; // eski kayıtlar buradan okunmaya devam eder
 const GALLERY_SENT_DIR = GALLERY_DIR + '/Sent'; // gönderdiğim resimlerin telefondaki kopyası (WhatsApp "Sent" gibi, galeride görünmez)
 const GALLERY_SAVE_DIR = 'Pictures/AuraChat'; // "Kaydet" ile galeriye inenler
+// Yeni resimler uygulamanın iç veri alanına yazılır: uygulama silinip "veriyi sakla" ile geri kurulunca (hasFragileUserData) resimler de kalır.
+// Eski klasörlerdeki (Android/media, Pictures) resimler okunmaya devam eder.
+const IMG_INT_DIR = 'AuraChat/Media/AuraChat Images';
+const IMG_INT_SENT_DIR = IMG_INT_DIR + '/Sent';
+const INT_PREFIX = '@DATA/';
+function fsLoc(path) {
+    const p = String(path);
+    return p.startsWith(INT_PREFIX) ? { path: p.slice(INT_PREFIX.length), directory: 'DATA' } : { path: p, directory: 'EXTERNAL_STORAGE' };
+}
 const GALLERY_NAME_RE = /^AuraChat_\d{8}_\d{6}_([A-Za-z0-9]{20})(?:_(\d+))?\.jpg$/;
 let galleryFileMap = null; // "msgId" veya "msgId_idx" -> dosya adı
 let galleryFileMapPromise = null;
@@ -3223,9 +3232,10 @@ function loadGalleryFileMap() {
         const Filesystem = getFilesystemPlugin();
         if (!Filesystem) return galleryFileMap;
         // Önce eski klasör, sonra yeni klasör (aynı resim ikisinde de varsa yeni olan kazanır)
-        for (const baseDir of [GALLERY_DIR_OLD, GALLERY_DIR, GALLERY_SENT_DIR]) {
+        for (const baseDir of [GALLERY_DIR_OLD, GALLERY_DIR, GALLERY_SENT_DIR, INT_PREFIX + IMG_INT_DIR, INT_PREFIX + IMG_INT_SENT_DIR]) {
             try {
-                const dir = await Filesystem.readdir({ path: baseDir, directory: 'EXTERNAL_STORAGE' });
+                const loc0 = fsLoc(baseDir);
+                const dir = await Filesystem.readdir({ path: loc0.path, directory: loc0.directory });
                 for (const f of (dir.files || [])) {
                     const name = typeof f === 'string' ? f : f.name;
                     const m = name && name.match(GALLERY_NAME_RE);
@@ -3257,7 +3267,8 @@ export async function listGalleryImages() {
 export async function readGalleryImageBase64(path) {
     const Filesystem = getFilesystemPlugin();
     if (!Filesystem) return null;
-    const r = await Filesystem.readFile({ path, directory: 'EXTERNAL_STORAGE' });
+    const loc = fsLoc(path);
+    const r = await Filesystem.readFile({ path: loc.path, directory: loc.directory });
     return r.data;
 }
 
@@ -3265,8 +3276,7 @@ export async function writeGalleryImageBase64(name, base64) {
     const Filesystem = getFilesystemPlugin();
     if (!Filesystem || !GALLERY_NAME_RE.test(name)) return false;
     try {
-        await Filesystem.writeFile({ path: `${GALLERY_DIR}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
-        Filesystem.writeFile({ path: `${GALLERY_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
+        await Filesystem.writeFile({ path: `${IMG_INT_DIR}/${name}`, data: base64, directory: 'DATA', recursive: true });
     } catch (e) {
         await Filesystem.writeFile({ path: `${GALLERY_DIR_OLD}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
     }
@@ -3332,9 +3342,10 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
             // 1. Galeride bu mesajın resmi varsa oradan oku
             if (knownName) {
                 try {
+                    const locK = fsLoc(knownName);
                     const found = await Filesystem.readFile({
-                        path: knownName,
-                        directory: 'EXTERNAL_STORAGE'
+                        path: locK.path,
+                        directory: locK.directory
                     });
                     const src = toImageSrc(found.data);
                     mediaUriCache.set(cacheKey, src);
@@ -3356,10 +3367,9 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 // WhatsApp "Sent" gibi: gönderdiğim resmin kopyası telefonda durur (galeride görünmez, Drive yedeğine girer)
                 try {
                     const pureOwn = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-                    const ownPath = `${GALLERY_SENT_DIR}/${buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx)}`;
-                    Filesystem.writeFile({ path: ownPath, data: pureOwn, directory: 'EXTERNAL_STORAGE', recursive: true }).then(() => {
-                        map.set(key, ownPath);
-                        Filesystem.writeFile({ path: `${GALLERY_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
+                    const ownRel = `${IMG_INT_SENT_DIR}/${buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx)}`;
+                    Filesystem.writeFile({ path: ownRel, data: pureOwn, directory: 'DATA', recursive: true }).then(() => {
+                        map.set(key, INT_PREFIX + ownRel);
                     }).catch(() => {});
                 } catch (eOwn) {}
                 return ownSrc;
@@ -3371,16 +3381,12 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 const fileName = buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx);
 
                 // WhatsApp gibi: gelen resimler uygulama medya klasörüne yazılır (galeride görünmez). Yazılamazsa eski yola düş
-                let savedPath = `${GALLERY_DIR}/${fileName}`;
+                let savedPath = INT_PREFIX + `${IMG_INT_DIR}/${fileName}`;
                 try {
-                    await Filesystem.writeFile({ path: savedPath, data: pureBase64, directory: 'EXTERNAL_STORAGE', recursive: true });
+                    await Filesystem.writeFile({ path: `${IMG_INT_DIR}/${fileName}`, data: pureBase64, directory: 'DATA', recursive: true });
                 } catch (e1) {
                     savedPath = `${GALLERY_DIR_OLD}/${fileName}`;
                     await Filesystem.writeFile({ path: savedPath, data: pureBase64, directory: 'EXTERNAL_STORAGE', recursive: true });
-                }
-                if (savedPath.startsWith(GALLERY_DIR)) {
-                    // Galeri uygulamaları bu klasörü göstermesin
-                    Filesystem.writeFile({ path: `${GALLERY_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
                 }
                 map.set(key, savedPath);
 
