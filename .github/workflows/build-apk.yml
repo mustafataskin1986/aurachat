@@ -1646,17 +1646,11 @@ jobs:
                       if (resp == null) return;
                       JSONArray items = new JSONObject(resp).optJSONArray("items");
                       if (items == null || items.length() == 0) return;
-                      // WhatsApp gibi: uygulama medya klasörü (galeride görünmez). Olmazsa Pictures/AuraChat'e düş
+                      // Uygulamanın iç veri alanı (JS tarafı da buradan okur; uygulama "veriyi sakla" ile silinirse resimler kalır). Olmazsa Pictures/AuraChat'e düş
                       File outDir = null;
                       try {
-                          File[] dirs = c.getExternalMediaDirs();
-                          if (dirs != null && dirs.length > 0 && dirs[0] != null) {
-                              File md = new File(dirs[0], "AuraChat/Media/AuraChat Images");
-                              if (md.exists() || md.mkdirs()) {
-                                  outDir = md;
-                                  try { new File(md, ".nomedia").createNewFile(); } catch (Throwable t) {}
-                              }
-                          }
+                          File md = new File(c.getFilesDir(), "AuraChat/Media/AuraChat Images");
+                          if (md.exists() || md.mkdirs()) outDir = md;
                       } catch (Throwable t) { outDir = null; }
                       if (outDir == null) {
                           File pics = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "AuraChat");
