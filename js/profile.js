@@ -159,7 +159,10 @@ function refreshSettingsHeader() {
     const nameEl = settingsEl.querySelector('#settings-name');
     const subEl = settingsEl.querySelector('#settings-sub');
     if (nameEl) nameEl.textContent = user.name || '';
-    if (subEl) subEl.textContent = user.about || user.email || '';
+    if (subEl) {
+        subEl.textContent = user.about || 'Neler oluyor?';
+        subEl.className = user.about ? 'text-gray-300 text-base' : 'text-gray-500 text-base';
+    }
 }
 
 function closeSettingsFromBack() {
@@ -208,6 +211,121 @@ function openPrivacyPage() {
     pushBackState(closePrivacyFromBack);
 }
 
+// ---------- Hakkımda sayfası (Neler oluyor?) ----------
+let aboutEl = null;
+let aboutOpen = false;
+const ABOUT_SUGGESTIONS = [
+    { icon: '', text: 'Bir varmış, bir yokmuş' },
+    { icon: '🌙', text: 'Uzakta, mesaj bırak' },
+    { icon: '😴', text: 'Uyuyorum' },
+    { icon: '💼', text: 'İşyerinde' },
+    { icon: '✈️', text: 'Seyahat ediyorum' },
+    { icon: '💪', text: 'Spor Salonunda' }
+];
+
+function closeAboutFromBack() {
+    if (aboutEl) {
+        aboutEl.classList.add('hidden');
+        aboutEl.classList.remove('flex');
+    }
+    aboutOpen = false;
+}
+
+function openAboutPage() {
+    const user = getCurrentUser();
+    if (!user) return;
+    if (!aboutEl) {
+        const el = document.createElement('div');
+        el.className = 'fixed inset-0 bg-[#0b141a] hidden flex-col';
+        el.style.zIndex = '48';
+        el.innerHTML = `
+            <div class="px-4 py-3.5 flex items-center space-x-4 flex-shrink-0">
+                <button type="button" id="about-back-btn" class="text-white text-lg px-1"><i class="fa-solid fa-arrow-left"></i></button>
+                <h2 class="text-white font-medium text-lg">Hakkımda</h2>
+            </div>
+            <div class="px-4 pt-3 flex-shrink-0">
+                <div id="about-box" class="flex items-center rounded-xl border-2 border-gray-600 px-4 py-3 transition-colors">
+                    <i class="fa-regular fa-face-smile text-green-500 text-2xl"></i>
+                    <input id="about-input" type="text" maxlength="139" placeholder="Neler oluyor?" autocomplete="off"
+                        class="flex-1 min-w-0 bg-transparent outline-none text-white text-lg mx-4 placeholder-gray-500">
+                    <button type="button" id="about-clear" class="text-gray-400 text-2xl hidden" aria-label="Temizle"><i class="fa-regular fa-circle-xmark"></i></button>
+                </div>
+                <p class="text-gray-400 text-base mt-6 mb-2">Öneriler</p>
+            </div>
+            <div id="about-list" class="flex-1 overflow-y-auto px-4"></div>
+            <div class="bg-[#202c33] rounded-t-3xl px-5 py-4 flex items-center justify-between flex-shrink-0">
+                <span class="text-gray-400 text-lg">Önizleme <i class="fa-solid fa-chevron-up text-sm ml-2"></i></span>
+                <button type="button" id="about-save" class="w-14 h-14 rounded-full bg-green-500 text-white text-xl flex items-center justify-center shadow-lg active:scale-95 transition"><i class="fa-solid fa-check"></i></button>
+            </div>
+        `;
+        document.body.appendChild(el);
+        const input = el.querySelector('#about-input');
+        const box = el.querySelector('#about-box');
+        const clearBtn = el.querySelector('#about-clear');
+        const list = el.querySelector('#about-list');
+
+        const sync = () => {
+            clearBtn.classList.toggle('hidden', !input.value);
+            const cur = input.value.trim();
+            list.querySelectorAll('[data-sug]').forEach(r => {
+                r.querySelector('.sug-check').style.visibility = (r.dataset.sug === cur) ? 'visible' : 'hidden';
+            });
+        };
+        ABOUT_SUGGESTIONS.forEach(sug => {
+            const r = document.createElement('button');
+            r.type = 'button';
+            r.dataset.sug = sug.text;
+            r.className = 'w-full flex items-center py-4 text-left active:bg-white/5 transition';
+            r.innerHTML = `
+                <span class="w-9 text-2xl text-center flex-shrink-0">${sug.icon}</span>
+                <span class="flex-1 text-white text-lg ml-3">${sug.text}</span>
+                <i class="fa-solid fa-check text-green-500 text-lg sug-check mr-2" style="visibility:hidden"></i>
+            `;
+            r.addEventListener('click', () => { input.value = sug.text; sync(); });
+            list.appendChild(r);
+        });
+        input.addEventListener('input', sync);
+        input.addEventListener('focus', () => { box.style.borderColor = '#22c55e'; });
+        input.addEventListener('blur', () => { box.style.borderColor = ''; });
+        clearBtn.addEventListener('click', () => { input.value = ''; sync(); input.focus(); });
+        el.querySelector('#about-back-btn').addEventListener('click', () => {
+            closeAboutFromBack();
+            popBackState();
+        });
+        el.querySelector('#about-save').addEventListener('click', async () => {
+            const u = getCurrentUser();
+            if (!u) return;
+            const newAbout = input.value.trim();
+            const btn = el.querySelector('#about-save');
+            btn.disabled = true;
+            try {
+                await updateDoc(doc(db, "users", u.uid), { about: newAbout });
+                const updatedUser = { ...u, about: newAbout };
+                localStorage.setItem('aurachat_user', JSON.stringify(updatedUser));
+                setCurrentUser(updatedUser);
+                if (profileAbout) profileAbout.value = newAbout;
+                refreshSettingsHeader();
+                closeAboutFromBack();
+                popBackState();
+            } catch (err) {
+                alert("Kaydedilemedi: " + err.message);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+        aboutEl = el;
+        el._sync = sync;
+    }
+    const inp = aboutEl.querySelector('#about-input');
+    inp.value = user.about || '';
+    aboutEl._sync();
+    if (aboutOpen) return;
+    aboutEl.classList.remove('hidden');
+    aboutEl.classList.add('flex');
+    aboutOpen = true;
+    pushBackState(closeAboutFromBack);
+}
+
 function openSettingsPage() {
     const user = getCurrentUser();
     if (!user) return;
@@ -226,7 +344,9 @@ function openSettingsPage() {
                         <div id="settings-avatar" class="rounded-full flex items-center justify-center text-white font-bold text-5xl shadow-lg overflow-hidden" style="width:136px;height:136px;"></div>
                     </button>
                     <h2 id="settings-name" class="text-white text-2xl mt-5 text-center break-words max-w-full"></h2>
-                    <p id="settings-sub" class="text-gray-400 text-base mt-1 text-center break-words max-w-full"></p>
+                    <button type="button" id="settings-about-btn" class="mt-2 px-4 py-1.5 rounded-full text-center break-words max-w-full active:bg-white/5 transition">
+                        <span id="settings-sub" class="text-base"></span>
+                    </button>
                 </div>
                 <button type="button" id="settings-privacy-row" class="w-full px-5 py-4 flex items-center space-x-5 text-left active:bg-white/5 transition">
                     <i class="fa-solid fa-lock text-gray-400 text-xl w-6 text-center"></i>
@@ -244,6 +364,7 @@ function openSettingsPage() {
         });
         el.querySelector('#settings-avatar-btn').addEventListener('click', () => openProfilePanel());
         el.querySelector('#settings-privacy-row').addEventListener('click', openPrivacyPage);
+        el.querySelector('#settings-about-btn').addEventListener('click', openAboutPage);
         settingsEl = el;
     }
     refreshSettingsHeader();
