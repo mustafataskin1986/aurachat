@@ -216,8 +216,9 @@ function ensurePanel() {
                     <div id="theme-black-knob" style="position:absolute;top:2px;width:20px;height:20px;border-radius:10px;background:#fff;transition:left .15s;"></div>
                 </div>
             </div>
-            <p class="text-gray-400 text-xs px-4 pt-4 pb-2">Renkler ve arka planlar</p>
-            <div id="theme-grid" class="grid grid-cols-3 gap-3 px-4 pb-8"></div>
+            <p class="text-gray-400 text-xs px-4 pt-4 pb-1">Renkler ve arka planlar</p>
+            <style>#theme-grid::-webkit-scrollbar{display:none;width:0;height:0}</style>
+            <div id="theme-grid" style="position:relative;display:flex;align-items:flex-start;gap:12px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:14px 0 22px;"></div>
         </div>
     `;
     document.body.appendChild(el);
@@ -243,51 +244,138 @@ function paintBlackSwitch() {
     panelEl.querySelector('#theme-black-knob').style.left = on ? '22px' : '2px';
 }
 
-function updatePreview() {
-    const t = resolveTheme(loadSaved(pickerChatId));
+function setPreview(t) {
     panelEl.querySelector('#theme-preview').style.background = t ? t.bg : DEFAULT_BG;
     panelEl.querySelector('#theme-prev-in').style.backgroundColor = DEFAULT_IN;
     panelEl.querySelector('#theme-prev-out').style.backgroundColor = t ? t.out : DEFAULT_OUT;
 }
 
+function updatePreview() {
+    setPreview(resolveTheme(loadSaved(pickerChatId)));
+}
+
+// ---------- Tek satır, kayan tema listesi ----------
+// Ortadaki tema öne çıkar ve üstteki önizleme onunla değişir. Bir temaya dokununca hemen uygulanır.
+let stripItems = [];
+let stripCenterIdx = -1;
+let stripScrollRaf = 0;
+
+function paintStrip() {
+    const saved = loadSaved(pickerChatId);
+    const currentId = saved ? saved.id : 'default';
+    stripItems.forEach((it, i) => {
+        const isCenter = i === stripCenterIdx;
+        const on = it.id === currentId;
+        it.el.style.transform = isCenter ? 'scale(1)' : 'scale(0.86)';
+        it.el.style.opacity = isCenter ? '1' : '0.7';
+        const box = it.el.firstElementChild;
+        if (box) {
+            box.style.borderColor = on ? '#10b981' : (it.id === 'custom' && !on ? '#4b5563' : 'transparent');
+            const chk = box.querySelector('[data-chk]');
+            if (chk) chk.style.display = on ? 'block' : 'none';
+        }
+    });
+}
+
+function previewForCenter() {
+    const it = stripItems[stripCenterIdx];
+    if (!it) return;
+    if (it.id === 'custom') { updatePreview(); return; }
+    setPreview(it.t && it.t.id !== 'default' ? it.t : null);
+}
+
+function updateStripCenter() {
+    const strip = panelEl && panelEl.querySelector('#theme-grid');
+    if (!strip || !stripItems.length) return;
+    const r = strip.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    let best = 0;
+    let bestD = Infinity;
+    stripItems.forEach((it, i) => {
+        const b = it.el.getBoundingClientRect();
+        const d = Math.abs(b.left + b.width / 2 - cx);
+        if (d < bestD) { bestD = d; best = i; }
+    });
+    if (best !== stripCenterIdx) {
+        stripCenterIdx = best;
+        paintStrip();
+        previewForCenter();
+    }
+}
+
+function centerStripOn(idx, smooth) {
+    const strip = panelEl && panelEl.querySelector('#theme-grid');
+    const it = stripItems[idx];
+    if (!strip || !it) return;
+    const target = it.el.offsetLeft + it.el.offsetWidth / 2 - strip.clientWidth / 2;
+    if (smooth && strip.scrollTo) strip.scrollTo({ left: target, behavior: 'smooth' });
+    else strip.scrollLeft = target;
+}
+
 function renderGrid() {
-    const grid = panelEl.querySelector('#theme-grid');
-    grid.innerHTML = '';
+    const strip = panelEl.querySelector('#theme-grid');
+    strip.innerHTML = '';
+    stripItems = [];
+    stripCenterIdx = -1;
     const saved = loadSaved(pickerChatId);
     const currentId = saved ? saved.id : 'default';
 
+    const W = strip.clientWidth || window.innerWidth;
+    const tw = Math.max(70, Math.floor((W - 48) / 3));
+    const pad = Math.max(0, Math.floor((W - tw) / 2));
+    strip.style.paddingLeft = pad + 'px';
+    strip.style.paddingRight = pad + 'px';
+
+    const mkTile = (id, t, boxHtml, label) => {
+        const tile = document.createElement('div');
+        tile.style.cssText = `flex:0 0 ${tw}px;width:${tw}px;scroll-snap-align:center;cursor:pointer;transition:transform .18s,opacity .18s;`;
+        tile.innerHTML = boxHtml + `<p class="text-gray-300 text-xs text-center mt-1.5">${label}</p>`;
+        strip.appendChild(tile);
+        const item = { id, t, el: tile };
+        stripItems.push(item);
+        return item;
+    };
+
     // Galeriden seç
-    const gal = document.createElement('div');
-    gal.className = 'cursor-pointer';
     const galBg = (saved && saved.id === 'custom' && saved.img) ? `background:url('${saved.img}') center/cover;` : 'background:#202c33;';
-    gal.innerHTML = `
-        <div class="relative rounded-xl border-2 ${currentId === 'custom' ? 'border-emerald-500' : 'border-dashed border-gray-600'} flex items-center justify-center" style="aspect-ratio:3/4;${galBg}">
+    const gal = mkTile('custom', null, `
+        <div class="relative rounded-xl border-2 flex items-center justify-center" style="aspect-ratio:3/4;${galBg}border-style:${currentId === 'custom' ? 'solid' : 'dashed'};">
             <i class="fa-solid fa-image text-gray-300 text-2xl"></i>
-            ${currentId === 'custom' ? '<i class="fa-solid fa-circle-check text-emerald-400 absolute top-1.5 right-1.5"></i>' : ''}
-        </div>
-        <p class="text-gray-300 text-xs text-center mt-1.5">Galeriden seç</p>`;
-    gal.addEventListener('click', pickFromGallery);
-    grid.appendChild(gal);
+            <i data-chk class="fa-solid fa-circle-check text-emerald-400 absolute top-1.5 right-1.5" style="display:none"></i>
+        </div>`, 'Galeriden seç');
+    gal.el.addEventListener('click', () => {
+        const idx = stripItems.indexOf(gal);
+        if (idx !== stripCenterIdx) { centerStripOn(idx, true); return; }
+        pickFromGallery();
+    });
 
     THEMES.forEach((t) => {
-        const on = currentId === t.id;
-        const tile = document.createElement('div');
-        tile.className = 'cursor-pointer';
-        tile.innerHTML = `
-            <div class="relative rounded-xl border-2 ${on ? 'border-emerald-500' : 'border-transparent'} overflow-hidden" style="aspect-ratio:3/4;background:${t.bg || DEFAULT_BG};">
+        const item = mkTile(t.id, t, `
+            <div class="relative rounded-xl border-2 overflow-hidden" style="aspect-ratio:3/4;background:${t.bg || DEFAULT_BG};">
                 <div class="absolute left-2 top-3 w-1/2 h-3 rounded" style="background:${DEFAULT_IN};"></div>
                 <div class="absolute right-2 top-9 w-2/3 h-3 rounded" style="background:${t.out || DEFAULT_OUT};"></div>
-                ${on ? '<i class="fa-solid fa-circle-check text-emerald-400 absolute top-1.5 right-1.5"></i>' : ''}
-            </div>
-            <p class="text-gray-300 text-xs text-center mt-1.5">${t.name}</p>`;
-        tile.addEventListener('click', () => {
+                <i data-chk class="fa-solid fa-circle-check text-emerald-400 absolute top-1.5 right-1.5" style="display:none"></i>
+            </div>`, t.name);
+        item.el.addEventListener('click', () => {
             saveSaved(pickerChatId, { id: t.id });
             applyTheme(pickerChatId);
-            updatePreview();
-            renderGrid();
+            centerStripOn(stripItems.indexOf(item), true);
+            setPreview(t.id === 'default' ? null : t);
+            paintStrip();
         });
-        grid.appendChild(tile);
     });
+
+    strip.onscroll = () => {
+        if (stripScrollRaf) return;
+        stripScrollRaf = requestAnimationFrame(() => { stripScrollRaf = 0; updateStripCenter(); });
+    };
+
+    // Seçili temayı ortaya getir
+    let startIdx = stripItems.findIndex((it) => it.id === currentId);
+    if (startIdx < 0) startIdx = 1;
+    centerStripOn(startIdx, false);
+    updateStripCenter();
+    paintStrip();
 }
 
 async function pickFromGallery() {
@@ -320,10 +408,12 @@ export function openChatThemePicker(chatId) {
     pickerChatId = chatId;
     updatePreview();
     paintBlackSwitch();
+    if (!panelOpen) {
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+        panelOpen = true;
+        pushBackState(closePanelFromBack);
+    }
+    // Liste ölçüleri panel görünür olduktan sonra hesaplanır
     renderGrid();
-    if (panelOpen) return;
-    el.classList.remove('hidden');
-    el.classList.add('flex');
-    panelOpen = true;
-    pushBackState(closePanelFromBack);
 }
