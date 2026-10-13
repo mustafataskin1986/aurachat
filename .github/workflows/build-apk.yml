@@ -2136,6 +2136,7 @@ jobs:
               // true: sistem açılış ekranı (siyah) tutulur; kendi ikon ekranımız çizilince bırakılır
               static volatile boolean sysKeep = true;
               private static ValueAnimator beat = null;
+              private static volatile boolean beating = false;
 
               public static void show(final Activity activity, WebView webView) {
                   try {
@@ -2148,37 +2149,33 @@ jobs:
                           final android.widget.FrameLayout root = new android.widget.FrameLayout(activity);
                           root.setBackgroundColor(Color.BLACK);
                           root.setClickable(true);
-                          // Animasyonlu vektör varsa o (arayüz meşgulken bile akar), yoksa PNG + elle büyütme
-                          int resId = activity.getResources().getIdentifier("aura_splash_icon", "drawable", activity.getPackageName());
+                          // Sistem ekranındaki logoyla aynı görünüm. Atış, telefonun animasyon ayarlarından (animasyon ölçeği,
+                          // pil tasarrufu) bağımsız, her karede zamana göre elle hesaplanır.
+                          int resId = activity.getResources().getIdentifier("aura_splash_vec", "drawable", activity.getPackageName());
+                          if (resId == 0) resId = activity.getResources().getIdentifier("aura_splash_icon", "drawable", activity.getPackageName());
                           if (resId != 0) {
                               final android.widget.ImageView iv = new android.widget.ImageView(activity);
                               iv.setImageResource(resId);
                               iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
                               int px = (int) (288f * activity.getResources().getDisplayMetrics().density);
                               root.addView(iv, new android.widget.FrameLayout.LayoutParams(px, px, android.view.Gravity.CENTER));
-                              android.graphics.drawable.Drawable dr = iv.getDrawable();
-                              if (dr instanceof android.graphics.drawable.Animatable) {
-                                  ((android.graphics.drawable.Animatable) dr).start();
-                              } else {
-                                  beat = ValueAnimator.ofFloat(0f, 1f);
-                                  beat.setDuration(1300);
-                                  beat.setRepeatCount(ValueAnimator.INFINITE);
-                                  beat.setInterpolator(new android.view.animation.LinearInterpolator());
-                                  beat.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
-                                      @Override
-                                      public void onAnimationUpdate(ValueAnimator a) {
-                                          float t = (Float) a.getAnimatedValue();
-                                          float sc = 1f;
-                                          if (t < 0.14f) sc = 1f + 0.12f * (t / 0.14f);
-                                          else if (t < 0.28f) sc = 1.12f - 0.12f * ((t - 0.14f) / 0.14f);
-                                          else if (t < 0.42f) sc = 1f + 0.08f * ((t - 0.28f) / 0.14f);
-                                          else if (t < 0.56f) sc = 1.08f - 0.08f * ((t - 0.42f) / 0.14f);
-                                          iv.setScaleX(sc);
-                                          iv.setScaleY(sc);
-                                      }
-                                  });
-                                  beat.start();
-                              }
+                              beating = true;
+                              final long t0 = android.os.SystemClock.uptimeMillis();
+                              iv.postOnAnimation(new Runnable() {
+                                  @Override
+                                  public void run() {
+                                      if (!beating) return;
+                                      float t = ((android.os.SystemClock.uptimeMillis() - t0) % 1300L) / 1300f;
+                                      float sc = 1f;
+                                      if (t < 0.14f) sc = 1f + 0.12f * (t / 0.14f);
+                                      else if (t < 0.28f) sc = 1.12f - 0.12f * ((t - 0.14f) / 0.14f);
+                                      else if (t < 0.42f) sc = 1f + 0.08f * ((t - 0.28f) / 0.14f);
+                                      else if (t < 0.56f) sc = 1.08f - 0.08f * ((t - 0.42f) / 0.14f);
+                                      iv.setScaleX(sc);
+                                      iv.setScaleY(sc);
+                                      iv.postOnAnimation(this);
+                                  }
+                              });
                           }
                           overlay = root;
                           // Pencerenin tamamına (durum çubuğu dahil) yerleştir: sistem ekranındaki logoyla aynı merkez, kayma olmaz
@@ -2228,6 +2225,7 @@ jobs:
               public static void hide(final Activity activity) {
                   keep = false;
                   sysKeep = false;
+                  beating = false;
                   activity.runOnUiThread(new Runnable() {
                       @Override
                       public void run() {
