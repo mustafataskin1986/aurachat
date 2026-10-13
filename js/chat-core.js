@@ -1146,6 +1146,7 @@ if (session.isGroup) {
         if (!currentUser || document.visibilityState !== 'visible') return;
 
                 let markedAny = false;
+        let localReadChanged = false;
         let newestSeenMs = 0;
         const lastReadMs = getChatLastReadMs(session.chatId);
         session.messages.forEach(({ id, data: msg }) => {
@@ -1157,11 +1158,15 @@ if (session.isGroup) {
                     if (t > lastReadMs) { newestSeenMs = Math.max(newestSeenMs, t); markedAny = true; }
                 } else if (!(t > 0 && t <= lastReadMs)) {
                     updateDoc(doc(db, "chats", session.chatId, "messages", id), { readBy: arrayUnion(currentUser.uid) }).catch(() => {});
+                    // Telefondaki kayıtta da okundu say (artımlı yüklemede bu mesaj sunucudan tekrar gelmez)
+                    msg.readBy = readBy.concat([currentUser.uid]);
+                    localReadChanged = true;
                     markedAny = true;
                 }
             }
         });
 
+        if (localReadChanged) writeChatDiskCache(session.chatId, session);
         if (markedAny) {
             updateDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), { unreadCount: 0, hasMention: false }).catch(() => {});
             if (readReceiptsHidden) {
@@ -1186,6 +1191,7 @@ if (session.isGroup) {
     if (document.visibilityState !== 'visible') return;
 
         let markedAny = false;
+    let localReadChanged = false;
     let newestSeenMs = 0;
     const lastReadMs = getChatLastReadMs(session.chatId);
     session.messages.forEach(({ id, data: msg }) => {
@@ -1196,10 +1202,14 @@ if (session.isGroup) {
                 if (t > lastReadMs) { newestSeenMs = Math.max(newestSeenMs, t); markedAny = true; }
             } else if (!(t > 0 && t <= lastReadMs)) {
                 updateDoc(doc(db, "chats", session.chatId, "messages", id), { read: true }).catch(() => {});
+                // Telefondaki kayıtta da okundu say (artımlı yüklemede bu mesaj sunucudan tekrar gelmez)
+                msg.read = true;
+                localReadChanged = true;
                 markedAny = true;
             }
         }
     });
+    if (localReadChanged) writeChatDiskCache(session.chatId, session);
 
     if (markedAny) {
         updateDoc(doc(db, "users", currentUser.uid, "chats", session.chatId), {
