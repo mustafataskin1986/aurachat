@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   }
 
   const { refreshToken, action, chatId, text } = req.body || {};
-  if (typeof refreshToken !== 'string' || !refreshToken || !['reply', 'read', 'mute', 'avatar', 'images', 'ackimages'].includes(action)) {
+  if (typeof refreshToken !== 'string' || !refreshToken || !['reply', 'read', 'mute', 'avatar', 'images', 'ackimages', 'msgsync'].includes(action)) {
     return res.status(400).json({ error: 'Eksik parametre.' });
   }
   if (typeof chatId !== 'string' || !ID_RE.test(chatId)) {
@@ -105,6 +105,39 @@ export default async function handler(req, res) {
       const o = await db.doc(`users/${otherUid}`).get();
       const av = o.exists && typeof o.data().avatar === 'string' ? o.data().avatar : '';
       return res.status(200).json({ avatar: av.length < 2000000 ? av : '' });
+    }
+
+    // Android kodu: bildirim gelince sohbetin telefondaki kaydına yazılacak yeni mesajlar.
+    // afterMs = telefondaki kaydın en son mesajının zamanı. O andan sonraki TÜM mesajlar verilir (arada boşluk kalmasın).
+    // Resim/ses/belge/tek seferlik ya da çok büyük mesaj varsa partial:true döner, telefon yazmaz (uygulama açılınca normal yoldan gelir).
+    if (action === 'msgsync') {
+      if (isGroup) return res.status(200).json({ partial: true, items: [] });
+      const afterMs = Number(req.body.afterMs);
+      if (!Number.isFinite(afterMs) || afterMs <= 0) return res.status(200).json({ partial: true, items: [] });
+      const q = await db.collection(`chats/${chatId}/messages`)
+        .where('createdAt', '>', admin.firestore.Timestamp.fromMillis(afterMs))
+        .orderBy('createdAt', 'asc').limit(40).get();
+      if (q.size >= 40) return res.status(200).json({ partial: true, items: [] });
+      const conv = (v) => {
+        if (v && typeof v.toMillis === 'function' && typeof v.seconds === 'number') return { seconds: v.seconds, nanoseconds: v.nanoseconds };
+        if (Array.isArray(v)) return v.map(conv);
+        if (v && typeof v === 'object') { const o = {}; Object.keys(v).forEach((k) => { o[k] = conv(v[k]); }); return o; }
+        return v;
+      };
+      const items = [];
+      let total = 0;
+      for (const d of q.docs) {
+        const m = d.data();
+        if (['image', 'audio', 'document'].includes(m.type) || m.viewOnce) return res.status(200).json({ partial: true, items: [] });
+        if (!m.createdAt || typeof m.createdAt.toMillis !== 'function') return res.status(200).json({ partial: true, items: [] });
+        const data = {};
+        Object.keys(m).forEach((k) => { data[k] = k === 'createdAt' ? m.createdAt.toMillis() : conv(m[k]); });
+        const size = JSON.stringify(data).length;
+        total += size;
+        if (size > 100000 || total > 600000) return res.status(200).json({ partial: true, items: [] });
+        items.push({ id: d.id, data });
+      }
+      return res.status(200).json({ partial: false, items });
     }
 
     // Android kodu: yeni gelen (okunmamış) fotoğrafları telefona indirmek için verir
