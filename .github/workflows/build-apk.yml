@@ -998,12 +998,6 @@ jobs:
                           AuraNotif.showSimple(this, data);
                       } else {
                           AuraNotif.show(this, data);
-                          // Yazı/konum geldiyse mesajı telefondaki sohbet kaydına da yaz: sohbet açılınca hazır olsun
-                          try {
-                              String sb0 = data.get("body");
-                              boolean isPhoto = sb0 != null && sb0.length() > 0 && sb0.codePointAt(0) == 0x1F4F7;
-                              if (!isPhoto && !"1".equals(data.get("isGroup"))) AuraNotif.syncMessages(this, data.get("chatId"));
-                          } catch (Throwable t) {}
                           // Fotoğraf geldiyse telefona (Android/media/.../AuraChat Images) hemen indir: sohbet açılınca hazır olsun
                           try {
                               String pb = data.get("body");
@@ -1011,6 +1005,11 @@ jobs:
                                       && !pb.contains("Bir kez") && !"1".equals(data.get("isGroup"))) {
                                   AuraNotif.fetchImages(this, data.get("chatId"));
                               }
+                          } catch (Throwable t) {}
+                          // Mesajı (yazı, konum, indirilmiş fotoğraf) telefondaki sohbet kaydına da yaz: sohbet açılınca hazır olsun.
+                          // Fotoğraf indirildikten SONRA çalışır ki resim mesajı da kayda girsin.
+                          try {
+                              if (!"1".equals(data.get("isGroup"))) AuraNotif.syncMessages(this, data.get("chatId"));
                           } catch (Throwable t) {}
                       }
                       return;
@@ -1705,7 +1704,7 @@ jobs:
                   try {
                       if (chatId == null || chatId.isEmpty() || chatId.contains("/") || chatId.contains("..")) return;
                       File f = new File(new File(c.getFilesDir(), "msg_cache"), chatId + ".json");
-                      if (!f.exists() || f.length() == 0) return;
+                      if (!f.exists() || f.length() == 0 || f.length() > 8L * 1024 * 1024) return;
                       java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
                       InputStream fin = new java.io.FileInputStream(f);
                       byte[] rb = new byte[16384];
