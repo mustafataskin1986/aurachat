@@ -159,6 +159,8 @@ function refreshSettingsHeader() {
     const nameEl = settingsEl.querySelector('#settings-name');
     const subEl = settingsEl.querySelector('#settings-sub');
     if (nameEl) nameEl.textContent = user.name || '';
+    const barT = settingsEl.querySelector('#settings-bar-title');
+    if (barT) barT.textContent = user.name || '';
     if (subEl) {
         subEl.textContent = user.about || 'Neler oluyor?';
         subEl.className = user.about ? 'text-gray-300 text-base' : 'text-gray-500 text-base';
@@ -334,19 +336,21 @@ function openSettingsPage() {
         el.className = 'fixed inset-0 bg-[#0b141a] hidden flex-col';
         el.style.zIndex = '45';
         el.innerHTML = `
-            <div class="bg-[#0b141a] px-4 py-3.5 flex items-center space-x-4 flex-shrink-0">
-                <button type="button" id="settings-back-btn" class="text-white text-lg px-1"><i class="fa-solid fa-arrow-left"></i></button>
-                <h2 class="text-white font-medium text-base">Ayarlar</h2>
+            <div id="settings-bar" class="absolute top-0 left-0 right-0 px-4 py-3.5 flex items-center justify-between" style="z-index:2;background:rgba(11,20,26,0);">
+                <button type="button" id="settings-back-btn" class="text-white text-lg px-1 w-10 text-left"><i class="fa-solid fa-arrow-left"></i></button>
+                <h2 id="settings-bar-title" class="flex-1 min-w-0 truncate text-white text-xl ml-2" style="opacity:0;"></h2>
+                <button type="button" id="settings-edit-btn" class="text-white text-lg px-1 w-10 text-right" aria-label="Profili düzenle"><i class="fa-solid fa-pencil"></i></button>
             </div>
-            <div class="flex-1 overflow-y-auto">
-                <div class="flex flex-col items-center pt-6 pb-8 px-6">
+            <div id="settings-scroll" class="flex-1 overflow-y-auto">
+                <div id="settings-head" class="flex flex-col items-center pt-16 pb-8 px-6">
+                    <button type="button" id="settings-about-btn" class="relative mb-3 px-5 py-2.5 rounded-full text-center max-w-full" style="background:#1f2c33;">
+                        <span id="settings-sub" class="text-base break-words"></span>
+                        <span style="position:absolute;left:50%;bottom:-6px;width:12px;height:12px;background:#1f2c33;transform:translateX(-50%) rotate(45deg);"></span>
+                    </button>
                     <button type="button" id="settings-avatar-btn" class="relative" aria-label="Profili aç">
                         <div id="settings-avatar" class="rounded-full flex items-center justify-center text-white font-bold text-5xl shadow-lg overflow-hidden" style="width:136px;height:136px;"></div>
                     </button>
                     <h2 id="settings-name" class="text-white text-2xl mt-5 text-center break-words max-w-full"></h2>
-                    <button type="button" id="settings-about-btn" class="mt-2 px-4 py-1.5 rounded-full text-center break-words max-w-full active:bg-white/5 transition">
-                        <span id="settings-sub" class="text-base"></span>
-                    </button>
                 </div>
                 <button type="button" id="settings-privacy-row" class="w-full px-5 py-4 flex items-center space-x-5 text-left active:bg-white/5 transition">
                     <i class="fa-solid fa-lock text-gray-400 text-xl w-6 text-center"></i>
@@ -363,6 +367,17 @@ function openSettingsPage() {
             popBackState();
         });
         el.querySelector('#settings-avatar-btn').addEventListener('click', () => openProfilePanel());
+        el.querySelector('#settings-edit-btn').addEventListener('click', () => openProfilePanel());
+        const scroller = el.querySelector('#settings-scroll');
+        const bar = el.querySelector('#settings-bar');
+        const barTitle = el.querySelector('#settings-bar-title');
+        const head = el.querySelector('#settings-head');
+        scroller.addEventListener('scroll', () => {
+            const t = Math.max(0, Math.min(1, (scroller.scrollTop - 120) / 120));
+            bar.style.background = 'rgba(11,20,26,' + t + ')';
+            barTitle.style.opacity = String(t);
+            head.style.opacity = String(1 - Math.min(1, scroller.scrollTop / 260));
+        }, { passive: true });
         el.querySelector('#settings-privacy-row').addEventListener('click', openPrivacyPage);
         el.querySelector('#settings-about-btn').addEventListener('click', openAboutPage);
         settingsEl = el;
