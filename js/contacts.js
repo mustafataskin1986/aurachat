@@ -20,7 +20,7 @@ import {
     collection, onSnapshot, query, orderBy, doc, getDocs, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
-import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, showToast, openMemberSheet, autoSaveIncomingImages } from "./chat-core.js";
+import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, showToast, openMemberSheet } from "./chat-core.js";
 import { auraDialog } from "./aura-dialog.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -37,6 +37,41 @@ const filterTabsContainer = document.getElementById('chat-filter-tabs');
 
 const appTitle = document.getElementById('app-title');
 let isAdminUser = false;
+
+// Açılışta ilk çizimden ÖNCE: başlık rengi (yönetici ise sarı), çip sayıları ve çip satırındaki gri kaydırma çubuğu.
+// Böylece renk ve sayılar sonradan değişip ekranda sıçramaz.
+const CHIP_COUNTS_KEY = 'aurachat_chip_counts';
+(function earlyChrome() {
+    try {
+        const st = document.createElement('style');
+        st.textContent = '#chat-filter-tabs{scrollbar-width:none;-ms-overflow-style:none}#chat-filter-tabs::-webkit-scrollbar{display:none;width:0;height:0}';
+        document.head.appendChild(st);
+    } catch (e) {}
+    let cachedUser = null;
+    try { cachedUser = JSON.parse(localStorage.getItem('aurachat_user') || 'null'); } catch (e) {}
+    try {
+        const admin = localStorage.getItem('aurachat_is_admin') === '1'
+            || !!(cachedUser && cachedUser.email && ADMIN_EMAIL && String(cachedUser.email).toLowerCase() === String(ADMIN_EMAIL).toLowerCase());
+        if (admin && appTitle) {
+            document.documentElement.setAttribute('data-aura-admin', '1');
+            appTitle.classList.add('text-amber-400');
+            appTitle.classList.remove('text-emerald-500');
+        }
+    } catch (e) {}
+    try {
+        const raw = JSON.parse(localStorage.getItem(CHIP_COUNTS_KEY) || 'null');
+        const tabs = document.getElementById('chat-filter-tabs');
+        if (raw && tabs && cachedUser && raw.uid === cachedUser.uid) {
+            const set = (f, label, n) => {
+                const el = tabs.querySelector('[data-filter="' + f + '"]');
+                if (el && n > 0) el.textContent = label + ' ' + n;
+            };
+            set('unread', 'Okunmamış', raw.u);
+            set('favorites', 'Favoriler', raw.f);
+            set('groups', 'Gruplar', raw.g);
+        }
+    } catch (e) {}
+})();
 const adminModal = document.getElementById('admin-modal');
 const adminModalClose = document.getElementById('admin-modal-close');
 const adminUserList = document.getElementById('admin-user-list');
@@ -238,12 +273,19 @@ if (filterTabsContainer) {
     });
 }
 
-function updateFilterChipLabels(unreadCount, favoritesCount) {
+function updateFilterChipLabels(unreadCount, favoritesCount, groupsCount) {
     if (!filterTabsContainer) return;
     const unreadChip = filterTabsContainer.querySelector('[data-filter="unread"]');
     const favChip = filterTabsContainer.querySelector('[data-filter="favorites"]');
+    const groupsChip = filterTabsContainer.querySelector('[data-filter="groups"]');
     if (unreadChip) unreadChip.textContent = unreadCount > 0 ? `Okunmamış ${unreadCount}` : 'Okunmamış';
     if (favChip) favChip.textContent = favoritesCount > 0 ? `Favoriler ${favoritesCount}` : 'Favoriler';
+    if (groupsChip) groupsChip.textContent = groupsCount > 0 ? `Gruplar ${groupsCount}` : 'Gruplar';
+    // Bir sonraki açılışta çipler sayılarla birlikte hemen çizilsin
+    try {
+        const cu = getCurrentUser();
+        if (cu && cu.uid) localStorage.setItem(CHIP_COUNTS_KEY, JSON.stringify({ uid: cu.uid, u: unreadCount, f: favoritesCount, g: groupsCount }));
+    } catch (e) {}
 }
 
 // ------------------------------------------
@@ -657,13 +699,15 @@ export async function loadContacts() {
 
         let unreadChatsCount = 0;
         let favoritesCount = 0;
+        let groupsCount = 0;
         myChats.forEach((chatData) => {
             const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
             const unreadCount = isLastMsgMine ? 0 : (chatData.unreadCount || 0);
             if (unreadCount > 0) unreadChatsCount++;
             if (chatData.archived) favoritesCount++;
+            if (chatData.isGroup && !isClearedChat(chatData)) groupsCount++;
         });
-        updateFilterChipLabels(unreadChatsCount, favoritesCount);
+        updateFilterChipLabels(unreadChatsCount, favoritesCount, groupsCount);
 
         dynamicListContainer.innerHTML = '';
         contactElementsMap.clear();
@@ -749,7 +793,7 @@ export async function loadContacts() {
                 if (!bi.lastTimeObj) return -1;
                 return bi.lastTimeObj - ai.lastTimeObj;
             })
-            .slice(0, 3);
+            .slice(0, 6);
 
         warmCandidates.forEach(([chatId, item]) => {
             prewarmChatSession(chatId, item.otherUid || null);
@@ -864,6 +908,10 @@ export async function loadContacts() {
             });
         }
 
+        userDiv.addEventListener('pointerdown', () => {
+            if (!chatSelectionMode) prewarmChatSession(chatId, isGroup ? null : (chatData.otherUid || null));
+        }, { passive: true });
+
         userDiv.addEventListener('click', () => {
             if (chatSelectionMode) return;
             if (isGroup) {
@@ -938,7 +986,7 @@ export async function loadContacts() {
         usersLoaded = true;
         renderAll();
     });
-    const autoSavedStamps = new Set();
+
         onSnapshot(query(collection(db, "users", currentUser.uid, "chats"), orderBy("updatedAt", "desc")), (snapshot) => {
         // Sadece "yazıyor..." değiştiyse listeyi yeniden çizme, o satırı yerinde güncelle
         if (chatsLoaded) {
@@ -956,25 +1004,6 @@ export async function loadContacts() {
                 return;
             }
         }
-                // Karşıdan resim geldiyse sohbeti açmadan galeriye kaydet (sadece Android uygulaması)
-        try {
-            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
-                const firstLoad = !chatsLoaded;
-                snapshot.docChanges().forEach((ch) => {
-                    if (ch.type === 'removed') return;
-                    const d = ch.doc.data();
-                    if (!d || d.lastSenderUid === currentUser.uid) return;
-                    const lm = String(d.lastMessage || '');
-                    if (lm.indexOf('📷') !== 0 || lm.indexOf('Bir kez') !== -1) return;
-                    if (firstLoad && !(d.unreadCount > 0)) return;
-                    const stamp = ch.doc.id + '|' + (d.lastMessageTime && d.lastMessageTime.toMillis ? d.lastMessageTime.toMillis() : 0);
-                    if (autoSavedStamps.has(stamp)) return;
-                    autoSavedStamps.add(stamp);
-                    const oUid = d.isGroup ? null : (d.otherUid || null);
-                    [0, 2500, 7000].forEach((ms) => setTimeout(() => autoSaveIncomingImages(ch.doc.id, oUid), ms));
-                });
-            }
-        } catch (e) {}
         myChats.clear();
         if (!window.__aurachatGroupIds) window.__aurachatGroupIds = new Set();
         snapshot.forEach((docSnap) => {
