@@ -3270,6 +3270,36 @@ export async function listGalleryImages() {
     return Array.from(seen, ([name, path]) => ({ name, path }));
 }
 
+// ---- Drive yedeği için: İndirilenler/AuraChat içindeki belgeler ----
+const DOC_DIR = 'Download/AuraChat';
+export async function listDocumentFiles() {
+    const Filesystem = getFilesystemPlugin();
+    if (!Filesystem) return [];
+    try {
+        const dir = await Filesystem.readdir({ path: DOC_DIR, directory: 'EXTERNAL_STORAGE' });
+        return (dir.files || [])
+            .filter((f) => typeof f === 'string' || f.type !== 'directory')
+            .map((f) => ({ name: typeof f === 'string' ? f : f.name }))
+            .filter((f) => f.name && !f.name.startsWith('.'));
+    } catch (e) {
+        return [];
+    }
+}
+
+export async function readDocumentBase64(name) {
+    const Filesystem = getFilesystemPlugin();
+    if (!Filesystem) return null;
+    const r = await Filesystem.readFile({ path: `${DOC_DIR}/${name}`, directory: 'EXTERNAL_STORAGE' });
+    return r.data;
+}
+
+export async function writeDocumentBase64(name, base64) {
+    const Filesystem = getFilesystemPlugin();
+    if (!Filesystem || !name || /[\\/]/.test(name)) return false;
+    await Filesystem.writeFile({ path: `${DOC_DIR}/${name}`, data: base64, directory: 'EXTERNAL_STORAGE', recursive: true });
+    return true;
+}
+
 export async function readGalleryImageBase64(path) {
     const Filesystem = getFilesystemPlugin();
     if (!Filesystem) return null;
