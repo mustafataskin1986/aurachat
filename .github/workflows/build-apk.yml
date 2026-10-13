@@ -1006,6 +1006,14 @@ jobs:
                                   AuraNotif.fetchImages(this, data.get("chatId"));
                               }
                           } catch (Throwable t) {}
+                          // Ses ya da belge geldiyse telefona indir (ses: medya klasörü, belge: İndirilenler/AuraChat), sonra sunucudaki kopyayı temizle
+                          try {
+                              String mb = data.get("body");
+                              if (mb != null && mb.length() > 0 && !"1".equals(data.get("isGroup"))) {
+                                  int mcp = mb.codePointAt(0);
+                                  if (mcp == 0x1F3A4 || mcp == 0x1F4C4) AuraNotif.fetchMedia(this, data.get("chatId"));
+                              }
+                          } catch (Throwable t) {}
                           // Mesajı (yazı, konum, indirilmiş fotoğraf) telefondaki sohbet kaydına da yaz: sohbet açılınca hazır olsun.
                           // Fotoğraf indirildikten SONRA çalışır ki resim mesajı da kayda girsin.
                           try {
@@ -1646,11 +1654,17 @@ jobs:
                       if (resp == null) return;
                       JSONArray items = new JSONObject(resp).optJSONArray("items");
                       if (items == null || items.length() == 0) return;
-                      // Uygulamanın iç veri alanı (JS tarafı da buradan okur; uygulama "veriyi sakla" ile silinirse resimler kalır). Olmazsa Pictures/AuraChat'e düş
+                      // WhatsApp gibi: uygulama medya klasörü (galeride görünmez). Olmazsa Pictures/AuraChat'e düş
                       File outDir = null;
                       try {
-                          File md = new File(c.getFilesDir(), "AuraChat/Media/AuraChat Images");
-                          if (md.exists() || md.mkdirs()) outDir = md;
+                          File[] dirs = c.getExternalMediaDirs();
+                          if (dirs != null && dirs.length > 0 && dirs[0] != null) {
+                              File md = new File(dirs[0], "AuraChat/Media/AuraChat Images");
+                              if (md.exists() || md.mkdirs()) {
+                                  outDir = md;
+                                  try { new File(md, ".nomedia").createNewFile(); } catch (Throwable t) {}
+                              }
+                          }
                       } catch (Throwable t) { outDir = null; }
                       if (outDir == null) {
                           File pics = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "AuraChat");
@@ -1689,6 +1703,82 @@ jobs:
                           if (ok) acked.put(id);
                       }
                       if (acked.length() > 0) callServerExtra(c, "ackimages", chatId, acked, 8000);
+                  } catch (Throwable t) {}
+              }
+
+              // ---------- ses ve belgeyi telefona indir ----------
+              static String audioExtOf(String dataUrl) {
+                  try {
+                      if (dataUrl == null || !dataUrl.startsWith("data:audio/")) return "webm";
+                      int end = dataUrl.indexOf(';');
+                      int end2 = dataUrl.indexOf(',');
+                      if (end < 0 || (end2 >= 0 && end2 < end)) end = end2;
+                      if (end < 0) return "webm";
+                      String t = dataUrl.substring("data:audio/".length(), end).toLowerCase();
+                      if (t.equals("mp4") || t.equals("x-m4a") || t.equals("m4a")) return "m4a";
+                      if (t.equals("mpeg") || t.equals("mp3")) return "mp3";
+                      if (t.equals("ogg")) return "ogg";
+                      if (t.equals("wav") || t.equals("x-wav") || t.equals("wave")) return "wav";
+                      if (t.equals("aac")) return "aac";
+                  } catch (Throwable t) {}
+                  return "webm";
+              }
+
+              static void fetchMedia(Context c, String chatId) {
+                  try {
+                      if (chatId == null || chatId.isEmpty()) return;
+                      String resp = callServerExtra(c, "media", chatId, null, 15000);
+                      if (resp == null) return;
+                      JSONArray items = new JSONObject(resp).optJSONArray("items");
+                      if (items == null || items.length() == 0) return;
+                      java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US);
+                      JSONArray acked = new JSONArray();
+                      for (int i = 0; i < items.length(); i++) {
+                          JSONObject it = items.optJSONObject(i);
+                          if (it == null) continue;
+                          String id = it.optString("id", "");
+                          String kind = it.optString("kind", "");
+                          String b = it.optString("data", "");
+                          if (id.isEmpty() || b.isEmpty()) continue;
+                          String head = b;
+                          int comma = b.indexOf(',');
+                          if (comma >= 0) b = b.substring(comma + 1);
+                          byte[] bytes = Base64.decode(b, Base64.DEFAULT);
+                          File f = null;
+                          if (kind.equals("audio")) {
+                              File[] dirs = c.getExternalMediaDirs();
+                              if (dirs == null || dirs.length == 0 || dirs[0] == null) continue;
+                              File ad = new File(dirs[0], "AuraChat/Media/AuraChat Audio");
+                              if (!(ad.exists() || ad.mkdirs())) continue;
+                              try { new File(ad, ".nomedia").createNewFile(); } catch (Throwable t) {}
+                              String stamp = fmt.format(new java.util.Date(it.optLong("t", System.currentTimeMillis())));
+                              f = new File(ad, "AuraChat_" + stamp + "_" + id + "." + audioExtOf(head));
+                          } else if (kind.equals("doc")) {
+                              File dd = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "AuraChat");
+                              if (!(dd.exists() || dd.mkdirs())) continue;
+                              String fn = it.optString("fileName", "");
+                              if (fn.isEmpty()) fn = "belge";
+                              String safe = fn.replaceAll("[\\\\/:*?\"<>|]+", "_");
+                              int dot = safe.lastIndexOf('.');
+                              String uniq = id.length() >= 4 ? id.substring(0, 4) : id;
+                              String saved = dot > 0 ? safe.substring(0, dot) + " (" + uniq + ")" + safe.substring(dot) : safe + " (" + uniq + ")";
+                              f = new File(dd, saved);
+                          }
+                          if (f == null) continue;
+                          boolean ok = true;
+                          FileOutputStream fo = null;
+                          try {
+                              fo = new FileOutputStream(f);
+                              fo.write(bytes);
+                          } catch (Throwable t) {
+                              ok = false;
+                          } finally {
+                              try { if (fo != null) fo.close(); } catch (Throwable t) {}
+                          }
+                          if (!f.exists() || f.length() != bytes.length) ok = false;
+                          if (ok) acked.put(id);
+                      }
+                      if (acked.length() > 0) callServerExtra(c, "ackmedia", chatId, acked, 8000);
                   } catch (Throwable t) {}
               }
 
