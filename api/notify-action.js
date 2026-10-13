@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   }
 
   const { refreshToken, action, chatId, text } = req.body || {};
-  if (typeof refreshToken !== 'string' || !refreshToken || !['reply', 'read', 'mute', 'avatar', 'images', 'ackimages', 'msgsync'].includes(action)) {
+  if (typeof refreshToken !== 'string' || !refreshToken || !['reply', 'read', 'mute', 'avatar', 'images', 'ackimages', 'msgsync', 'media', 'ackmedia'].includes(action)) {
     return res.status(400).json({ error: 'Eksik parametre.' });
   }
   if (typeof chatId !== 'string' || !ID_RE.test(chatId)) {
@@ -132,7 +132,10 @@ export default async function handler(req, res) {
         const imgDone = m.type === 'image' && !m.viewOnce && (
           (m.imageDelivered === true && !m.imageUrl) || (m.imagesDelivered === true && !m.images)
         );
-        if (m.viewOnce || (m.type === 'image' && !imgDone)) return res.status(200).json({ partial: true, items: [] });
+        // Ses ve belge de yalnızca telefona indirilip sunucudaki kopyası temizlenmişse (delivered) yazılır
+        const audioDone = m.type === 'audio' && m.audioDelivered === true && !m.audio;
+        const docDone = m.type === 'document' && m.imageDelivered === true && !m.imageUrl;
+        if (m.viewOnce || (m.type === 'image' && !imgDone) || (m.type === 'audio' && !audioDone) || (m.type === 'document' && !docDone)) return res.status(200).json({ partial: true, items: [] });
         if (!m.createdAt || typeof m.createdAt.toMillis !== 'function') return res.status(200).json({ partial: true, items: [] });
         const data = {};
         Object.keys(m).forEach((k) => { data[k] = k === 'createdAt' ? m.createdAt.toMillis() : conv(m[k]); });
@@ -165,6 +168,44 @@ export default async function handler(req, res) {
         items.push({ id: d.id, t, album: (m.imagesCount || 0) > 1, imgs });
       });
       return res.status(200).json({ items });
+    }
+
+    // Android kodu: yeni gelen (okunmamış) ses ve belgeleri telefona indirmek için verir
+    if (action === 'media') {
+      if (isGroup) return res.status(200).json({ items: [] });
+      const q = await db.collection(`chats/${chatId}/messages`)
+        .where('senderUid', '==', otherUid).where('read', '==', false).limit(30).get();
+      const items = [];
+      let total = 0;
+      q.docs.forEach((d) => {
+        const m = d.data();
+        let data = null;
+        let kind = '';
+        if (m.type === 'audio' && typeof m.audio === 'string' && m.audio) { data = m.audio; kind = 'audio'; }
+        else if (m.type === 'document' && typeof m.imageUrl === 'string' && m.imageUrl) { data = m.imageUrl; kind = 'doc'; }
+        if (!data) return;
+        if (total + data.length > 3500000) return;
+        total += data.length;
+        const t = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
+        items.push({ id: d.id, t, kind, data, fileName: typeof m.fileName === 'string' ? m.fileName : '' });
+      });
+      return res.status(200).json({ items });
+    }
+
+    // Telefona yazıldığı bildirilen ses/belgelerin sunucudaki kopyasını temizler (sadece alıcı tarafı, sadece doğrudan sohbet)
+    if (action === 'ackmedia') {
+      if (isGroup) return res.status(200).json({ success: true });
+      const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).filter((x) => typeof x === 'string' && /^[A-Za-z0-9]{20}$/.test(x)).slice(0, 30);
+      for (const mid of ids) {
+        const ref = db.doc(`chats/${chatId}/messages/${mid}`);
+        const snap = await ref.get();
+        if (!snap.exists) continue;
+        const m = snap.data();
+        if (m.senderUid !== otherUid) continue;
+        if (m.type === 'audio') await ref.update({ audio: null, audioDelivered: true });
+        else if (m.type === 'document') await ref.update({ imageUrl: null, imageDelivered: true });
+      }
+      return res.status(200).json({ success: true });
     }
 
     // Telefona yazıldığı bildirilen fotoğrafların sunucudaki kopyasını temizler (sadece alıcı tarafı, sadece doğrudan sohbet)
