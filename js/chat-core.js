@@ -387,6 +387,8 @@ function startIncomingCallWatcher() {
 export function setCurrentUser(user) {
     setTimeout(() => { try { startIncomingCallWatcher(); } catch (e) {} }, 0);
     currentUser = user;
+    // Tüm sohbetlerin telefondaki kayıtlarını arka planda belleğe al (sohbet açılışı anında olsun)
+    try { setTimeout(() => preloadAllChatDiskCaches(), 2500); } catch (e) {}
     // Başka uygulamadan (galeri vb.) "Paylaş" ile gelen resim varsa yakala
     try { checkPendingShare(); } catch (e) {}
     try { syncNativeNotifSession(); } catch (e) {}
@@ -692,6 +694,38 @@ async function ensureDirOnce(Filesystem, path) {
 }
 
 
+// Telefondaki sohbet kayıtlarının bellekteki kopyası: sohbet açılırken dosya okumayı beklemeden çizilsin
+const diskMemCache = new Map();
+
+async function readChatDiskCacheFast(chatId) {
+    if (diskMemCache.has(chatId)) return diskMemCache.get(chatId);
+    const r = await readChatDiskCache(chatId);
+    if (r) diskMemCache.set(chatId, r);
+    return r;
+}
+
+let diskPreloadStarted = false;
+export function preloadAllChatDiskCaches() {
+    if (diskPreloadStarted) return;
+    const Filesystem = getFilesystemPlugin();
+    if (!Filesystem) return;
+    diskPreloadStarted = true;
+    (async () => {
+        try {
+            const dir = await Filesystem.readdir({ path: MSG_DISK_CACHE_DIR, directory: 'DATA' });
+            const files = (dir.files || []).map((f) => (typeof f === 'string' ? { name: f, mtime: 0 } : { name: f.name, mtime: Number(f.mtime) || 0 }))
+                .filter((f) => f.name && f.name.endsWith('.json'))
+                .sort((a, b) => b.mtime - a.mtime)
+                .slice(0, 60);
+            for (const f of files) {
+                const chatId = f.name.slice(0, -5);
+                try { await readChatDiskCacheFast(chatId); } catch (e) {}
+                await new Promise((r) => setTimeout(r, 40));
+            }
+        } catch (e) {}
+    })();
+}
+
 async function readChatDiskCache(chatId) {
     const Filesystem = getFilesystemPlugin();
     if (!Filesystem) return null;
@@ -727,6 +761,11 @@ function writeChatDiskCache(chatId, session) {
         messages: messagesToSave
     };
 
+    diskMemCache.set(chatId, {
+        clearedAtMillis: payload.clearedAtMillis,
+        messages: session.messages.slice(-DISK_CACHE_MESSAGE_LIMIT)
+    });
+
     ensureDirOnce(Filesystem, MSG_DISK_CACHE_DIR).finally(() => {
         Filesystem.writeFile({
             path: `${MSG_DISK_CACHE_DIR}/${chatId}.json`,
@@ -738,6 +777,7 @@ function writeChatDiskCache(chatId, session) {
 }
 
 async function deleteChatDiskCache(chatId) {
+    diskMemCache.delete(chatId);
     const Filesystem = getFilesystemPlugin();
     if (!Filesystem) return;
     try {
@@ -824,12 +864,22 @@ if (!window.__auraTBuild) window.__auraTBuild = Math.round(performance.now());
 
     if (isGroup) {
         try {
-            const gSnap = await getDoc(doc(db, "groups", chatId));
+            const gSnap = await getDocFromCache(doc(db, "groups", chatId));
             if (gSnap.exists()) session.groupData = gSnap.data();
-        } catch (e) {}
+        } catch (e) {
+            // Önbellekte yoksa: telefonda mesaj kaydı varsa sunucuyu bekleme, arkada al
+            if (diskMemCache.has(chatId)) {
+                getDoc(doc(db, "groups", chatId)).then((g) => { if (g.exists() && !session.groupData) session.groupData = g.data(); }).catch(() => {});
+            } else {
+                try {
+                    const gSnap2 = await getDoc(doc(db, "groups", chatId));
+                    if (gSnap2.exists()) session.groupData = gSnap2.data();
+                } catch (e2) {}
+            }
+        }
     }
 
-    const diskCache = await readChatDiskCache(chatId);
+    const diskCache = await readChatDiskCacheFast(chatId);
     if (diskCache) {
         session.messages = diskCache.messages;
         if (diskCache.clearedAtMillis != null) {
@@ -847,6 +897,7 @@ if (!window.__auraTBuild) window.__auraTBuild = Math.round(performance.now());
             messageContainer.appendChild(buildUnreadDividerElement(Number(window.__auraLaunchPending)));
         }
                         scrollToUnreadOrBottom();
+        session.paintedAt = Date.now();
         if (window.__auraOnFirstPaint) window.__auraOnFirstPaint();
     }
  if (chatId !== 'global' && currentUser && session.clearedAt === null && !(diskCache && diskCache.messages.length)) {
@@ -1716,7 +1767,8 @@ if (currentIsGroup && session.groupData) setGroupHeaderAvatar(session.groupData.
     updateMicToggle();
     updateBlockedUI();
         const tempStillShown = !!(tempIncoming && tempIncoming.chatId === chatId && Date.now() - tempIncoming.at < 4000 && !session.messages.some((m) => m.id === tempIncoming.msgId));
-    if (!tempStillShown) {
+    const justPainted = !!(session.paintedAt && Date.now() - session.paintedAt < 1500);
+    if (!tempStillShown && !justPainted) {
         unreadDivider = findUnreadDivider(session);
         renderSession(session);
         scrollToUnreadOrBottom();
@@ -3140,6 +3192,7 @@ async function pwaDbSet(key, value) {
 // Uygulama silinse bile kalan klasör: Android/media/<paket>/ (WhatsApp ile aynı mantık). Galeride görünmez.
 const GALLERY_DIR = 'Android/media/com.aurachat.app/AuraChat/Media/AuraChat Images';
 const GALLERY_DIR_OLD = 'Pictures/AuraChat'; // eski kayıtlar buradan okunmaya devam eder
+const GALLERY_SENT_DIR = GALLERY_DIR + '/Sent'; // gönderdiğim resimlerin telefondaki kopyası (WhatsApp "Sent" gibi, galeride görünmez)
 const GALLERY_SAVE_DIR = 'Pictures/AuraChat'; // "Kaydet" ile galeriye inenler
 const GALLERY_NAME_RE = /^AuraChat_\d{8}_\d{6}_([A-Za-z0-9]{20})(?:_(\d+))?\.jpg$/;
 let galleryFileMap = null; // "msgId" veya "msgId_idx" -> dosya adı
@@ -3160,7 +3213,7 @@ function loadGalleryFileMap() {
         const Filesystem = getFilesystemPlugin();
         if (!Filesystem) return galleryFileMap;
         // Önce eski klasör, sonra yeni klasör (aynı resim ikisinde de varsa yeni olan kazanır)
-        for (const baseDir of [GALLERY_DIR_OLD, GALLERY_DIR]) {
+        for (const baseDir of [GALLERY_DIR_OLD, GALLERY_DIR, GALLERY_SENT_DIR]) {
             try {
                 const dir = await Filesystem.readdir({ path: baseDir, directory: 'EXTERNAL_STORAGE' });
                 for (const f of (dir.files || [])) {
@@ -3290,6 +3343,15 @@ async function resolveLocalMedia(chatId, msgId, base64Data, idx = null) {
                 const ownSrc = toImageSrc(base64Data);
                 mediaUriCache.set(cacheKey, ownSrc);
                 rememberLocalThumb(cacheKey, ownSrc);
+                // WhatsApp "Sent" gibi: gönderdiğim resmin kopyası telefonda durur (galeride görünmez, Drive yedeğine girer)
+                try {
+                    const pureOwn = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+                    const ownPath = `${GALLERY_SENT_DIR}/${buildGalleryFileName(getMessageTimeMs(chatId, msgId), msgId, idx)}`;
+                    Filesystem.writeFile({ path: ownPath, data: pureOwn, directory: 'EXTERNAL_STORAGE', recursive: true }).then(() => {
+                        map.set(key, ownPath);
+                        Filesystem.writeFile({ path: `${GALLERY_DIR}/.nomedia`, data: '', directory: 'EXTERNAL_STORAGE', recursive: true }).catch(() => {});
+                    }).catch(() => {});
+                } catch (eOwn) {}
                 return ownSrc;
             }
 
