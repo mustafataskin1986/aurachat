@@ -109,7 +109,7 @@ export default async function handler(req, res) {
 
     // Android kodu: bildirim gelince sohbetin telefondaki kaydına yazılacak yeni mesajlar.
     // afterMs = telefondaki kaydın en son mesajının zamanı. O andan sonraki TÜM mesajlar verilir (arada boşluk kalmasın).
-    // Resim/ses/belge/tek seferlik ya da çok büyük mesaj varsa partial:true döner, telefon yazmaz (uygulama açılınca normal yoldan gelir).
+    // Henüz telefona inmemiş resim, tek seferlik ya da çok büyük mesaj varsa partial:true döner, telefon yazmaz (uygulama açılınca normal yoldan gelir).
     if (action === 'msgsync') {
       if (isGroup) return res.status(200).json({ partial: true, items: [] });
       const afterMs = Number(req.body.afterMs);
@@ -128,13 +128,17 @@ export default async function handler(req, res) {
       let total = 0;
       for (const d of q.docs) {
         const m = d.data();
-        if (['image', 'audio', 'document'].includes(m.type) || m.viewOnce) return res.status(200).json({ partial: true, items: [] });
+        // Fotoğraf yalnızca telefona indirilip sunucudaki kopyası temizlenmişse (delivered) yazılır; yoksa kısmi
+        const imgDone = m.type === 'image' && !m.viewOnce && (
+          (m.imageDelivered === true && !m.imageUrl) || (m.imagesDelivered === true && !m.images)
+        );
+        if (m.viewOnce || (m.type === 'image' && !imgDone)) return res.status(200).json({ partial: true, items: [] });
         if (!m.createdAt || typeof m.createdAt.toMillis !== 'function') return res.status(200).json({ partial: true, items: [] });
         const data = {};
         Object.keys(m).forEach((k) => { data[k] = k === 'createdAt' ? m.createdAt.toMillis() : conv(m[k]); });
         const size = JSON.stringify(data).length;
         total += size;
-        if (size > 100000 || total > 600000) return res.status(200).json({ partial: true, items: [] });
+        if (size > 1100000 || total > 3000000) return res.status(200).json({ partial: true, items: [] });
         items.push({ id: d.id, data });
       }
       return res.status(200).json({ partial: false, items });
