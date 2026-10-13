@@ -1091,7 +1091,7 @@ if (currentChatId === chatId && !session.waitingFirst) {
             if (currentChatId === chatId) renderChatStatus();
         });
     }
-if (chatId !== 'global' && document.documentElement.hasAttribute('data-aura-launch')) {
+if (chatId !== 'global' && document.documentElement.hasAttribute('data-aura-launch') && !launchIdsCovered(window.__auraLaunch, session.messages)) {
         // Bildirimle açılış: sohbeti çizmeden önce yeni mesajların gelmesini bekle (en çok 2,5 sn)
         session.waitingFirst = true;
         try {
@@ -6937,6 +6937,20 @@ export async function autoSaveIncomingImages(chatId, otherUid) {
 // Bildirimle açılışta: Firebase oturumu hazır olmadan, telefondaki mesajlarla sohbeti hemen çiz.
 // Sunucuya hiç istek atmaz. Gerçek açılış sonra aynı görüntüyü kendisi yeniden çizer.
 // ------------------------------------------
+// Bildirimdeki tüm mesajlar zaten telefondaki kayıtta var mı? (Android kodu bildirim gelince yazmış olabilir)
+function launchIdsCovered(L, messages) {
+    try {
+        if (!L) return false;
+        const ids = new Set();
+        (Array.isArray(L.msgs) ? L.msgs : []).forEach((m) => { if (m && m.tag && String(m.tag).startsWith('msg-')) ids.add(String(m.tag).slice(4)); });
+        if (L.tag && String(L.tag).startsWith('msg-')) ids.add(String(L.tag).slice(4));
+        if (!ids.size) return false;
+        const have = new Set(messages.map((m) => m.id));
+        for (const id of ids) if (!have.has(id)) return false;
+        return true;
+    } catch (e) { return false; }
+}
+
 export async function paintLaunchFromDisk(L) {
     try {
         if (!L || !L.uid || !L.chatId || L.chatId === L.uid || currentChatId) return false;
@@ -6949,7 +6963,9 @@ export async function paintLaunchFromDisk(L) {
         if (!currentUser) currentUser = u;
 
         // Diskteki mesajlarda zaten okunmamış varsa güvenli yola bırak
-        if (findUnreadDivider({ chatId: L.chatId, isGroup: false, messages: disk.messages, olderMessagesPrepended: [] })) return false;
+        // Okunmamış mesajlar bildirimdekilerle aynıysa (Android kodu telefona yazmışsa) gerçek kayıttan çizilir; değilse güvenli yola bırak
+        const coveredDiv = findUnreadDivider({ chatId: L.chatId, isGroup: false, messages: disk.messages, olderMessagesPrepended: [] });
+        if (coveredDiv && !launchIdsCovered(L, disk.messages)) return false;
 
         const clr = disk.clearedAtMillis;
         const nowMs = Date.now();
@@ -7008,6 +7024,7 @@ export async function paintLaunchFromDisk(L) {
                     fragment.appendChild(buildDateChipElement(msgDate));
                     lastDayKey = dayKey;
                 }
+                if (coveredDiv && coveredDiv.msgId === id) fragment.appendChild(buildUnreadDividerElement(coveredDiv.count));
                 fragment.appendChild(buildMessageElement(msg, msg.senderUid === u.uid, id));
             });
         } finally {
@@ -7017,7 +7034,9 @@ export async function paintLaunchFromDisk(L) {
 
         window.__auraLaunch = L;
         window.__auraLaunchPending = Number(L.pending || 0);
-        if (!appendLaunchTemps({ chatId: L.chatId, messages: disk.messages })) {
+        if (coveredDiv) {
+            unreadDivider = { chatId: L.chatId, msgId: coveredDiv.msgId, count: coveredDiv.count };
+        } else if (!appendLaunchTemps({ chatId: L.chatId, messages: disk.messages })) {
             messageContainer.innerHTML = '';
             return false;
         }
