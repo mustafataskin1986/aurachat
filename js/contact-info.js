@@ -122,9 +122,8 @@ function applyCollapse() {
     fn.style.transform = 'translate(' + nl + 'px,' + (ncy - L.nameH / 2) + 'px) scale(' + ns + ')';
 
     const bt = Math.max(0, Math.min(1, (st - COLLAPSE_PX * 0.6) / (COLLAPSE_PX * 0.4)));
-    infoEl.querySelector('#ci-bar').style.background = 'rgba(32,44,51,' + bt + ')';
-    const rest = infoEl.querySelector('#ci-head-rest');
-    if (rest) rest.style.opacity = String(1 - Math.min(1, st / 200));
+    const blk = document.documentElement.hasAttribute('data-aura-black');
+    infoEl.querySelector('#ci-bar').style.background = (blk ? 'rgba(0,0,0,' : 'rgba(11,20,26,') + bt + ')';
 }
 
 function ensureEl() {
@@ -134,9 +133,8 @@ function ensureEl() {
     el.style.zIndex = '65';
     el.innerHTML = `
         <style>
-            #ci-scroll{position:relative;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.35) transparent;}
-            #ci-scroll::-webkit-scrollbar{width:4px;}
-            #ci-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.35);border-radius:4px;}
+            #ci-scroll{position:relative;scrollbar-width:none;}
+            #ci-scroll::-webkit-scrollbar{display:none;}
         </style>
         <div id="ci-bar" class="absolute top-0 left-0 right-0 px-4 flex items-center" style="z-index:3;height:60px;background:rgba(11,20,26,0);">
             <button type="button" id="ci-back" class="text-white text-lg px-1 w-9 text-left flex-shrink-0"><i class="fa-solid fa-arrow-left"></i></button>
@@ -243,7 +241,7 @@ async function onRow(id) {
             if (!snap.exists()) { showToast('Henüz mesajlaşılmamış bir sohbeti favorileyemezsin'); return; }
             const fav = !!snap.data().archived;
             await setDoc(ref, { archived: !fav }, { merge: true });
-            showToast(!fav ? 'Favorilere eklendi' : 'Favorilerden çıkarıldı');
+            showToast(!fav ? 'Favorilere eklendi' : 'Favorilerden kaldırıldı');
             refreshFavLabel();
         } catch (err) {
             showToast('İşlem yapılamadı: ' + err.message, 3500);
@@ -251,7 +249,7 @@ async function onRow(id) {
         return;
     }
 
-    if (id === 'starred') { openStarredPanel(); return; }
+    if (id === 'starred') { closeInfo(); openStarredPanel(); return; }
 
     if (id === 'theme') {
         if (!(await ensureChat())) return;
@@ -354,7 +352,10 @@ async function refreshFavLabel() {
     const lab = infoEl.querySelector('[data-row="fav"] [data-label]');
     try {
         const snap = await getDoc(doc(db, "users", me.uid, "chats", getChatId(me.uid, curUser.uid)));
-        lab.textContent = (snap.exists() && snap.data().archived) ? 'Favorilerden çıkar' : 'Favorilere ekle';
+        const on = snap.exists() && !!snap.data().archived;
+        lab.textContent = on ? 'Favorilerden kaldır' : 'Favorilere ekle';
+        const ic = infoEl.querySelector('[data-row="fav"] i');
+        if (ic) ic.className = (on ? 'fa-solid fa-heart-crack' : 'fa-regular fa-heart') + ' text-pink-400 text-lg w-6 text-center';
     } catch (e) {}
 }
 
@@ -502,8 +503,7 @@ export function openContactInfo(uid, beforeMessage) {
 
     const scroller = el.querySelector('#ci-scroll');
     scroller.scrollTop = 0;
-    el.querySelector('#ci-bar').style.background = 'rgba(32,44,51,0)';
-    el.querySelector('#ci-head-rest').style.opacity = '1';
+    el.querySelector('#ci-bar').style.background = 'rgba(0,0,0,0)';
 
     refreshMuteLabel();
     refreshFavLabel();
