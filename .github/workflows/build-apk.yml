@@ -3209,6 +3209,7 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk AuraChat.apk
           gh release view apk-latest > /dev/null 2>&1 || gh release create apk-latest --title "AuraChat APK" --notes "En güncel Android uygulaması" --latest
           gh release upload apk-latest AuraChat.apk --clobber
+          gh release edit apk-latest --notes "Son derleme: $(TZ=Europe/Istanbul date '+%d.%m.%Y %H:%M') - commit ${GITHUB_SHA::7}"
 
       - name: Eski Çıktıları ve Kayıtları Temizle
         env:
