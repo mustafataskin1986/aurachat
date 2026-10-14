@@ -16,6 +16,7 @@ import { openChatThemePicker } from "./chat-theme.js";
 import { auraDialog, auraAccent } from "./aura-dialog.js";
 import "./dark-toggle.js";
 import { openBackupMenu } from "./backup.js";
+import { openContactInfo } from "./contact-info.js";
 
 const sidebar = document.getElementById('sidebar');
 const chatAreaEl = document.getElementById('chat-area');
@@ -222,7 +223,10 @@ function renderCreateList() {
         row.className = 'flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer border-b border-gray-800/30';
         row.innerHTML = `
             ${avatarHtml(u, 'w-11 h-11')}
-            <span class="text-white text-sm font-medium ml-3 truncate flex-1">${escapeHtml(u.name || '')}</span>
+            <div class="ml-3 min-w-0 flex-1">
+                <span class="block text-white text-sm font-medium truncate">${escapeHtml(u.name || '')}</span>
+                ${u.about ? `<span class="block text-[11px] text-gray-400 truncate">${escapeHtml(u.about)}</span>` : ''}
+            </div>
             <div class="pick-mark w-6 h-6 rounded-full border-2 border-gray-600 flex items-center justify-center flex-shrink-0">
                 <i class="fa-solid fa-check text-white text-[10px] hidden"></i>
             </div>
@@ -462,13 +466,20 @@ async function openGroupInfo(groupId) {
             row.className = 'flex items-center px-4 py-3 border-b border-gray-800/30';
             row.innerHTML = `
                 ${avatarHtml(u, 'w-11 h-11')}
-                <span class="text-white text-sm font-medium ml-3 truncate flex-1">${escapeHtml(u.name || '')}</span>
+                <div class="ml-3 min-w-0 flex-1">
+                    <span class="block text-white text-sm font-medium truncate">${escapeHtml(u.name || '')}</span>
+                    ${u.about ? `<span class="block text-[11px] text-gray-400 truncate">${escapeHtml(u.about)}</span>` : ''}
+                </div>
                 ${tags.length ? `<span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-bold ml-2 flex-shrink-0">${tags.join(' · ')}</span>` : ''}
             `;
-            // Yönetici, kurucu dışındaki üyelere dokunup işlem yapabilir
-            if (iAmAdmin && !isMe && g.createdBy !== uid) {
+            // Yönetici, kurucu dışındaki üyelere dokunup işlem yapabilir; diğerlerinde kişi bilgisi açılır
+            if (!isMe) {
                 row.classList.add('cursor-pointer', 'hover:bg-[#202c33]/60');
-                row.addEventListener('click', () => openMemberActions(uid, u.name || 'Üye', g));
+                if (iAmAdmin && g.createdBy !== uid) {
+                    row.addEventListener('click', () => openMemberActions(uid, u.name || 'Üye', g));
+                } else {
+                    row.addEventListener('click', () => openContactInfo(uid, closeInfoPanel));
+                }
             }
             membersEl.appendChild(row);
         });
@@ -549,7 +560,10 @@ function renderAddList() {
         row.className = 'flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer border-b border-gray-800/30';
         row.innerHTML = `
             ${avatarHtml(u, 'w-11 h-11')}
-            <span class="text-white text-sm font-medium ml-3 truncate flex-1">${escapeHtml(u.name || '')}</span>
+            <div class="ml-3 min-w-0 flex-1">
+                <span class="block text-white text-sm font-medium truncate">${escapeHtml(u.name || '')}</span>
+                ${u.about ? `<span class="block text-[11px] text-gray-400 truncate">${escapeHtml(u.about)}</span>` : ''}
+            </div>
             <div class="pick-mark w-6 h-6 rounded-full border-2 border-gray-600 flex items-center justify-center flex-shrink-0">
                 <i class="fa-solid fa-check text-white text-[10px] hidden"></i>
             </div>
@@ -740,6 +754,7 @@ function openMemberActions(uid, name, g) {
     el.innerHTML = `
         <div class="w-full bg-[#202c33] rounded-t-2xl pb-6">
             <p class="text-gray-400 text-xs px-5 pt-4 pb-2 truncate">${escapeHtml(name)}</p>
+            <button type="button" data-act="info" class="w-full text-left px-5 py-3.5 text-sm text-gray-100 hover:bg-[#2a3942]"><i class="fa-solid fa-circle-info text-sky-400 w-6"></i>Kişi bilgisi</button>
             <button type="button" data-act="admin" class="w-full text-left px-5 py-3.5 text-sm text-gray-100 hover:bg-[#2a3942]"><i class="fa-solid fa-user-shield text-emerald-400 w-6"></i>${admin ? 'Yöneticiliği kaldır' : 'Yönetici yap'}</button>
             <button type="button" data-act="remove" class="w-full text-left px-5 py-3.5 text-sm text-rose-400 hover:bg-[#2a3942]"><i class="fa-solid fa-user-minus w-6"></i>Gruptan çıkar</button>
             <button type="button" data-act="cancel" class="w-full text-left px-5 py-3.5 text-sm text-gray-400 hover:bg-[#2a3942]"><i class="fa-solid fa-xmark w-6"></i>Vazgeç</button>
@@ -752,7 +767,8 @@ function openMemberActions(uid, name, g) {
         if (!btn) return;
         const act = btn.dataset.act;
         closeMemberSheet();
-        if (act === 'admin') toggleAdmin(uid, name, admin);
+        if (act === 'info') openContactInfo(uid, closeInfoPanel);
+        else if (act === 'admin') toggleAdmin(uid, name, admin);
         else if (act === 'remove') removeMember(uid, name);
     });
     memberSheetEl = el;
@@ -888,7 +904,11 @@ const headerAvatar = document.getElementById('active-chat-avatar');
     if (!el) return;
     el.addEventListener('click', () => {
         const id = getCurrentChatId();
-        if (isGroupId(id)) openGroupInfo(id);
+        if (!id || id === 'global') return;
+        if (isGroupId(id)) { openGroupInfo(id); return; }
+        const me = getCurrentUser();
+        const other = me && id.split('_').find((x) => x !== me.uid);
+        if (other) openContactInfo(other);
     });
 });
 
@@ -931,6 +951,12 @@ async function openChatMenu() {
                      <i class="fa-solid fa-magnifying-glass text-gray-300 w-4"></i><span>Ara</span>
         </button>
 `;
+    if (!isGrp) {
+        itemsHtml += `
+            <button type="button" data-chat-menu="contact" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+                <i class="fa-solid fa-circle-info text-sky-400 w-4"></i><span>Kişi bilgisi</span>
+            </button>`;
+    }
     if (isGrp) {
         itemsHtml += `
             <button type="button" data-chat-menu="info" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
@@ -988,6 +1014,7 @@ async function openChatMenu() {
 
               if (action === 'search') { openChatSearch(); return; }
         if (action === 'info') { openGroupInfo(id); return; }
+        if (action === 'contact') { const o = id.split('_').find((x) => x !== me.uid); if (o) openContactInfo(o); return; }
         if (action === 'add') { openAddPanelForGroup(id); return; }
         if (action === 'theme') { openChatThemePicker(id); return; }
         if (action === 'wipe') {
