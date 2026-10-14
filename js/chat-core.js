@@ -5877,6 +5877,27 @@ function openViewer(o) {
             window.closeImageViewer();
             if (it && it.id) setTimeout(() => scrollToOriginalMessage(it.id), 250);
         }
+    }, {
+        label: 'Düzenle',
+        fn: (it) => {
+            const src = it && it.src ? String(it.src) : '';
+            if (!src.startsWith('data:') && !src.startsWith('blob:')) { showToast('Resim henüz hazır değil'); return; }
+            if (typeof window.isaretlemeyiAc !== 'function') { showToast('Düzenleyici açılamadı'); return; }
+            window.closeImageViewer();
+            setTimeout(() => {
+                window.seciliGorseller = [src];
+                // Düzenlenen resim, yazı alanının üstündeki resim listesine yeni resim olarak eklenir
+                window.isrtBitirHook = async (veri) => {
+                    try {
+                        const blob = await (await fetch(veri)).blob();
+                        const file = new File([blob], 'AuraChat_duzenlenen_' + Date.now() + '.jpg', { type: 'image/jpeg' });
+                        composer.addImages([file]);
+                        showToast('Düzenlenen resim gönderilmeye hazır');
+                    } catch (e) { showToast('Resim eklenemedi'); }
+                };
+                window.isaretlemeyiAc('chat', 0);
+            }, 200);
+        }
     }];
     window.openImageViewer(o);
 }
