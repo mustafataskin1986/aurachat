@@ -90,6 +90,12 @@ export function setupComposer() {
     box-shadow: inset 0 0 0 1px var(--aura-btn,#22c55e) !important;
 }
 
+/* Klavye kapalıyken (yazı alanına odaklanılmamışken) yanlardan ve alttan boşluk bırak.
+   Klavye açılınca (odaklanınca) boşluk kalkar, panel klavyenin hemen üstüne oturur. */
+#chat-area .aura-composer.aura-composer:not(:focus-within) {
+    margin: 0 12px calc(env(safe-area-inset-bottom, 0px) + 10px) 12px !important;
+}
+
 #chat-area .aura-composer.aura-composer[style*="display: none"] {
     display: none !important;
 }
