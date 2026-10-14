@@ -1,4 +1,4 @@
- // ==========================================
+// ==========================================
 // GRUPLAR + ÜÇ NOKTA MENÜSÜ
 // - Ana ekran sağ üstteki üç nokta: Yeni grup / Ayarlar menüsü
 // - Yeni grup: kişi seç, isim ver, oluştur
@@ -89,7 +89,13 @@ function ensureMenu() {
         } else if (item.dataset.menu === 'settings' && window.openProfilePanel) {
             window.openProfilePanel();
         } else if (item.dataset.menu === 'install-apk') {
-            window.location.href = APK_URL;
+            const apkLink = document.createElement('a');
+            apkLink.href = APK_URL;
+            apkLink.download = 'AuraChat.apk';
+            apkLink.rel = 'noopener';
+            document.body.appendChild(apkLink);
+            apkLink.click();
+            apkLink.remove();
         } else if (item.dataset.menu === 'backup') {
             openBackupMenu();
                } else if (item.dataset.menu === 'eruda') {
