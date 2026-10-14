@@ -4469,6 +4469,7 @@ function closeForwardPickerFromBack() {
     forwardPickerOpen = false;
     pendingShare = null;
     forwardTargets.clear();
+    resetForwardUi();
     refreshForwardBar();
 }
 
@@ -4478,95 +4479,274 @@ function closeForwardPicker() {
     popBackState();
 }
 
+let fwdSearching = false;
+let fwdQuery = '';
+let fwdContactsEl = null;
+let fwdContactsOpen = false;
+let forwardCaption = '';
+
+function fwdIsImage() {
+    if (pendingShare && pendingShare.length) return true;
+    const e = forwardSource && forwardSource.entry;
+    return !!(e && e.data && e.data.type === 'image');
+}
+
+function fwdCheckedHtml(on) {
+    return on ? '<i class="fa-solid fa-check text-white text-xs"></i>' : '';
+}
+
+function fwdAvatarHtml(u) {
+    const photo = u.isGroup ? u.groupPhoto : u.avatar;
+    if (photo) return `<img src="${photo}" class="w-11 h-11 rounded-full object-cover shadow flex-shrink-0">`;
+    if (u.isGroup) return `<div class="w-11 h-11 rounded-full flex items-center justify-center text-white shadow flex-shrink-0" style="background-color:#0f3d3a;"><i class="fa-solid fa-user-group text-sm"></i></div>`;
+    return `<div class="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color:${getUserColor(u.name || '?')};">${getInitials(u.name || '?')}</div>`;
+}
+
+function fwdMakeRow(u, sub) {
+    const on = forwardTargets.has(u.uid);
+    const row = document.createElement('div');
+    row.className = 'flex items-center px-4 py-3 active:bg-white/5 cursor-pointer';
+    row.innerHTML = `${fwdAvatarHtml(u)}<div class="ml-3 min-w-0 flex-1"><div class="text-white text-[15px] truncate">${escapeHtml(u.name || '')}</div>${sub ? `<div class="text-gray-400 text-xs truncate">${escapeHtml(sub)}</div>` : ''}</div><span class="fwd-check ml-3 w-6 h-6 rounded-full border-2 ${on ? 'bg-emerald-500 border-emerald-500' : 'border-gray-500'} flex items-center justify-center flex-shrink-0">${fwdCheckedHtml(on)}</span>`;
+    row.addEventListener('click', () => toggleForwardTarget(u, row));
+    return row;
+}
+
+function fwdSectionTitle(listEl, label) {
+    const h = document.createElement('div');
+    h.className = 'px-4 pt-4 pb-2 text-sm text-gray-400';
+    h.textContent = label;
+    listEl.appendChild(h);
+}
+
+// Son sohbetlerden hedef listesi (gruplar + kişiler), en yeni üstte
+function fwdRecentTargets() {
+    const usersMap = window.__aurachatUsers;
+    const out = [];
+    const my = window.__aurachatMyChats;
+    if (!my) return out;
+    const arr = [];
+    my.forEach((d, id) => { if (d && id) arr.push([id, d]); });
+    const ms = (d) => (d.lastMessageTime && d.lastMessageTime.toMillis ? d.lastMessageTime.toMillis() : 0);
+    arr.sort((a, b) => ms(b[1]) - ms(a[1]));
+    arr.forEach(([id, d]) => {
+        if (d.isGroup) {
+            out.push({ uid: id, name: d.groupName || 'Grup', isGroup: true, groupPhoto: d.groupPhoto || '' });
+        } else if (d.otherUid && d.otherUid !== currentUser.uid && usersMap) {
+            const u = usersMap.get(d.otherUid);
+            if (u) out.push(u);
+        }
+    });
+    return out;
+}
+
+function renderForwardList() {
+    if (!forwardPickerEl) return;
+    const listEl = forwardPickerEl.querySelector('#forward-list');
+    listEl.innerHTML = '';
+    const usersMap = window.__aurachatUsers;
+    const allUsers = usersMap ? Array.from(usersMap.values()).filter((u) => u.uid !== currentUser.uid) : [];
+    allUsers.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+
+    if (fwdSearching) {
+        const q = fwdQuery.trim().toLocaleLowerCase('tr');
+        const groups = fwdRecentTargets().filter((t) => t.isGroup);
+        const pool = groups.concat(allUsers).filter((t) => !q || (t.name || '').toLocaleLowerCase('tr').includes(q));
+        if (!pool.length) {
+            listEl.innerHTML = '<p class="text-center text-gray-500 text-sm py-10">Sonuç bulunamadı</p>';
+            return;
+        }
+        pool.forEach((t) => listEl.appendChild(fwdMakeRow(t, t.isGroup ? 'Grup' : '')));
+        return;
+    }
+
+    const recents = fwdRecentTargets();
+    const seen = new Set(recents.map((t) => t.uid));
+    // Kişiler sayfasından eklenen ama son sohbetlerde olmayanlar
+    const extras = Array.from(forwardTargets.values()).filter((t) => !seen.has(t.uid));
+    const frequent = recents.filter((t) => !t.isGroup).slice(0, 3);
+    const freqIds = new Set(frequent.map((t) => t.uid));
+    const rest = extras.concat(recents.filter((t) => !freqIds.has(t.uid)));
+
+    if (!frequent.length && !rest.length) {
+        if (!allUsers.length) {
+            listEl.innerHTML = '<p class="text-center text-gray-500 text-sm py-10">İletilecek kişi bulunamadı.</p>';
+            return;
+        }
+        fwdSectionTitle(listEl, 'Kişiler');
+        allUsers.forEach((u) => listEl.appendChild(fwdMakeRow(u, '')));
+        return;
+    }
+    if (frequent.length) {
+        fwdSectionTitle(listEl, 'Sık görüşülenler');
+        frequent.forEach((u) => listEl.appendChild(fwdMakeRow(u, '')));
+    }
+    if (rest.length) {
+        fwdSectionTitle(listEl, 'Son sohbetler');
+        rest.forEach((t) => listEl.appendChild(fwdMakeRow(t, t.isGroup ? 'Grup' : '')));
+    }
+}
+
+function fwdSetSearch(on) {
+    if (!forwardPickerEl) return;
+    fwdSearching = on;
+    fwdQuery = '';
+    const input = forwardPickerEl.querySelector('#fwd-search-input');
+    input.value = '';
+    forwardPickerEl.querySelector('#fwd-title-box').classList.toggle('hidden', on);
+    forwardPickerEl.querySelector('#fwd-actions').classList.toggle('hidden', on);
+    forwardPickerEl.querySelector('#fwd-search-box').classList.toggle('hidden', !on);
+    forwardPickerEl.querySelector('#fwd-search-box').classList.toggle('flex', on);
+    if (on) setTimeout(() => input.focus(), 50);
+    else input.blur();
+    renderForwardList();
+}
+
+function resetForwardUi() {
+    fwdSearching = false;
+    fwdQuery = '';
+    forwardCaption = '';
+    if (forwardPickerEl) {
+        const cap = forwardPickerEl.querySelector('#fwd-caption');
+        if (cap) cap.value = '';
+        const si = forwardPickerEl.querySelector('#fwd-search-input');
+        if (si) si.value = '';
+        forwardPickerEl.querySelector('#fwd-title-box').classList.remove('hidden');
+        forwardPickerEl.querySelector('#fwd-actions').classList.remove('hidden');
+        forwardPickerEl.querySelector('#fwd-search-box').classList.add('hidden');
+        forwardPickerEl.querySelector('#fwd-search-box').classList.remove('flex');
+    }
+    if (fwdContactsEl) closeFwdContactsFromBack();
+}
+
+function closeFwdContactsFromBack() {
+    if (fwdContactsEl) {
+        fwdContactsEl.classList.add('hidden');
+        fwdContactsEl.classList.remove('flex');
+    }
+    fwdContactsOpen = false;
+}
+
+function closeFwdContacts() {
+    if (!fwdContactsOpen) return;
+    closeFwdContactsFromBack();
+    popBackState();
+    renderForwardList();
+}
+
+// Kişiler sayfası: tüm kişilerden seçim yapılır, geri dönünce listeye eklenir
+function openFwdContacts() {
+    if (!fwdContactsEl) {
+        const el = document.createElement('div');
+        el.className = 'fixed inset-0 bg-[#0b141a] hidden flex-col';
+        el.style.zIndex = '56';
+        el.innerHTML = `
+            <div class="bg-[#202c33] px-4 py-3.5 flex items-center space-x-4 border-b border-gray-800 flex-shrink-0">
+                <button type="button" id="fwd-contacts-back" class="text-gray-400 hover:text-white transition text-lg px-1"><i class="fa-solid fa-arrow-left"></i></button>
+                <div class="min-w-0">
+                    <h2 class="text-white font-medium text-base">Kişiler</h2>
+                    <p id="fwd-contacts-sub" class="text-gray-400 text-xs"></p>
+                </div>
+            </div>
+            <div id="fwd-contacts-list" class="flex-1 overflow-y-auto" style="scrollbar-width:none;"></div>`;
+        document.body.appendChild(el);
+        el.querySelector('#fwd-contacts-back').addEventListener('click', closeFwdContacts);
+        fwdContactsEl = el;
+    }
+    const listEl = fwdContactsEl.querySelector('#fwd-contacts-list');
+    listEl.innerHTML = '';
+    const usersMap = window.__aurachatUsers;
+    const users = usersMap ? Array.from(usersMap.values()).filter((u) => u.uid !== currentUser.uid) : [];
+    users.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+    if (!users.length) listEl.innerHTML = '<p class="text-center text-gray-500 text-sm py-10">Kişi bulunamadı.</p>';
+    users.forEach((u) => listEl.appendChild(fwdMakeRow(u, u.about || '')));
+    fwdContactsEl.querySelector('#fwd-contacts-sub').textContent = forwardTargets.size ? `${forwardTargets.size} kişi seçildi` : '';
+    fwdContactsEl.classList.remove('hidden');
+    fwdContactsEl.classList.add('flex');
+    if (!fwdContactsOpen) {
+        fwdContactsOpen = true;
+        pushBackState(closeFwdContactsFromBack);
+    }
+}
+
 function ensureForwardPicker() {
     if (forwardPickerEl) return forwardPickerEl;
     const el = document.createElement('div');
     el.className = 'fixed inset-0 z-50 bg-[#0b141a] hidden flex-col';
     el.innerHTML = `
-        <div class="bg-[#202c33] px-4 py-3.5 flex items-center space-x-4 border-b border-gray-800 flex-shrink-0">
-            <button type="button" id="forward-back-btn" class="text-gray-400 hover:text-white transition text-lg px-1">
-                <i class="fa-solid fa-arrow-left"></i>
-            </button>
-            <h2 class="text-white font-medium text-base">Şuna ilet</h2>
+        <style>#forward-list{scrollbar-width:none;}#forward-list::-webkit-scrollbar{display:none;}</style>
+        <div class="bg-[#202c33] px-4 py-3 flex items-center border-b border-gray-800 flex-shrink-0" style="min-height:64px;">
+            <button type="button" id="forward-back-btn" class="text-white text-lg px-1 w-9 text-left flex-shrink-0"><i class="fa-solid fa-arrow-left"></i></button>
+            <div id="fwd-title-box" class="flex-1 min-w-0 ml-2">
+                <h2 id="fwd-title" class="text-white text-lg truncate leading-tight">Şuna ilet</h2>
+                <p id="fwd-sub" class="text-gray-400 text-xs hidden leading-tight"></p>
+            </div>
+            <div id="fwd-search-box" class="hidden flex-1 min-w-0 items-center ml-2">
+                <input id="fwd-search-input" type="text" placeholder="Ara…" autocomplete="off" class="flex-1 min-w-0 bg-transparent text-white text-lg outline-none">
+            </div>
+            <div id="fwd-actions" class="flex items-center space-x-5 flex-shrink-0 text-white text-lg">
+                <button type="button" id="fwd-add-btn" aria-label="Kişiler"><i class="fa-solid fa-user-plus"></i></button>
+                <button type="button" id="fwd-search-btn" aria-label="Ara"><i class="fa-solid fa-magnifying-glass"></i></button>
+            </div>
         </div>
-          <div id="forward-list" class="flex-1 overflow-y-auto"></div>
-        <div id="forward-send-bar" class="hidden items-center px-4 py-3 bg-[#202c33] flex-shrink-0">
-            <p id="forward-send-names" class="flex-1 min-w-0 text-gray-300 text-sm truncate"></p>
-            <button type="button" id="forward-send-btn" class="ml-3 w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-paper-plane"></i></button>
+        <div id="forward-list" class="flex-1 overflow-y-auto"></div>
+        <div id="forward-send-bar" class="hidden flex-col flex-shrink-0 bg-[#0b141a]">
+            <div id="fwd-caption-row" class="hidden items-center px-3 py-2 space-x-3">
+                <img id="fwd-thumb" class="w-14 h-14 rounded-lg object-cover bg-black/40 flex-shrink-0" alt="">
+                <input id="fwd-caption" type="text" placeholder="Mesaj ekleyin…" autocomplete="off" maxlength="1000" class="flex-1 min-w-0 rounded-full bg-[#2a3942] text-white px-5 py-3 text-base outline-none">
+            </div>
+            <div class="flex items-center px-4 py-3 bg-[#202c33]">
+                <p id="forward-send-names" class="flex-1 min-w-0 text-gray-200 text-base truncate"></p>
+                <button type="button" id="forward-send-btn" class="ml-3 w-14 h-14 rounded-full bg-emerald-500 text-white flex items-center justify-center flex-shrink-0 text-xl"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
         </div>
     `;
     document.body.appendChild(el);
-    el.querySelector('#forward-back-btn').addEventListener('click', closeForwardPicker);
-        el.querySelector('#forward-send-btn').addEventListener('click', () => sendToTargets(Array.from(forwardTargets.values())));
+    el.querySelector('#forward-back-btn').addEventListener('click', () => {
+        if (fwdSearching) { fwdSetSearch(false); return; }
+        closeForwardPicker();
+    });
+    el.querySelector('#fwd-search-btn').addEventListener('click', () => fwdSetSearch(true));
+    el.querySelector('#fwd-add-btn').addEventListener('click', openFwdContacts);
+    el.querySelector('#fwd-search-input').addEventListener('input', (e) => { fwdQuery = e.target.value; renderForwardList(); });
+    el.querySelector('#forward-send-btn').addEventListener('click', () => {
+        forwardCaption = (el.querySelector('#fwd-caption').value || '').trim();
+        sendToTargets(Array.from(forwardTargets.values()));
+    });
     forwardPickerEl = el;
     return el;
 }
 
+async function fwdLoadThumb() {
+    const img = forwardPickerEl && forwardPickerEl.querySelector('#fwd-thumb');
+    if (!img) return;
+    img.removeAttribute('src');
+    try {
+        if (pendingShare && pendingShare[0]) { img.src = URL.createObjectURL(pendingShare[0]); return; }
+        const e = forwardSource && forwardSource.entry;
+        if (!e || !e.data || e.data.type !== 'image') return;
+        const msg = e.data;
+        const isAlbum = (msg.imagesCount || 0) > 1;
+        const ref = isAlbum ? (Array.isArray(msg.images) ? msg.images[0] : null) : msg.imageUrl;
+        const src = await resolveLocalMedia(forwardSource.chatId, forwardSource.msgId, ref, isAlbum ? 0 : null);
+        if (src) img.src = src;
+    } catch (err) {}
+}
+
 function openForwardPicker() {
     const el = ensureForwardPicker();
-    const titleEl = el.querySelector('h2');
-    if (titleEl) titleEl.textContent = pendingShare ? 'Şuna gönder' : 'Şuna ilet';
-    const listEl = el.querySelector('#forward-list');
-    listEl.innerHTML = '';
-        forwardTargets.clear();
+    resetForwardUi();
+    el.querySelector('#fwd-title').textContent = pendingShare ? 'Şuna gönder' : 'Şuna ilet';
+    forwardTargets.clear();
     refreshForwardBar();
-
-    const usersMap = window.__aurachatUsers;
-    const users = usersMap
-        ? Array.from(usersMap.values()).filter((u) => u.uid !== currentUser.uid)
-        : [];
-    users.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
-
-    // Üyesi olduğun gruplar (liste özetlerinden)
-    const groupTargets = [];
-    if (window.__aurachatMyChats) {
-        window.__aurachatMyChats.forEach((d, id) => {
-            if (d && d.isGroup && id) groupTargets.push({ uid: id, name: d.groupName || 'Grup', isGroup: true, groupPhoto: d.groupPhoto || '' });
-        });
-        groupTargets.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
-    }
-
-    if (!users.length && !groupTargets.length) {
-        listEl.innerHTML = `<p class="text-center text-gray-500 text-xs py-8">İletilecek kişi bulunamadı.</p>`;
-    }
-
-    const addSectionTitle = (label) => {
-        const h = document.createElement('div');
-        h.className = 'px-4 py-2 text-xs font-semibold text-emerald-400 bg-[#0b141a]';
-        h.textContent = label;
-        listEl.appendChild(h);
-    };
-
-    if (groupTargets.length) addSectionTitle('Gruplar');
-    groupTargets.forEach((g) => {
-        const row = document.createElement('div');
-        row.className = 'flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer border-b border-gray-800/30';
-        const avatarHtml = g.groupPhoto
-            ? `<img src="${g.groupPhoto}" class="w-11 h-11 rounded-full object-cover shadow flex-shrink-0">`
-            : `<div class="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color:${getUserColor(g.name || '?')};">${getInitials(g.name || '?')}</div>`;
-        row.innerHTML = `${avatarHtml}<span class="text-white text-sm font-medium ml-3 truncate">${escapeHtml(g.name || '')}</span><span class="fwd-check ml-auto w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center flex-shrink-0"></span>`;
-        row.addEventListener('click', () => toggleForwardTarget(g, row));
-        listEl.appendChild(row);
-    });
-
-    if (groupTargets.length && users.length) addSectionTitle('Kişiler');
-
-    users.forEach((u) => {
-        const row = document.createElement('div');
-        row.className = 'flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer border-b border-gray-800/30';
-        const avatarHtml = u.avatar
-            ? `<img src="${u.avatar}" class="w-11 h-11 rounded-full object-cover shadow flex-shrink-0">`
-            : `<div class="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0" style="background-color:${getUserColor(u.name || '?')};">${getInitials(u.name || '?')}</div>`;
-         row.innerHTML = `${avatarHtml}<span class="text-white text-sm font-medium ml-3 truncate">${escapeHtml(u.name || '')}</span><span class="fwd-check ml-auto w-6 h-6 rounded-full border-2 border-gray-500 flex items-center justify-center flex-shrink-0"></span>`;
-                row.addEventListener('click', () => toggleForwardTarget(u, row));
-        listEl.appendChild(row);
-    });
+    renderForwardList();
+    fwdLoadThumb();
 
     el.classList.remove('hidden');
     el.classList.add('flex');
     forwardPickerOpen = true;
     pushBackState(closeForwardPickerFromBack);
 }
+
 function toggleForwardTarget(u, row) {
     const on = !forwardTargets.has(u.uid);
     if (on) forwardTargets.set(u.uid, u); else forwardTargets.delete(u.uid);
@@ -4575,24 +4755,37 @@ function toggleForwardTarget(u, row) {
         chk.classList.toggle('bg-emerald-500', on);
         chk.classList.toggle('border-emerald-500', on);
         chk.classList.toggle('border-gray-500', !on);
-        chk.innerHTML = on ? '<i class="fa-solid fa-check text-white text-xs"></i>' : '';
+        chk.innerHTML = fwdCheckedHtml(on);
     }
     refreshForwardBar();
+    if (fwdContactsEl && fwdContactsOpen) {
+        fwdContactsEl.querySelector('#fwd-contacts-sub').textContent = forwardTargets.size ? `${forwardTargets.size} kişi seçildi` : '';
+    }
 }
 
 function refreshForwardBar() {
     if (!forwardPickerEl) return;
     const bar = forwardPickerEl.querySelector('#forward-send-bar');
     if (!bar) return;
-    bar.classList.toggle('hidden', forwardTargets.size === 0);
-    bar.classList.toggle('flex', forwardTargets.size > 0);
+    const n = forwardTargets.size;
+    bar.classList.toggle('hidden', n === 0);
+    bar.classList.toggle('flex', n > 0);
     forwardPickerEl.querySelector('#forward-send-names').textContent = Array.from(forwardTargets.values()).map((x) => x.name || '').join(', ');
+    const sub = forwardPickerEl.querySelector('#fwd-sub');
+    sub.textContent = n ? `${n} kişi seçildi` : '';
+    sub.classList.toggle('hidden', n === 0);
+    const capRow = forwardPickerEl.querySelector('#fwd-caption-row');
+    const showCap = n > 0 && fwdIsImage();
+    capRow.classList.toggle('hidden', !showCap);
+    capRow.classList.toggle('flex', showCap);
 }
 
 async function sendToTargets(targets) {
     if (!targets.length) return;
     const files = pendingShare;
+    const captionToSend = forwardCaption;
     closeForwardPicker();
+    forwardCaption = captionToSend;
     multiForward = targets.length > 1;
     try {
         for (const u of targets) {
@@ -4602,6 +4795,7 @@ async function sendToTargets(targets) {
     } finally {
         multiForward = false;
         pendingShare = null;
+        forwardCaption = '';
     }
 }
 // Belirli bir gruba (açık sohbetten bağımsız) mesaj yazıldığında üyelerin liste özetlerini günceller
@@ -4716,7 +4910,7 @@ async function forwardImageTo(targetUser) {
         }
         const payload = {
             type: 'image',
-            text: '',
+            text: forwardCaption || '',
             senderUid: currentUser.uid,
             senderName: currentUser.name,
             createdAt: serverTimestamp(),
@@ -4743,11 +4937,12 @@ async function forwardImageTo(targetUser) {
         }
 
         const isAlbum = payload.imagesCount > 1;
+        const fwLabel = isAlbum ? `📷 ${payload.imagesCount} Fotoğraf` : '📷 Fotoğraf';
         await postToTarget(
             targetUser,
             payload,
-            isAlbum ? `📷 ${payload.imagesCount} Fotoğraf` : '📷 Fotoğraf',
-            isAlbum ? `📷 ${payload.imagesCount} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi"
+            forwardCaption ? `${fwLabel} ${forwardCaption}`.slice(0, 100) : fwLabel,
+            forwardCaption ? `📷 ${forwardCaption}`.slice(0, 200) : (isAlbum ? `📷 ${payload.imagesCount} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi")
         );
 
         showToast(targetUser.isGroup ? `${targetUser.name} grubuna iletildi` : `${targetUser.name} kişisine iletildi`);
@@ -4870,7 +5065,7 @@ async function sendSharedImagesTo(targetUser) {
 
         const payload = {
             type: 'image',
-            text: '',
+            text: forwardCaption || '',
             senderUid: currentUser.uid,
             senderName: currentUser.name,
             createdAt: serverTimestamp(),
@@ -4884,11 +5079,12 @@ async function sendSharedImagesTo(targetUser) {
             payload.imagesDelivered = false;
         }
         const isAlbum = compressed.length > 1;
+        const shLabel = isAlbum ? `📷 ${compressed.length} Fotoğraf` : '📷 Fotoğraf';
         const targetChatId = await postToTarget(
             targetUser,
             payload,
-            isAlbum ? `📷 ${compressed.length} Fotoğraf` : '📷 Fotoğraf',
-            isAlbum ? `📷 ${compressed.length} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi"
+            forwardCaption ? `${shLabel} ${forwardCaption}`.slice(0, 100) : shLabel,
+            forwardCaption ? `📷 ${forwardCaption}`.slice(0, 200) : (isAlbum ? `📷 ${compressed.length} fotoğraf gönderdi` : "📷 Bir fotoğraf gönderdi")
         );
 
         if (!multiForward && currentChatId !== targetChatId) {
