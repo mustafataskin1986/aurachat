@@ -1,6 +1,6 @@
 import { db, auth } from "./firebase-init.js";
 import { doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, GoogleAuthProvider, signInWithPopup, signInWithCredential } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, deleteUser, signOut, GoogleAuthProvider, signInWithPopup, signInWithCredential } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 let base64Image = '';
 let verifyCheckInterval = null;
@@ -11,6 +11,122 @@ const GOOGLE_CLIENT_ID = "447747395966-3shresouu36769er1b9656oec8vd13aa.apps.goo
 const isCapacitorNative = () => {
     return typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform();
 };
+
+
+// ------------------------------------------
+// ŞİFRE KAYDETME: e-posta / şifre alanları gerçek <input> olmalı ki Google (Chrome / Android otomatik doldurma)
+// "şifreyi kaydet" önerisi çıksın. Eski textarea'lar aynı id ve görünümle gerçek input'a çevrilir.
+// ------------------------------------------
+function upgradeLoginInput(id, attrs) {
+    const old = document.getElementById(id);
+    if (!old || old.tagName === 'INPUT') return;
+    const inp = document.createElement('input');
+    inp.id = old.id;
+    inp.className = old.className;
+    inp.setAttribute('style', (old.getAttribute('style') || '').replace(/-webkit-text-security:[^;]*;?/g, ''));
+    inp.placeholder = old.placeholder;
+    inp.setAttribute('autocapitalize', 'none');
+    inp.setAttribute('autocorrect', 'off');
+    inp.spellcheck = false;
+    Object.keys(attrs).forEach((k) => inp.setAttribute(k, attrs[k]));
+    old.replaceWith(inp);
+}
+upgradeLoginInput('email-input', { type: 'email', name: 'username', autocomplete: 'username', inputmode: 'email' });
+upgradeLoginInput('password-input', { type: 'password', name: 'password', autocomplete: 'current-password' });
+(function () {
+    const f = document.getElementById('login-form');
+    if (f) f.setAttribute('autocomplete', 'on');
+})();
+
+// Giriş başarılı olunca tarayıcıya şifreyi kaydettir (Chrome / PWA). APK'da otomatik doldurma servisi
+// alanlar gizlenince kendi önerisini gösterir.
+async function offerSavePassword(email, password, name) {
+    try {
+        if (window.PasswordCredential && navigator.credentials && navigator.credentials.store && email && password) {
+            const cred = new window.PasswordCredential({ id: email, password: password, name: name || email });
+            await navigator.credentials.store(cred);
+        }
+    } catch (e) {}
+}
+
+// ------------------------------------------
+// E-POSTA YAZIM HATASI KORUMASI
+// ------------------------------------------
+const KNOWN_PROVIDERS = [
+    ['gmail', 'com'], ['hotmail', 'com'], ['outlook', 'com'], ['yahoo', 'com'], ['icloud', 'com'],
+    ['yandex', 'com'], ['live', 'com'], ['msn', 'com'], ['protonmail', 'com'], ['ymail', 'com'], ['mynet', 'com']
+];
+const KNOWN_TLDS = ['com', 'net', 'org', 'com.tr', 'net.tr', 'org.tr', 'edu.tr', 'gov.tr', 'co.uk', 'de', 'fr', 'it', 'es', 'ru', 'nl', 'info', 'io', 'me', 'tr', 'eu'];
+
+function lev(a, b) {
+    const m = a.length, n = b.length;
+    const d = [];
+    for (let i = 0; i <= m; i++) { d[i] = [i]; }
+    for (let j = 1; j <= n; j++) d[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+            // iki harfin yer değiştirmesi (gmial -> gmail) tek hata sayılır
+            if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+        }
+    }
+    return d[m][n];
+}
+
+// Bilinen servislere benzeyen yanlış alan adı varsa düzeltilmiş adresi döndürür, yoksa ''
+function suggestEmail(email) {
+    const at = email.lastIndexOf('@');
+    if (at < 1) return '';
+    const local = email.slice(0, at);
+    const domain = email.slice(at + 1).toLowerCase();
+    const dot = domain.indexOf('.');
+    if (dot < 1) return '';
+    const name = domain.slice(0, dot);
+    const tld = domain.slice(dot + 1);
+    let best = null;
+    for (const [pname, ptld] of KNOWN_PROVIDERS) {
+        const dist = lev(name, pname);
+        const limit = pname.length <= 5 ? 1 : 2;
+        if (dist <= limit && (!best || dist < best.dist)) best = { pname, ptld, dist };
+    }
+    if (!best) return '';
+    const tldOk = KNOWN_TLDS.includes(tld);
+    if (best.dist === 0 && tldOk) return ''; // tam doğru
+    const newTld = tldOk ? tld : best.ptld;
+    const fixed = local + '@' + best.pname + '.' + newTld;
+    return fixed === email ? '' : fixed;
+}
+
+// Yeni hesap açmadan önce adresi büyük yazıyla gösterip onay ister.
+// Döner: { action:'create' } | { action:'replace', email } | { action:'cancel' }
+function confirmNewAccountEmail(email) {
+    return new Promise((resolve) => {
+        const suggestion = suggestEmail(email);
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:16px;';
+        const box = document.createElement('div');
+        box.style.cssText = 'background:#111b21;border:1px solid #1f2c34;border-radius:18px;padding:22px;width:100%;max-width:360px;text-align:center;color:#e9edef;box-shadow:0 10px 40px rgba(0,0,0,.6);';
+        const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        box.innerHTML = `
+            <div style="font-size:18px;font-weight:700;margin-bottom:6px;">E-posta adresin doğru mu?</div>
+            <div style="font-size:12px;color:#9aa5ad;margin-bottom:12px;">Hesap yoksa yeni hesap açılacak ve doğrulama bağlantısı bu adrese gidecek. Şifren yanlışsa geri dön, şifreni düzelt.</div>
+            <div style="font-size:16px;font-weight:700;color:#34d399;word-break:break-all;background:#0b141a;border-radius:12px;padding:12px;margin-bottom:12px;">${esc(email)}</div>
+            ${suggestion ? `<div style="font-size:13px;color:#fbbf24;margin-bottom:10px;">Yazım hatası olabilir. Şunu mu demek istedin?</div>
+            <button type="button" data-act="use" style="width:100%;background:#059669;color:#fff;font-weight:700;padding:12px;border-radius:12px;margin-bottom:8px;word-break:break-all;">${esc(suggestion)}</button>` : ''}
+            <button type="button" data-act="ok" style="width:100%;background:${suggestion ? 'transparent' : '#059669'};border:${suggestion ? '1px solid #3b4650' : '0'};color:#fff;font-weight:600;padding:12px;border-radius:12px;margin-bottom:8px;">Evet, bu adres doğru</button>
+            <button type="button" data-act="fix" style="width:100%;color:#9aa5ad;padding:10px;font-size:14px;">Geri dön, düzelteyim</button>`;
+        wrap.appendChild(box);
+        document.body.appendChild(wrap);
+        box.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-act]');
+            if (!b) return;
+            wrap.remove();
+            if (b.dataset.act === 'use') resolve({ action: 'replace', email: suggestion });
+            else if (b.dataset.act === 'ok') resolve({ action: 'create' });
+            else resolve({ action: 'cancel' });
+        });
+    });
+}
 
 // DOM ELEMENTLERİ
 const loginOverlay = document.getElementById('login-overlay');
@@ -171,6 +287,17 @@ if (btnStep1Next) {
             try {
                 userCred = await signInWithEmailAndPassword(auth, email, password);
             } catch (signInErr) {
+                // Yeni hesap açılacaksa: doğrulama kodu yanlış adrese gitmesin diye önce adresi onaylat
+                const decision = await confirmNewAccountEmail(email);
+                if (decision.action === 'replace') {
+                    emailInput.value = decision.email;
+                    emailInput.dispatchEvent(new Event('input'));
+                    return;
+                }
+                if (decision.action !== 'create') {
+                    emailInput.focus();
+                    return;
+                }
                 try {
                     userCred = await createUserWithEmailAndPassword(auth, email, password);
                     isNewAccount = true;
@@ -220,6 +347,7 @@ if (btnStep1Next) {
                     avatar: userData.avatar || ''
                 };
                 localStorage.setItem('aurachat_user', JSON.stringify(userObj));
+                offerSavePassword(email, password, userObj.name);
                 if (loginOverlay) loginOverlay.classList.add('hidden');
                 if (window.initApp) window.initApp(); else location.reload();
             } else {
@@ -240,6 +368,30 @@ if (btnStep1Next) {
         }
     });
 }
+
+// Doğrulama ekranında "adres yanlış" düğmesi: henüz doğrulanmamış hesabı siler, e-posta alanına döner
+(function addWrongAddressButton() {
+    if (!verifyModal) return;
+    const resend = document.getElementById('btn-resend-verify');
+    if (!resend || document.getElementById('btn-verify-wrong')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'btn-verify-wrong';
+    btn.textContent = 'E-posta adresim yanlış, düzelt';
+    btn.className = 'block mx-auto mt-3 text-xs text-amber-400 underline';
+    resend.insertAdjacentElement('afterend', btn);
+    btn.addEventListener('click', async () => {
+        if (verifyCheckInterval) clearInterval(verifyCheckInterval);
+        try {
+            const u = auth.currentUser;
+            if (u && !u.emailVerified) await deleteUser(u);
+        } catch (e) {
+            try { await signOut(auth); } catch (e2) {}
+        }
+        verifyModal.classList.add('hidden');
+        if (emailInput) { emailInput.focus(); try { emailInput.select(); } catch (e) {} }
+    });
+})();
 
 function startVerifyPolling() {
     if (verifyCheckInterval) clearInterval(verifyCheckInterval);
@@ -351,6 +503,11 @@ if (btnStep2Back) {
 if (loginForm) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        // 1. adımda (e-posta/şifre) Enter'a basılırsa "Devam Et" çalışsın
+        if (step2 && step2.classList.contains('hidden')) {
+            if (btnStep1Next && !btnStep1Next.disabled) btnStep1Next.click();
+            return;
+        }
 
         const username = usernameInput ? usernameInput.value.trim() : '';
         const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
@@ -408,6 +565,7 @@ if (loginForm) {
                 avatar: base64Image || ''
             };
             localStorage.setItem('aurachat_user', JSON.stringify(userObj));
+            offerSavePassword(email, passwordInput ? passwordInput.value.trim() : '', username);
 
             if (loginOverlay) loginOverlay.classList.add('hidden');
             if (window.initApp) window.initApp(); else location.reload();
