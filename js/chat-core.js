@@ -1617,6 +1617,16 @@ function isBlockedRelationship(otherUid) {
     };
 }
 
+function isCurrentChatBlocked() {
+    if (!currentOtherUid || currentIsGroup || currentChatId === 'global') return false;
+    const r = isBlockedRelationship(currentOtherUid);
+    if (r.blockedByMe || r.blockedByThem) {
+        showToast(r.blockedByMe ? 'Bu kişiyi engellediniz' : 'Bu kişiyle mesajlaşamazsınız');
+        return true;
+    }
+    return false;
+}
+
 function ensureBlockedBanner() {
     if (blockedBannerEl) return blockedBannerEl;
     const el = document.createElement('div');
@@ -2189,7 +2199,7 @@ function setComposerHiddenForSearch(hide) {
     const row = inp ? inp.parentElement : null;
     if (!row) return;
     if (hide) row.style.setProperty('display', 'none', 'important');
-    else row.style.removeProperty('display');
+    else { row.style.removeProperty('display'); updateBlockedUI(); }
 }
 function closeChatSearchFromBack() {
     searchState.active = false;
@@ -5786,6 +5796,7 @@ async function attachLinkPreview(msgRef, text) {
 }
 
 async function sendMessage() {
+    if (isCurrentChatBlocked()) return;
     const text = messageInput.value.trim();
     if (!text || !currentUser || !currentChatId) return;
 
@@ -5844,6 +5855,7 @@ async function sendMessage() {
 
 // Önce bekleyen resimler, sonra yazı gider
 async function sendFromComposer() {
+    if (isCurrentChatBlocked()) return;
     if (editingMsg) { await submitEdit(); return; }
     const wantViewOnce = !!(composer.isViewOnce && composer.isViewOnce()) && viewOnceAllowed();
     const files = composer.takeImages();
@@ -6380,6 +6392,7 @@ function onVoiceStopped(st) {
 }
 
 async function sendVoiceMessage(dataUrl, durationSec) {
+    if (isCurrentChatBlocked()) return;
     if (!currentUser || !currentChatId) return;
     // Firestore belgesi 1 MB'ı geçemez
     if (dataUrl.length > 950000) {
@@ -6704,6 +6717,7 @@ function pickDocument() {
 }
 
 async function sendDocument(file) {
+    if (isCurrentChatBlocked()) return;
     if (!currentUser || !currentChatId) return;
     if (file.size > DOC_MAX_BYTES) {
         showToast('Belge çok büyük (en fazla 700 KB). Küçültüp tekrar dene.', 3800);
@@ -6824,6 +6838,7 @@ async function openSavedDocument(Filesystem, fname, mime) {
 }
 
 async function sendCurrentLocation() {
+    if (isCurrentChatBlocked()) return;
     if (!currentUser || !currentChatId) return;
     const chatIdAtStart = currentChatId;
     const replyPayload = consumeReplyPayload();
