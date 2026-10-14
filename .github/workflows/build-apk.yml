@@ -2,9 +2,20 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+  # Telefon tarafındaki kod bu dosyanın içinde olduğu için, yalnızca bu dosya değişince kendiliğinden derler.
+  # (Saf JS/HTML değişiklikleri Vercel'den anında yayınlandığı için APK gerektirmez.)
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-apk.yml'
+
+# Aynı anda iki derleme çalışmasın; yenisi gelince eskisi iptal olur
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
@@ -2868,6 +2879,14 @@ jobs:
           name: AuraChat-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
+
+      - name: APK'yı Sabit Release Bağlantısına Yükle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk AuraChat.apk
+          gh release view apk-latest > /dev/null 2>&1 || gh release create apk-latest --title "AuraChat APK" --notes "En güncel Android uygulaması" --latest
+          gh release upload apk-latest AuraChat.apk --clobber
 
       - name: Eski Çıktıları ve Kayıtları Temizle
         env:
