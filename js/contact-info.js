@@ -80,28 +80,78 @@ function rowHtml(id, icon, color, label, sub) {
         </button>`;
 }
 
+const AV_BIG = 150, AV_SMALL = 36, COLLAPSE_PX = 140, NAME_SCALE = 0.75;
+const L = { cx0: 0, cy0: 0, nameW: 0, nameLeft0: 0, nameCy0: 0, nameH: 0, w: 0, tx: 74, ty: 30, nameLeft1: 104 };
+
+function measure() {
+    if (!infoEl) return;
+    const ph = infoEl.querySelector('#ci-avatar-ph');
+    const nm = infoEl.querySelector('#ci-name');
+    const fn = infoEl.querySelector('#ci-fname');
+    L.w = infoEl.clientWidth;
+    L.cx0 = L.w / 2;
+    L.cy0 = ph.offsetTop + AV_BIG / 2;
+    fn.style.width = 'auto';
+    const natural = fn.scrollWidth;
+    const maxBig = L.w - 48;
+    const maxSmall = (L.w - L.nameLeft1 - 56) / NAME_SCALE;
+    L.nameW = Math.max(40, Math.min(natural + 2, maxBig, maxSmall));
+    fn.style.width = L.nameW + 'px';
+    L.nameLeft0 = (L.w - L.nameW) / 2;
+    L.nameH = fn.offsetHeight || 32;
+    L.nameCy0 = nm.offsetTop + nm.offsetHeight / 2;
+}
+
+function applyCollapse() {
+    if (!infoEl) return;
+    const sc = infoEl.querySelector('#ci-scroll');
+    const st = sc.scrollTop;
+    const p = Math.max(0, Math.min(1, st / COLLAPSE_PX));
+    const lerp = (a, b) => a + (b - a) * p;
+
+    const av = infoEl.querySelector('#ci-avatar-btn');
+    const s = lerp(1, AV_SMALL / AV_BIG);
+    const cx = lerp(L.cx0, L.tx);
+    const cy = lerp(L.cy0 - st, L.ty);
+    av.style.transform = 'translate(' + (cx - AV_BIG / 2) + 'px,' + (cy - AV_BIG / 2) + 'px) scale(' + s + ')';
+
+    const fn = infoEl.querySelector('#ci-fname');
+    const ns = lerp(1, NAME_SCALE);
+    const nl = lerp(L.nameLeft0, L.nameLeft1);
+    const ncy = lerp(L.nameCy0 - st, L.ty);
+    fn.style.transform = 'translate(' + nl + 'px,' + (ncy - L.nameH / 2) + 'px) scale(' + ns + ')';
+
+    const bt = Math.max(0, Math.min(1, (st - COLLAPSE_PX * 0.6) / (COLLAPSE_PX * 0.4)));
+    infoEl.querySelector('#ci-bar').style.background = 'rgba(32,44,51,' + bt + ')';
+    const rest = infoEl.querySelector('#ci-head-rest');
+    if (rest) rest.style.opacity = String(1 - Math.min(1, st / 200));
+}
+
 function ensureEl() {
     if (infoEl) return infoEl;
     const el = document.createElement('div');
     el.className = 'fixed inset-0 bg-[#0b141a] hidden flex-col';
     el.style.zIndex = '65';
     el.innerHTML = `
+        <style>
+            #ci-scroll{position:relative;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.35) transparent;}
+            #ci-scroll::-webkit-scrollbar{width:4px;}
+            #ci-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.35);border-radius:4px;}
+        </style>
         <div id="ci-bar" class="absolute top-0 left-0 right-0 px-4 flex items-center" style="z-index:3;height:60px;background:rgba(11,20,26,0);">
             <button type="button" id="ci-back" class="text-white text-lg px-1 w-9 text-left flex-shrink-0"><i class="fa-solid fa-arrow-left"></i></button>
-            <div id="ci-bar-who" class="flex-1 min-w-0 flex items-center space-x-3 ml-1" style="opacity:0;">
-                <div id="ci-bar-avatar" class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs overflow-hidden flex-shrink-0"></div>
-                <span id="ci-bar-name" class="text-white text-lg truncate"></span>
-            </div>
-            <div class="flex-1" id="ci-bar-spacer"></div>
+            <div class="flex-1"></div>
             <button type="button" id="ci-dots" class="text-white text-lg px-2 w-9 text-right flex-shrink-0" aria-label="Menü"><i class="fa-solid fa-ellipsis-vertical"></i></button>
         </div>
+        <button type="button" id="ci-avatar-btn" aria-label="Fotoğrafı aç" style="position:absolute;left:0;top:0;width:150px;height:150px;z-index:4;transform-origin:center center;">
+            <div id="ci-avatar" class="rounded-full flex items-center justify-center text-white font-bold shadow-lg overflow-hidden" style="width:150px;height:150px;font-size:48px;"></div>
+        </button>
+        <div id="ci-fname" class="text-white text-2xl" style="position:absolute;left:0;top:0;z-index:4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transform-origin:left center;pointer-events:none;"></div>
         <div id="ci-scroll" class="flex-1 overflow-y-auto">
             <div id="ci-head" class="flex flex-col items-center px-6" style="padding-top:20px;">
-                <button type="button" id="ci-avatar-btn" aria-label="Fotoğrafı aç">
-                    <div id="ci-avatar" class="rounded-full flex items-center justify-center text-white font-bold text-5xl shadow-lg overflow-hidden" style="width:150px;height:150px;"></div>
-                </button>
-                <h2 id="ci-name" class="text-white text-2xl mt-4 text-center break-words max-w-full"></h2>
-                <p id="ci-phone" class="text-gray-400 text-base mt-1 text-center"></p>
+                <div id="ci-avatar-ph" style="width:150px;height:150px;"></div>
+                <h2 id="ci-name" class="text-2xl mt-4 text-center break-words max-w-full" style="visibility:hidden;"></h2>
+                <div id="ci-head-rest" class="flex flex-col items-center w-full"><p id="ci-phone" class="text-gray-400 text-base mt-1 text-center"></p>
                 <p id="ci-about" class="text-white text-base mt-3 text-center break-words max-w-full"></p>
                 <div class="flex w-full max-w-sm space-x-3 mt-6">
                     <button type="button" data-act="voice" class="flex-1 rounded-2xl py-3 flex flex-col items-center space-y-1.5 active:scale-95 transition" style="background:#1f2c33;border:1px solid rgba(255,255,255,.06);">
@@ -114,8 +164,10 @@ function ensureEl() {
                         <i class="fa-solid fa-magnifying-glass text-emerald-400 text-lg"></i><span class="text-emerald-400 text-xs">Ara</span>
                     </button>
                 </div>
+                </div>
             </div>
             <div class="mt-6 border-t border-gray-800/60" id="ci-rows">
+                ${rowHtml('fav', 'fa-heart', 'text-pink-400', 'Favorilere ekle', '')}
                 ${rowHtml('starred', 'fa-star', 'text-amber-400', 'Yıldızlı mesajlar', '')}
                 ${rowHtml('mute', 'fa-bell-slash', 'text-amber-400', 'Sohbeti sessize al', '')}
                 ${rowHtml('theme', 'fa-palette', 'text-pink-400', 'Sohbet teması', '')}
@@ -132,22 +184,22 @@ function ensureEl() {
 
     el.querySelector('#ci-back').addEventListener('click', closeInfo);
 
-    // Kaydırınca üst bar katılaşır, ok yanında avatar + isim görünür
+    // Kaydırınca avatar küçülüp okun yanına, isim de onun sağına kayar
     const scroller = el.querySelector('#ci-scroll');
-    const bar = el.querySelector('#ci-bar');
-    const who = el.querySelector('#ci-bar-who');
-    const spacer = el.querySelector('#ci-bar-spacer');
-    const head = el.querySelector('#ci-head');
-    scroller.addEventListener('scroll', () => {
-        const st = scroller.scrollTop;
-        const t = Math.max(0, Math.min(1, (st - 150) / 90));
-        bar.style.background = 'rgba(32,44,51,' + t + ')';
-        who.style.opacity = String(t);
-        spacer.style.display = t > 0.05 ? 'none' : '';
-        head.style.opacity = String(1 - Math.min(1, st / 320));
-    }, { passive: true });
+    scroller.addEventListener('scroll', applyCollapse, { passive: true });
+    window.addEventListener('resize', () => { if (infoOpen) { measure(); applyCollapse(); } });
 
-    el.querySelector('#ci-avatar-btn').addEventListener('click', openPhotoViewer);
+    // Avatar sayfanın üstünde yüzdüğü için üstünden kaydırma da sayfayı kaydırsın
+    const avBtn = el.querySelector('#ci-avatar-btn');
+    let ty0 = 0, moved = false;
+    avBtn.addEventListener('touchstart', (e) => { ty0 = e.touches[0].clientY; moved = false; }, { passive: true });
+    avBtn.addEventListener('touchmove', (e) => {
+        const y = e.touches[0].clientY;
+        if (Math.abs(y - ty0) > 4) moved = true;
+        scroller.scrollTop -= (y - ty0);
+        ty0 = y;
+    }, { passive: true });
+    avBtn.addEventListener('click', () => { if (!moved) openPhotoViewer(); moved = false; });
 
     el.querySelector('#ci-dots').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -183,6 +235,21 @@ async function onRow(id) {
     const u = curUser;
     if (!me || !u) return;
     const cid = getChatId(me.uid, u.uid);
+
+    if (id === 'fav') {
+        try {
+            const ref = doc(db, "users", me.uid, "chats", cid);
+            const snap = await getDoc(ref);
+            if (!snap.exists()) { showToast('Henüz mesajlaşılmamış bir sohbeti favorileyemezsin'); return; }
+            const fav = !!snap.data().archived;
+            await setDoc(ref, { archived: !fav }, { merge: true });
+            showToast(!fav ? 'Favorilere eklendi' : 'Favorilerden çıkarıldı');
+            refreshFavLabel();
+        } catch (err) {
+            showToast('İşlem yapılamadı: ' + err.message, 3500);
+        }
+        return;
+    }
 
     if (id === 'starred') { openStarredPanel(); return; }
 
@@ -278,6 +345,16 @@ async function refreshMuteLabel() {
         const muted = snap.exists() && !!snap.data().muted;
         lab.textContent = muted ? 'Sohbetin sesini aç' : 'Sohbeti sessize al';
         ico.className = 'fa-solid ' + (muted ? 'fa-bell' : 'fa-bell-slash') + ' text-amber-400 text-lg w-6 text-center';
+    } catch (e) {}
+}
+
+async function refreshFavLabel() {
+    const me = getCurrentUser();
+    if (!me || !curUser || !infoEl) return;
+    const lab = infoEl.querySelector('[data-row="fav"] [data-label]');
+    try {
+        const snap = await getDoc(doc(db, "users", me.uid, "chats", getChatId(me.uid, curUser.uid)));
+        lab.textContent = (snap.exists() && snap.data().archived) ? 'Favorilerden çıkar' : 'Favorilere ekle';
     } catch (e) {}
 }
 
@@ -399,9 +476,8 @@ export function openContactInfo(uid, beforeMessage) {
     const el = ensureEl();
 
     paintAvatar(el.querySelector('#ci-avatar'), u);
-    paintAvatar(el.querySelector('#ci-bar-avatar'), u);
     el.querySelector('#ci-name').textContent = u.name || '';
-    el.querySelector('#ci-bar-name').textContent = u.name || '';
+    el.querySelector('#ci-fname').textContent = u.name || '';
 
     const phoneEl = el.querySelector('#ci-phone');
     phoneEl.textContent = u.phone || '';
@@ -427,17 +503,19 @@ export function openContactInfo(uid, beforeMessage) {
     const scroller = el.querySelector('#ci-scroll');
     scroller.scrollTop = 0;
     el.querySelector('#ci-bar').style.background = 'rgba(32,44,51,0)';
-    el.querySelector('#ci-bar-who').style.opacity = '0';
-    el.querySelector('#ci-bar-spacer').style.display = '';
-    el.querySelector('#ci-head').style.opacity = '1';
+    el.querySelector('#ci-head-rest').style.opacity = '1';
 
     refreshMuteLabel();
+    refreshFavLabel();
     refreshBlockLabel();
 
-    if (infoOpen) return;
+    if (infoOpen) { measure(); applyCollapse(); return; }
     el.classList.remove('hidden');
     el.classList.add('flex');
     infoOpen = true;
     setSecure(true);
     pushBackState(closeFromBack);
+    measure();
+    applyCollapse();
+    requestAnimationFrame(() => { measure(); applyCollapse(); });
 }
