@@ -4107,6 +4107,10 @@ el.innerHTML = `
         el.style.height = attachRestHeight() + 'px';
     });
 
+    // Arka plan opak olsun: altından geçen mesajlar/resimler menüde görünmesin
+    el.style.background = 'var(--aura-composer-bg,#111b21)';
+    el.style.position = 'relative';
+    el.style.zIndex = '2';
     attachMenuEl = el;
     return el;
 }
@@ -5579,12 +5583,16 @@ function updateJumpBottomBtn() {
     jumpBottomBadge.style.display = jumpBottomUnread > 0 ? 'block' : 'none';
     const r = messageContainer.getBoundingClientRect();
     jumpBottomBtn.style.right = Math.max(8, window.innerWidth - r.right + 14) + 'px';
-    jumpBottomBtn.style.bottom = Math.max(8, window.innerHeight - r.bottom + 14) + 'px';
+    // Liste yazı panelinin altına kadar uzadığı için, oku panelin üstüne kaldır
+    let belowH = 0;
+    try { belowH = parseFloat(getComputedStyle(document.getElementById('chat-area')).getPropertyValue('--aura-below-h')) || 0; } catch (e) {}
+    jumpBottomBtn.style.bottom = Math.max(8, window.innerHeight - r.bottom + belowH + 14) + 'px';
     jumpBottomBtn.style.display = 'flex';
 }
 
 messageContainer.addEventListener('scroll', updateJumpBottomBtn, { passive: true });
 window.addEventListener('resize', updateJumpBottomBtn);
+window.addEventListener('aura-below-h', updateJumpBottomBtn);
 if (window.visualViewport) window.visualViewport.addEventListener('resize', updateJumpBottomBtn);
 try {
     new MutationObserver(updateJumpBottomBtn).observe(messageContainer, { childList: true });
