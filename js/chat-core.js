@@ -3575,7 +3575,7 @@ function buildAlbumTilesHtml(chatId, msgId, imagesCount, thumbs) {
             </div>`;
     }
 
-    return `<div class="grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden" style="width:280px;max-width:100%;">${tiles}</div>`;
+    return `<div class="grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden" style="width:min(280px,72vw);max-width:100%;">${tiles}</div>`;
 }
 
 function buildMessageElement(msg, isMine, msgId, avatarMode) {
@@ -3641,8 +3641,8 @@ if (isViewOnce) {
         if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
     } else if (isSingleImage) {
         bodyHtml = initialImgSrc
-            ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;-webkit-user-drag:none;" data-media-msg="${msgId}" oncontextmenu="return false" draggable="false" onclick="openImageLightbox(this.src)">`
-            : buildBlurPlaceholder(msg.thumb || getLocalThumb(`${currentChatId}/${msgId}`), `data-media-msg="${msgId}"`, 'width:220px;height:220px;max-width:100%;', '');
+            ? `<img src="${initialImgSrc}" class="rounded-lg cursor-pointer block" style="--aw:min(280px,72vw);width:var(--aw);max-width:100%;height:auto;max-height:calc(var(--aw) * 1.3);object-fit:cover;object-position:50% 50%;-webkit-user-drag:none;" data-media-msg="${msgId}" oncontextmenu="return false" draggable="false" onclick="openImageLightbox(this.src)">`
+            : buildBlurPlaceholder(msg.thumb || getLocalThumb(`${currentChatId}/${msgId}`), `data-media-msg="${msgId}"`, 'width:min(280px,72vw);height:min(280px,72vw);max-width:100%;', '');
         if (msg.text) bodyHtml += `<p class="break-words whitespace-pre-wrap px-2 pt-1.5 pb-0.5">${escapeHtml(msg.text)}</p>`;
 } else if (msg.type === 'location') {
         bodyHtml = `<div class="cursor-pointer" style="min-width:200px;" onclick="openLocation(${Number(msg.lat)},${Number(msg.lng)})">
@@ -3694,13 +3694,13 @@ if (isViewOnce) {
     if (isMine) {
         const isReadByAll = currentIsGroup ? groupMessageReadByAll(msg) : !!msg.read;
         const tickColor = isReadByAll ? 'text-[#53bdeb]' : 'text-gray-400';
-        const timeHtml = isAlbum
-            ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1">
+        const timeHtml = (isAlbum && !msg.text)
+            ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1" style="text-shadow:0 1px 3px rgba(0,0,0,.85);">
                    <span class="aura-time text-[10px] text-white">${timeStr}</span>
                 <i class="fa-solid fa-check-double text-[10px] ${isReadByAll ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
                </div>`
-            : isImage
-            ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1 bg-black/45 rounded-full px-1.5 py-0.5">
+            : (isImage && !msg.text)
+            ? `<div class="absolute bottom-2 right-2 flex items-center space-x-1" style="text-shadow:0 1px 3px rgba(0,0,0,.85);">
                    <span class="aura-time text-[10px] text-white">${timeStr}</span>
                 <i class="fa-solid fa-check-double text-[10px] ${isReadByAll ? 'text-[#53bdeb]' : 'text-gray-200'}"></i>
                </div>`
@@ -3721,10 +3721,10 @@ if (isViewOnce) {
             </div>
         `;
     } else {
-        const timeHtml = isAlbum
-            ? `<div class="absolute bottom-2 right-2"><span class="aura-time text-[10px] text-white">${timeStr}</span></div>`
-            : isImage
-            ? `<div class="absolute bottom-2 right-2 bg-black/45 rounded-full px-1.5 py-0.5"><span class="aura-time text-[10px] text-white">${timeStr}</span></div>`
+        const timeHtml = (isAlbum && !msg.text)
+            ? `<div class="absolute bottom-2 right-2" style="text-shadow:0 1px 3px rgba(0,0,0,.85);"><span class="aura-time text-[10px] text-white">${timeStr}</span></div>`
+            : (isImage && !msg.text)
+            ? `<div class="absolute bottom-2 right-2" style="text-shadow:0 1px 3px rgba(0,0,0,.85);"><span class="aura-time text-[10px] text-white">${timeStr}</span></div>`
                  : `<span class="aura-time text-[10px] text-white float-right ml-3 mt-1">${editedLabel}${timeStr}</span>`;
         msgDiv.className = "flex justify-start rounded-lg transition-colors";
         msgDiv.innerHTML = `
@@ -3799,7 +3799,7 @@ if (isViewOnce) {
                 if (el.tagName === 'IMG') {
                     if (src !== el.src) el.src = src;
                 } else {
-              el.outerHTML = `<img src="${src}" class="rounded-lg cursor-pointer block" style="max-width:280px;max-height:380px;width:auto;height:auto;-webkit-user-drag:none;" data-media-msg="${msgId}" oncontextmenu="return false" draggable="false" onclick="openImageLightbox(this.src)">`;
+              el.outerHTML = `<img src="${src}" class="rounded-lg cursor-pointer block" style="--aw:min(280px,72vw);width:var(--aw);max-width:100%;height:auto;max-height:calc(var(--aw) * 1.3);object-fit:cover;object-position:50% 50%;-webkit-user-drag:none;" data-media-msg="${msgId}" oncontextmenu="return false" draggable="false" onclick="openImageLightbox(this.src)">`;
                     const newEl = msgDiv.querySelector(`[data-media-msg="${msgId}"]`);
                     if (newEl) {
                         newEl.addEventListener('load', () => {
