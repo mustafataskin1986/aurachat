@@ -39,6 +39,17 @@ function isGroupId(id) {
 // ------------------------------------------
 let menuEl = null;
 
+// APK'nın sabit indirme bağlantısı (build-apk.yml her derlemede aynı release'e yükler)
+const APK_URL = 'https://github.com/mustafataskin1986/aurachat/releases/download/apk-latest/AuraChat.apk';
+
+// Uygulamanın içinde (APK) ya da iPhone'da "Uygulamayı yükle" gösterilmez
+function apkInstallAvailable() {
+    try {
+        if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return false;
+    } catch (e) {}
+    return !/iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+}
+
 function ensureMenu() {
     if (menuEl) return menuEl;
     const el = document.createElement('div');
@@ -56,6 +67,9 @@ function ensureMenu() {
         <button type="button" data-menu="backup" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-brands fa-google-drive text-emerald-400 w-4"></i><span>Drive yedeği</span>
         </button>
+        ${apkInstallAvailable() ? `<button type="button" data-menu="install-apk" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-brands fa-android text-emerald-400 w-4"></i><span>Uygulamayı yükle</span>
+        </button>` : ''}
         <button type="button" data-menu="eruda" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-solid fa-bug text-sky-400 w-4"></i><span id="aura-eruda-label">Eruda: Kapalı</span>
         </button>
@@ -74,6 +88,8 @@ function ensureMenu() {
             openStarredPanel();
         } else if (item.dataset.menu === 'settings' && window.openProfilePanel) {
             window.openProfilePanel();
+        } else if (item.dataset.menu === 'install-apk') {
+            window.location.href = APK_URL;
         } else if (item.dataset.menu === 'backup') {
             openBackupMenu();
                } else if (item.dataset.menu === 'eruda') {
