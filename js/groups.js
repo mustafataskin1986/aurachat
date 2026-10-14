@@ -1,4 +1,4 @@
-// ==========================================
+ // ==========================================
 // GRUPLAR + ÜÇ NOKTA MENÜSÜ
 // - Ana ekran sağ üstteki üç nokta: Yeni grup / Ayarlar menüsü
 // - Yeni grup: kişi seç, isim ver, oluştur
