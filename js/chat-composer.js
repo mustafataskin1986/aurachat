@@ -92,7 +92,7 @@ export function setupComposer() {
 
 /* Klavye kapalıyken (yazı alanına odaklanılmamışken) yanlardan ve alttan boşluk bırak.
    Klavye açılınca (odaklanınca) boşluk kalkar, panel klavyenin hemen üstüne oturur. */
-#chat-area .aura-composer.aura-composer:not(:focus-within) {
+#chat-area .aura-composer.aura-composer:not(:focus-within):not(.menu-open) {
     margin: 0 12px calc(env(safe-area-inset-bottom, 0px) + 10px) 12px !important;
 }
 
@@ -522,6 +522,7 @@ export function setupComposer() {
                 el = el.nextElementSibling;
             }
             area.style.setProperty('--aura-below-h', Math.max(0, Math.round(h)) + 'px');
+            try { window.dispatchEvent(new Event('aura-below-h')); } catch (e2) {}
         }
         function schedule() { if (!raf) raf = requestAnimationFrame(measure); }
         try {
