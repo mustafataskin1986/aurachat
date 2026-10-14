@@ -5,7 +5,9 @@
 //     index: 0,
 //     album: true,          // çoklu resimde true: alt alta liste, birine basınca tek resim
 //     onDownload(item){}, onForward(item){}, onStar(item){}, onMenu(item, btnEl){},
-//     onReply(item){}, onReact(item, emoji){}
+//     onReply(item){}, onReplySend(item, text){}, onReact(item, emoji){},
+//     getReaction(item) -> emoji|null, reactionEmojis:[...], isStarred(item) -> bool,
+//     onStar(item) -> Promise<bool>, menuItems:[{label, fn(item)}]
 //   });
 //   window.closeImageViewer();  window.imageViewerIsOpen();
 
@@ -29,7 +31,17 @@
     '#ivw .iv-pill{display:flex;align-items:center;gap:6px;background:#1f2c34;border-radius:28px;padding:0 8px 0 20px;height:52px}' +
     '#ivw .iv-reply{flex:1;font-size:19px;opacity:.6;background:transparent;border:0;color:#fff;text-align:left;height:52px}' +
     '#ivw .iv-emo{width:44px;height:44px;border:0;background:transparent;font-size:30px;display:flex;align-items:center;justify-content:center;border-radius:50%}' +
-    '#ivw .iv-emo:active{background:rgba(255,255,255,.15)}';
+    '#ivw .iv-emo:active{background:rgba(255,255,255,.15)}' +
+    '#ivw .iv-emo.iv-on{background:rgba(255,255,255,.22)}' +
+    '#ivw .iv-reply{outline:none;opacity:1;min-width:0;padding:0}' +
+    '#ivw .iv-reply::placeholder{color:#fff;opacity:.6}' +
+    '#ivw .iv-emos{display:flex;align-items:center;gap:2px;flex:none}' +
+    '#ivw .iv-send{width:44px;height:44px;border:0;border-radius:50%;background:#22c55e;color:#fff;display:none;align-items:center;justify-content:center;flex:none}' +
+    '#ivw .iv-send svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}' +
+    '#ivw .iv-strip{display:none;gap:2px;padding:6px 8px;border-radius:9999px;background:#233138;box-shadow:0 4px 14px rgba(0,0,0,.5);width:max-content;margin:0 auto 10px auto}' +
+    '#ivw .iv-menu{position:absolute;top:calc(env(safe-area-inset-top,0px) + 58px);right:10px;z-index:5;min-width:200px;background:#233138;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.6);overflow:hidden}' +
+    '#ivw .iv-menu button{display:block;width:100%;text-align:left;padding:14px 18px;border:0;background:transparent;color:#fff;font-size:16px}' +
+    '#ivw .iv-menu button:active{background:rgba(255,255,255,.12)}';
 
   var ICON = {
     back: '<svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
@@ -37,11 +49,12 @@
     fwd: '<svg viewBox="0 0 24 24"><path d="M15 4l6 6-6 6M21 10H9a6 6 0 0 0-6 6v2"/></svg>',
     star: '<svg viewBox="0 0 24 24"><path d="M12 2l3 6.5 7 .9-5.2 4.8 1.4 7L12 17.8 5.8 21.2l1.4-7L2 9.4l7-.9z"/></svg>',
     dots: '<svg viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
+    send: '<svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>',
     smile: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01"/></svg>'
   };
 
   var root = null, opts = null, cur = 0, mode = 'single', fromAlbum = false;
-  var barsVisible = true, tapTimer = null;
+  var barsVisible = true, tapTimer = null, vvHandler = null;
 
   function ensureCss() {
     if (document.getElementById('ivw-css')) return;
@@ -96,6 +109,33 @@
     root.innerHTML = '';
   }
 
+  function paintStar(b, on) {
+    b.style.color = on ? '#fbbf24' : '';
+    var sv = b.querySelector('svg');
+    if (sv) sv.style.fill = on ? '#fbbf24' : 'none';
+  }
+
+  function toggleMenu() {
+    var old = root.querySelector('.iv-menu');
+    if (old) { old.remove(); return; }
+    var items = (opts && opts.menuItems) || [];
+    if (!items.length) return;
+    var m = document.createElement('div');
+    m.className = 'iv-menu';
+    items.forEach(function (mi) {
+      var b = document.createElement('button');
+      b.textContent = mi.label;
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var it = item();
+        m.remove();
+        if (mi.fn) mi.fn(it);
+      });
+      m.appendChild(b);
+    });
+    root.appendChild(m);
+  }
+
   // ---------- ÜST BAR ----------
   function buildTop(title, sub, single) {
     var top = document.createElement('div');
@@ -114,46 +154,108 @@
       top.appendChild(btn(ICON.fwd, 'İlet', function () {
         if (opts.onForward) opts.onForward(item());
       }));
-      top.appendChild(btn(ICON.star, 'Yıldızla', function () {
-        if (opts.onStar) opts.onStar(item());
-      }));
-      top.appendChild(btn(ICON.dots, 'Menü', function (b) {
-        if (opts.onMenu) opts.onMenu(item(), b);
+      var starBtn = btn(ICON.star, 'Yıldızla', function () {
+        if (!opts.onStar) return;
+        Promise.resolve(opts.onStar(item())).then(function (v) {
+          if (typeof v === 'boolean') paintStar(starBtn, v);
+        });
+      });
+      paintStar(starBtn, !!(opts.isStarred && opts.isStarred(item())));
+      top.appendChild(starBtn);
+      top.appendChild(btn(ICON.dots, 'Menü', function () {
+        toggleMenu();
       }));
     }
     return top;
   }
 
-  // ---------- ALT BAR (Cevapla) ----------
+  // ---------- ALT BAR (Cevapla + tepkiler) ----------
+  var REACT_DEFAULT = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
   function buildBottom() {
     var bt = document.createElement('div');
     bt.className = 'iv-bottom';
+
+    var strip = document.createElement('div');
+    strip.className = 'iv-strip';
     var pill = document.createElement('div');
     pill.className = 'iv-pill';
-    var rep = document.createElement('button');
-    rep.className = 'iv-reply';
-    rep.textContent = 'Cevapla';
-    rep.addEventListener('click', function (e) {
-      e.stopPropagation();
-      var it = item();
-      var replyCb = opts && opts.onReply;
-      close();
-      if (replyCb) replyCb(it);
-    });
-    pill.appendChild(rep);
-    ['❤️', '😂'].forEach(function (emo) {
+
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'iv-reply';
+    inp.placeholder = 'Cevapla';
+    inp.setAttribute('enterkeyhint', 'send');
+    inp.setAttribute('autocomplete', 'off');
+
+    var emos = document.createElement('div');
+    emos.className = 'iv-emos';
+
+    var sendBtn = document.createElement('button');
+    sendBtn.className = 'iv-send';
+    sendBtn.setAttribute('aria-label', 'Gönder');
+    sendBtn.innerHTML = ICON.send;
+
+    function curReaction() {
+      return (opts && opts.getReaction) ? opts.getReaction(item()) : null;
+    }
+
+    function react(emo) {
+      if (opts && opts.onReact) opts.onReact(item(), emo);
+      strip.style.display = 'none';
+      paintEmos();
+    }
+
+    function emoBtn(emo, parent) {
       var b = document.createElement('button');
-      b.className = 'iv-emo';
+      b.className = 'iv-emo' + (curReaction() === emo ? ' iv-on' : '');
       b.textContent = emo;
-      b.addEventListener('click', function (e) {
-        e.stopPropagation();
-        if (opts.onReact) opts.onReact(item(), emo);
-      });
-      pill.appendChild(b);
+      b.addEventListener('click', function (e) { e.stopPropagation(); react(emo); });
+      parent.appendChild(b);
+    }
+
+    function paintEmos() {
+      emos.innerHTML = '';
+      emoBtn('❤️', emos);
+      emoBtn('😂', emos);
+      emos.appendChild(btn(ICON.smile, 'Emoji', function () {
+        strip.style.display = strip.style.display === 'flex' ? 'none' : 'flex';
+      }));
+      strip.innerHTML = '';
+      ((opts && opts.reactionEmojis) || REACT_DEFAULT).forEach(function (emo) { emoBtn(emo, strip); });
+    }
+
+    var focused = false;
+    function sync() {
+      var has = inp.value.trim().length > 0;
+      emos.style.display = (focused || has) ? 'none' : 'flex';
+      sendBtn.style.display = has ? 'flex' : 'none';
+      if (focused) strip.style.display = 'none';
+    }
+
+    function doSend() {
+      var text = inp.value.trim();
+      if (!text) return;
+      var it = item();
+      var cb = opts && opts.onReplySend;
+      close();
+      if (cb) cb(it, text);
+    }
+
+    inp.addEventListener('focus', function () { focused = true; sync(); });
+    inp.addEventListener('blur', function () { focused = false; sync(); });
+    inp.addEventListener('input', sync);
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); doSend(); }
     });
-    pill.appendChild(btn(ICON.smile, 'Emoji', function () {
-      if (opts.onReact) opts.onReact(item(), null);
-    }));
+    sendBtn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    sendBtn.addEventListener('click', function (e) { e.stopPropagation(); doSend(); });
+
+    paintEmos();
+    pill.appendChild(inp);
+    pill.appendChild(emos);
+    pill.appendChild(sendBtn);
+    bt.appendChild(strip);
     bt.appendChild(pill);
     return bt;
   }
@@ -257,6 +359,12 @@
     img.src = it.src;
     img.draggable = false;
     stage.appendChild(img);
+    stage.addEventListener('touchstart', function () {
+      var a = document.activeElement;
+      if (a && a.classList && a.classList.contains('iv-reply')) a.blur();
+      var mn = root && root.querySelector('.iv-menu');
+      if (mn) mn.remove();
+    }, { passive: true });
     root.appendChild(stage);
     root.appendChild(top);
     root.appendChild(bottom);
@@ -411,6 +519,11 @@
   function close() {
     if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
     var cb = opts && opts.onClose;
+    if (vvHandler && window.visualViewport) {
+      window.visualViewport.removeEventListener('resize', vvHandler);
+      window.visualViewport.removeEventListener('scroll', vvHandler);
+    }
+    vvHandler = null;
     if (root) { root.remove(); root = null; }
     opts = null;
     if (cb) cb();
@@ -426,6 +539,16 @@
     root = document.createElement('div');
     root.id = 'ivw';
     document.body.appendChild(root);
+    if (window.visualViewport) {
+      vvHandler = function () {
+        if (!root) return;
+        root.style.height = window.visualViewport.height + 'px';
+        root.style.top = window.visualViewport.offsetTop + 'px';
+        root.style.bottom = 'auto';
+      };
+      window.visualViewport.addEventListener('resize', vvHandler);
+      window.visualViewport.addEventListener('scroll', vvHandler);
+    }
     if (o.album && o.items.length > 1) showList();
     else showSingle();
   };
