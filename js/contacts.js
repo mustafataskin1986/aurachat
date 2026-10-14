@@ -586,7 +586,7 @@ export async function loadContacts() {
                 <div data-avatar-slot="panel-${user.uid}" class="flex-shrink-0"></div>
                 <div class="ml-3 overflow-hidden flex-1">
                     <h4 class="text-white text-sm font-medium truncate">${escapeHtml(user.name || '')}</h4>
-                    <p class="text-[11px] text-gray-400 truncate">${escapeHtml(user.phone || '')}</p>
+                    <p class="text-[11px] text-gray-400 truncate">${escapeHtml(user.about || user.phone || '')}</p>
                 </div>
             `;
             const slot = row.querySelector(`[data-avatar-slot="panel-${user.uid}"]`);
