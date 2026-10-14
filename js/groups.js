@@ -17,6 +17,7 @@ import { auraDialog, auraAccent } from "./aura-dialog.js";
 import "./dark-toggle.js";
 import { openBackupMenu } from "./backup.js";
 import { openContactInfo } from "./contact-info.js";
+import { openScreenSharePicker } from "./screen-share.js";
 
 const sidebar = document.getElementById('sidebar');
 const chatAreaEl = document.getElementById('chat-area');
@@ -67,6 +68,9 @@ function ensureMenu() {
         <button type="button" data-menu="backup" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-brands fa-google-drive text-emerald-400 w-4"></i><span>Drive yedeği</span>
         </button>
+        <button type="button" data-menu="screen-share" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
+            <i class="fa-solid fa-display text-emerald-400 w-4"></i><span>Ekran paylaş</span>
+        </button>
         ${apkInstallAvailable() ? `<button type="button" data-menu="install-apk" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 hover:bg-[#2a3942] text-left">
             <i class="fa-brands fa-android text-emerald-400 w-4"></i><span>Uygulamayı yükle</span>
         </button>` : ''}
@@ -88,6 +92,8 @@ function ensureMenu() {
             openStarredPanel();
         } else if (item.dataset.menu === 'settings' && window.openProfilePanel) {
             window.openProfilePanel();
+        } else if (item.dataset.menu === 'screen-share') {
+            openScreenSharePicker();
         } else if (item.dataset.menu === 'install-apk') {
             const apkLink = document.createElement('a');
             apkLink.href = APK_URL;
