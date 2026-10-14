@@ -2608,6 +2608,39 @@ async function toggleStarSelected() {
     }
 }
 
+// Tek bir mesajı yıldızla / yıldızı kaldır (resim görüntüleyicisi kullanır). Yeni durumu döner.
+async function toggleStarMsg(msgId) {
+    if (!currentUser || !currentChatId || !msgId) return false;
+    const chatId = currentChatId;
+    const ref = doc(db, "users", currentUser.uid, "starred", starKey(chatId, msgId));
+    try {
+        if (isStarred(chatId, msgId)) {
+            await deleteDoc(ref);
+            showToast('Yıldız kaldırıldı');
+            return false;
+        }
+        const e = findMessageEntry(msgId);
+        if (!e) { showToast('Mesaj bulunamadı'); return false; }
+        const m = e.data;
+        const ms = m.createdAt && m.createdAt.toMillis ? m.createdAt.toMillis() : Date.now();
+        await setDoc(ref, {
+            chatId: chatId,
+            msgId: msgId,
+            chatName: currentChatName || '',
+            preview: replyPreviewTextFor(m),
+            senderUid: m.senderUid || '',
+            senderName: m.senderName || '',
+            msgTime: ms,
+            starredAt: serverTimestamp()
+        });
+        showToast('Yıldızlandı');
+        return true;
+    } catch (err) {
+        showToast('Yıldız işlemi başarısız');
+        return isStarred(chatId, msgId);
+    }
+}
+
 if (selectionStarBtn) {
     // Yıldıza basınca yazma kutusu odağı (klavye) kaybetmesin
     selectionStarBtn.addEventListener('mousedown', (e) => e.preventDefault());
@@ -5625,6 +5658,30 @@ function openViewer(o) {
     o.onReply = (it) => {
         setTimeout(() => window.replyToMessage(it.id), 100);
     };
+    // Görüntüleyici içinden cevap: yazılan metin bu resme cevap olarak gönderilir, sohbete geçilmez
+    o.onReplySend = (it, text) => {
+        if (!it || !it.id || !text) return;
+        window.replyToMessage(it.id);
+        messageInput.value = text;
+        sendMessage().catch(() => {}).then(() => { try { messageInput.blur(); } catch (e) {} });
+    };
+    o.reactionEmojis = REACTION_EMOJIS;
+    o.getReaction = (it) => {
+        const e = it && it.id ? findMsgEntry(currentChatId, it.id) : null;
+        return e && e.data.reactions && currentUser ? (e.data.reactions[currentUser.uid] || null) : null;
+    };
+    o.onReact = (it, emoji) => {
+        if (it && it.id && emoji) applyReaction(it.id, emoji);
+    };
+    o.isStarred = (it) => !!(it && it.id && isStarred(currentChatId, it.id));
+    o.onStar = (it) => (it && it.id ? toggleStarMsg(it.id) : Promise.resolve(false));
+    o.menuItems = [{
+        label: 'Sohbette göster',
+        fn: (it) => {
+            window.closeImageViewer();
+            if (it && it.id) setTimeout(() => scrollToOriginalMessage(it.id), 250);
+        }
+    }];
     window.openImageViewer(o);
 }
 
