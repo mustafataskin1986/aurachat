@@ -96,6 +96,13 @@ export function setupComposer() {
     margin: 0 12px calc(env(safe-area-inset-bottom, 0px) + 10px) 12px !important;
 }
 
+/* Mesaj listesi yazı panelinin ALTINA kadar uzar: panelin yanlarındaki / altındaki boşlukta mesajlar görünür.
+   --aura-below-h: listenin altındaki her şeyin (panel, cevap çubuğu...) toplam yüksekliği, aşağıda JS ölçer. */
+#chat-area #message-container {
+    margin-bottom: calc(-1 * var(--aura-below-h, 0px)) !important;
+    padding-bottom: calc(var(--aura-below-h, 0px) + 12px) !important;
+}
+
 #chat-area .aura-composer.aura-composer[style*="display: none"] {
     display: none !important;
 }
@@ -495,6 +502,44 @@ export function setupComposer() {
 
     sync();
     requestAnimationFrame(sync);
+
+    // ---------- Mesaj listesinin altındaki alanın yüksekliğini ölç ----------
+    // Liste, bu alanın altına kadar uzar (CSS yukarıda); en alttaki mesaj panelin arkasında kalmasın diye iç boşluk eklenir.
+    (function watchBelowHeight() {
+        const area = document.getElementById('chat-area');
+        const mc = document.getElementById('message-container');
+        if (!area || !mc) return;
+        let raf = 0;
+        function measure() {
+            raf = 0;
+            let h = 0;
+            let el = mc.nextElementSibling;
+            while (el) {
+                const cs = getComputedStyle(el);
+                if (cs.display !== 'none' && cs.position !== 'absolute' && cs.position !== 'fixed') {
+                    h += el.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+                }
+                el = el.nextElementSibling;
+            }
+            area.style.setProperty('--aura-below-h', Math.max(0, Math.round(h)) + 'px');
+        }
+        function schedule() { if (!raf) raf = requestAnimationFrame(measure); }
+        try {
+            const ro = new ResizeObserver(schedule);
+            ro.observe(area);
+            ro.observe(row);
+        } catch (e) {}
+        try {
+            // Cevap çubuğu / sarmalayıcı eklenip kalkınca, panel gizlenip açılınca yeniden ölç
+            new MutationObserver(schedule).observe(area, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+        } catch (e) {}
+        // Klavye açılıp kapanınca panelin kenar boşluğu değişir
+        row.addEventListener('focusin', schedule);
+        row.addEventListener('focusout', () => setTimeout(schedule, 50));
+        window.addEventListener('resize', schedule);
+        schedule();
+        setTimeout(schedule, 400);
+    })();
 
     return {
         input: ta,
