@@ -357,6 +357,19 @@
     window.isrtGecmis = [];
     window.isrtGecmisIndex = -1;
 
+    // Klavye açılınca ekran yüksekliği küçülür; editör küçülmesin, klavye resmin ve araçların ÜSTÜNE binsin
+    function isrtYuksekligiKilitle() {
+        const ov = document.getElementById('isaretlemeOverlay');
+        if (ov) ov.style.height = window.innerHeight + 'px';
+    }
+    window.addEventListener('resize', function () {
+        const ov = document.getElementById('isaretlemeOverlay');
+        if (!ov || !ov.classList.contains('acik')) return;
+        const a = document.activeElement;
+        if (a && a.tagName === 'TEXTAREA') return; // klavye açık: yüksekliği değiştirme
+        isrtYuksekligiKilitle();
+    });
+
     function isaretlemeyiAc(hedef, index, event) {
         if (event) { event.stopPropagation(); event.preventDefault(); }
         const dizi = hedef === 'tsd' ? window.tsdGorseller : window.seciliGorseller;
@@ -390,6 +403,7 @@
         };
         img.src = dizi[index];
 
+        isrtYuksekligiKilitle();
         document.getElementById('isaretlemeOverlay').classList.add('acik');
         if (window.isrtPushBack) {
             window.isrtPushBack(isaretlemeyiKapat);
@@ -415,6 +429,7 @@
         const overlay = document.getElementById('isaretlemeOverlay');
         if (!overlay) return;
         overlay.classList.remove('acik');
+        window.isrtBitirHook = null;
         window.isrtBackPushed = false;
         if (window.isrtOnClose) window.isrtOnClose();
         document.querySelectorAll('.isrt-not-kutu').forEach(el => el.remove());
@@ -480,7 +495,12 @@
         if (dizi && typeof window.isrtIndex === 'number' && dizi[window.isrtIndex] !== undefined) {
             dizi[window.isrtIndex] = veri;
         }
-        if (window.isrtHedef === 'tsd' && typeof window.tsdGorselOnizlemeRender === 'function') {
+        const bitirHook = window.isrtBitirHook;
+        window.isrtBitirHook = null;
+        if (typeof bitirHook === 'function') {
+            // Sohbetteki bir resim düzenlendi: sonuç yazı alanındaki resim listesine eklenir
+            try { bitirHook(veri); } catch (e) {}
+        } else if (window.isrtHedef === 'tsd' && typeof window.tsdGorselOnizlemeRender === 'function') {
             window.tsdGorselOnizlemeRender();
         } else if (typeof window.gorselOnizlemeRender === 'function') {
             window.gorselOnizlemeRender();
