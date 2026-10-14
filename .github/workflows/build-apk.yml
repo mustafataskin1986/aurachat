@@ -905,6 +905,7 @@ jobs:
                   } catch (Throwable t) {}
                   super.onCreate(savedInstanceState);
                   AuraSplash.show(this, this.bridge.getWebView());
+                  AuraScreen.install(this, this.bridge.getWebView());
                   WebSettings settings = this.bridge.getWebView().getSettings();
                 settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
@@ -2117,9 +2118,15 @@ jobs:
             add_perm "android.permission.WRITE_EXTERNAL_STORAGE"
             add_perm "android.permission.VIBRATE"
             add_perm "android.permission.USE_FULL_SCREEN_INTENT"
+            add_perm "android.permission.FOREGROUND_SERVICE"
+            add_perm "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
             # Kapalı uygulamada gelen aramayı yakalayan bildirim servisi (Capacitor'ın servisinden önceliklidir)
             if ! grep -q "AuraMessagingService" "$MANIFEST_PATH"; then
               sed -i 's#</application>#    <service android:name=".AuraMessagingService" android:exported="false">\n        <intent-filter android:priority="100">\n            <action android:name="com.google.firebase.MESSAGING_EVENT" />\n        </intent-filter>\n    </service>\n</application>#' "$MANIFEST_PATH"
+            fi
+            # Ekran paylaşımı: ekran yakalama ön plan hizmeti
+            if ! grep -q "AuraScreenService" "$MANIFEST_PATH"; then
+              sed -i 's#</application>#    <service android:name=".AuraScreenService" android:exported="false" android:foregroundServiceType="mediaProjection" />\n</application>#' "$MANIFEST_PATH"
             fi
             # Bildirimdeki Cevapla / Okundu düğmelerini karşılayan alıcı
             if ! grep -q "AuraActionReceiver" "$MANIFEST_PATH"; then
@@ -2570,6 +2577,321 @@ jobs:
             echo "AuraSplash.java yazıldı."
           else
             echo "UYARI: MainActivity.java bulunamadı, AuraSplash yazılamadı!"
+          fi
+
+      - name: AuraScreen.java - Ekran paylaşımı (ekran yakalama köprüsü ve hizmeti)
+        run: |
+          MAIN_ACTIVITY=$(find android -name "MainActivity.java" | head -n 1)
+          if [ -n "$MAIN_ACTIVITY" ]; then
+            DIR="$(dirname "$MAIN_ACTIVITY")"
+            cat > "$DIR/AuraScreen.java" << 'EOF'
+          package com.aurachat.app;
+
+          import android.app.Activity;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.media.projection.MediaProjectionManager;
+          import android.os.Build;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebView;
+          import androidx.activity.ComponentActivity;
+          import androidx.activity.result.ActivityResult;
+          import androidx.activity.result.ActivityResultCallback;
+          import androidx.activity.result.contract.ActivityResultContracts;
+          import androidx.activity.result.ActivityResultLauncher;
+
+          // Ekran paylaşımı (telefonun TAMAMI): Android'in ekran yakalama izni + ön plan hizmeti.
+          // Kareler JPEG olarak JS'e (js/screen-share.js) gönderilir, orada WebRTC'ye bağlanır.
+          public class AuraScreen {
+              static volatile WebView webView = null;
+              static ComponentActivity activity = null;
+              private static ActivityResultLauncher<Intent> launcher = null;
+              static volatile boolean busy = false;
+              static volatile boolean sharing = false;
+              private static final Handler main = new Handler(Looper.getMainLooper());
+
+              public static void install(final ComponentActivity act, WebView wv) {
+                  activity = act;
+                  webView = wv;
+                  try {
+                      launcher = act.registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), new ActivityResultCallback<ActivityResult>() {
+                          @Override
+                          public void onActivityResult(ActivityResult r) {
+                              try {
+                                  if (r.getResultCode() == Activity.RESULT_OK && r.getData() != null) {
+                                      Intent svc = new Intent(act, AuraScreenService.class);
+                                      svc.putExtra("code", r.getResultCode());
+                                      svc.putExtra("data", r.getData());
+                                      if (Build.VERSION.SDK_INT >= 26) act.startForegroundService(svc);
+                                      else act.startService(svc);
+                                  } else {
+                                      js("window.__auraScreenDenied&&window.__auraScreenDenied()");
+                                  }
+                              } catch (Throwable t) {
+                                  js("window.__auraScreenDenied&&window.__auraScreenDenied()");
+                              }
+                          }
+                      });
+                  } catch (Throwable t) { launcher = null; }
+                  if (wv != null) wv.addJavascriptInterface(new Bridge(), "AuraScreen");
+              }
+
+              static void js(final String code) {
+                  main.post(new Runnable() {
+                      @Override
+                      public void run() {
+                          try { if (webView != null) webView.evaluateJavascript(code, null); } catch (Throwable t) {}
+                      }
+                  });
+              }
+
+              // Yakalama hizmeti kare üretince çağırır. JS bir önceki kareyi işlemeden yenisi gönderilmez.
+              static void sendFrame(final String b64) {
+                  if (busy) return;
+                  busy = true;
+                  main.post(new Runnable() {
+                      @Override
+                      public void run() {
+                          try {
+                              if (webView == null) { busy = false; return; }
+                              // Uygulama arka plandayken sayfa zamanlayıcıları yavaşlamasın
+                              try { webView.resumeTimers(); } catch (Throwable t) {}
+                              webView.evaluateJavascript("window.__auraScreenFrame&&window.__auraScreenFrame('" + b64 + "')", new ValueCallback<String>() {
+                                  @Override
+                                  public void onReceiveValue(String v) { busy = false; }
+                              });
+                          } catch (Throwable t) { busy = false; }
+                      }
+                  });
+                  // Güvenlik: geri dönüş gelmezse kilit açılsın
+                  main.postDelayed(new Runnable() {
+                      @Override
+                      public void run() { busy = false; }
+                  }, 1500);
+              }
+
+              static void notifyStarted() {
+                  sharing = true;
+                  js("window.__auraScreenStarted&&window.__auraScreenStarted()");
+              }
+
+              static void notifyStopped() {
+                  sharing = false;
+                  busy = false;
+                  js("window.__auraScreenStopped&&window.__auraScreenStopped()");
+              }
+
+              public static class Bridge {
+                  @JavascriptInterface
+                  public boolean isSupported() {
+                      return launcher != null && Build.VERSION.SDK_INT >= 23;
+                  }
+
+                  @JavascriptInterface
+                  public boolean isSharing() { return sharing; }
+
+                  @JavascriptInterface
+                  public void start() {
+                      main.post(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  if (launcher == null || activity == null) { js("window.__auraScreenDenied&&window.__auraScreenDenied()"); return; }
+                                  MediaProjectionManager mpm = (MediaProjectionManager) activity.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+                                  launcher.launch(mpm.createScreenCaptureIntent());
+                              } catch (Throwable t) {
+                                  js("window.__auraScreenDenied&&window.__auraScreenDenied()");
+                              }
+                          }
+                      });
+                  }
+
+                  @JavascriptInterface
+                  public void stop() {
+                      main.post(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  if (activity != null) activity.stopService(new Intent(activity, AuraScreenService.class));
+                              } catch (Throwable t) {}
+                              notifyStopped();
+                          }
+                      });
+                  }
+              }
+          }
+          EOF
+            cat > "$DIR/AuraScreenService.java" << 'EOF'
+          package com.aurachat.app;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.app.Service;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.pm.ServiceInfo;
+          import android.graphics.Bitmap;
+          import android.graphics.PixelFormat;
+          import android.hardware.display.DisplayManager;
+          import android.hardware.display.VirtualDisplay;
+          import android.media.Image;
+          import android.media.ImageReader;
+          import android.media.projection.MediaProjection;
+          import android.media.projection.MediaProjectionManager;
+          import android.os.Build;
+          import android.os.Handler;
+          import android.os.HandlerThread;
+          import android.os.IBinder;
+          import android.util.Base64;
+          import android.util.DisplayMetrics;
+          import android.view.WindowManager;
+          import java.io.ByteArrayOutputStream;
+          import java.nio.ByteBuffer;
+
+          // Ekran yakalama için zorunlu ön plan hizmeti (bildirimde "ekran paylaşılıyor" görünür)
+          public class AuraScreenService extends Service {
+              private static final String CHANNEL = "aura_screen_share";
+              private static final int NOTIF_ID = 7711;
+              private static final int MAX_SIDE = 1280;     // en uzun kenar (px)
+              private static final long MIN_GAP_MS = 140;   // kareler arası en az süre (~7 kare/sn)
+
+              private MediaProjection projection = null;
+              private VirtualDisplay display = null;
+              private ImageReader reader = null;
+              private HandlerThread thread = null;
+              private Handler handler = null;
+              private long lastFrame = 0;
+              private boolean stopped = false;
+
+              @Override
+              public IBinder onBind(Intent intent) { return null; }
+
+              @Override
+              public int onStartCommand(Intent intent, int flags, int startId) {
+                  if (intent != null && "STOP".equals(intent.getAction())) {
+                      shutdown(true);
+                      return START_NOT_STICKY;
+                  }
+                  try {
+                      startAsForeground();
+                      int code = intent.getIntExtra("code", 0);
+                      Intent data = (Intent) intent.getParcelableExtra("data");
+                      if (data == null) { shutdown(true); return START_NOT_STICKY; }
+                      MediaProjectionManager mpm = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+                      projection = mpm.getMediaProjection(code, data);
+                      if (projection == null) { shutdown(true); return START_NOT_STICKY; }
+
+                      thread = new HandlerThread("AuraScreenCapture");
+                      thread.start();
+                      handler = new Handler(thread.getLooper());
+
+                      // Android 14: önce geri çağrı kaydedilmeli
+                      projection.registerCallback(new MediaProjection.Callback() {
+                          @Override
+                          public void onStop() { shutdown(true); }
+                      }, handler);
+
+                      DisplayMetrics dm = new DisplayMetrics();
+                      WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+                      wm.getDefaultDisplay().getRealMetrics(dm);
+                      float scale = Math.min(1f, (float) MAX_SIDE / (float) Math.max(dm.widthPixels, dm.heightPixels));
+                      final int w = Math.max(2, (Math.round(dm.widthPixels * scale) / 2) * 2);
+                      final int h = Math.max(2, (Math.round(dm.heightPixels * scale) / 2) * 2);
+
+                      reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2);
+                      reader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
+                          @Override
+                          public void onImageAvailable(ImageReader r) {
+                              Image img = null;
+                              try {
+                                  img = r.acquireLatestImage();
+                                  if (img == null) return;
+                                  long now = android.os.SystemClock.uptimeMillis();
+                                  if (AuraScreen.busy || now - lastFrame < MIN_GAP_MS) return;
+                                  lastFrame = now;
+                                  Image.Plane plane = img.getPlanes()[0];
+                                  ByteBuffer buf = plane.getBuffer();
+                                  int pixelStride = plane.getPixelStride();
+                                  int rowStride = plane.getRowStride();
+                                  int rowPadding = rowStride - pixelStride * w;
+                                  Bitmap full = Bitmap.createBitmap(w + rowPadding / pixelStride, h, Bitmap.Config.ARGB_8888);
+                                  full.copyPixelsFromBuffer(buf);
+                                  Bitmap bmp = Bitmap.createBitmap(full, 0, 0, w, h);
+                                  ByteArrayOutputStream out = new ByteArrayOutputStream();
+                                  bmp.compress(Bitmap.CompressFormat.JPEG, 60, out);
+                                  full.recycle();
+                                  if (bmp != full) bmp.recycle();
+                                  AuraScreen.sendFrame(Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP));
+                              } catch (Throwable t) {
+                              } finally {
+                                  try { if (img != null) img.close(); } catch (Throwable t) {}
+                              }
+                          }
+                      }, handler);
+
+                      display = projection.createVirtualDisplay("AuraChatScreen", w, h, dm.densityDpi,
+                          DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.getSurface(), null, handler);
+                      AuraScreen.notifyStarted();
+                  } catch (Throwable t) {
+                      shutdown(true);
+                  }
+                  return START_NOT_STICKY;
+              }
+
+              private void startAsForeground() {
+                  NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                  if (Build.VERSION.SDK_INT >= 26 && nm != null) {
+                      NotificationChannel ch = new NotificationChannel(CHANNEL, "Ekran paylaşımı", NotificationManager.IMPORTANCE_LOW);
+                      nm.createNotificationChannel(ch);
+                  }
+                  int flagsImm = Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0;
+                  Intent stop = new Intent(this, AuraScreenService.class);
+                  stop.setAction("STOP");
+                  PendingIntent stopPi = PendingIntent.getService(this, 1, stop, PendingIntent.FLAG_UPDATE_CURRENT | flagsImm);
+                  Intent open = new Intent(this, MainActivity.class);
+                  open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                  PendingIntent openPi = PendingIntent.getActivity(this, 2, open, PendingIntent.FLAG_UPDATE_CURRENT | flagsImm);
+
+                  Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
+                  b.setContentTitle("AuraChat ekranını paylaşıyor")
+                   .setContentText("Durdurmak için dokun")
+                   .setSmallIcon(getApplicationInfo().icon)
+                   .setOngoing(true)
+                   .setContentIntent(stopPi)
+                   .addAction(0, "Durdur", stopPi);
+                  Notification n = b.build();
+                  if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+                  else startForeground(NOTIF_ID, n);
+              }
+
+              private synchronized void shutdown(boolean tellJs) {
+                  if (stopped) return;
+                  stopped = true;
+                  try { if (display != null) display.release(); } catch (Throwable t) {}
+                  try { if (reader != null) reader.close(); } catch (Throwable t) {}
+                  try { if (projection != null) projection.stop(); } catch (Throwable t) {}
+                  try { if (thread != null) thread.quitSafely(); } catch (Throwable t) {}
+                  display = null; reader = null; projection = null;
+                  if (tellJs) AuraScreen.notifyStopped();
+                  try { stopForeground(true); } catch (Throwable t) {}
+                  stopSelf();
+              }
+
+              @Override
+              public void onDestroy() {
+                  shutdown(true);
+                  super.onDestroy();
+              }
+          }
+          EOF
+            echo "AuraScreen dosyaları yazıldı."
+          else
+            echo "UYARI: MainActivity.java bulunamadı, AuraScreen yazılamadı!"
           fi
 
       - name: Uygulama İkonunu PWA İkonlarından Üret
