@@ -67,6 +67,7 @@ import { watchGroupCallForChat } from "./group-call.js";
 import "./image-viewer.js";
 import { setupComposer } from "./chat-composer.js";
 import { setupMentions, resetMentions, collectMentions, clearChosenMentions, highlightMentions } from "./chat-mentions.js";
+import { buildPollHtml, openPollCreator, nextVotes, pollSummary } from "./poll.js";
 import { mountGallery, openGallery, closeGallery, setGalleryExpanded, galleryAvailable, gallerySelectedCount } from "./chat-gallery.js";
 
 // DOM elementleri
@@ -3651,6 +3652,8 @@ if (isViewOnce) {
             <p class="text-[11px] text-gray-300">${Number(msg.lat).toFixed(5)}, ${Number(msg.lng).toFixed(5)}</p>
             <p class="text-[11px] text-sky-300 mt-0.5">Haritada aç</p>
         </div>`;
+  } else if (msg.type === 'poll') {
+        bodyHtml = buildPollHtml(msg, currentUser ? currentUser.uid : '', msgId);
   } else if (msg.type === 'deleted') {
         bodyHtml = `<p class="break-words flex items-center gap-2 text-gray-400 italic text-[13px]"><i class="fa-solid fa-ban text-xs"></i> ${isMine ? 'Bu mesajı sildin' : 'Bu mesaj silindi'}</p>`;
 } else if (msg.type === 'missed_call') {
@@ -4006,7 +4009,7 @@ function ensureAttachMenu() {
 el.innerHTML = `
         <div class="aura-attach-inner" style="display:flex;flex-direction:column;height:100%;">
         <div class="aura-attach-handle w-10 h-1 bg-white/25 rounded-full mx-auto mb-3 flex-shrink-0"></div>
-        <div class="aura-attach-btns grid grid-cols-4 gap-x-3 px-3 pb-1 flex-shrink-0">
+        <div class="aura-attach-btns grid grid-cols-3 gap-x-3 gap-y-2 px-3 pb-1 flex-shrink-0">
             <button type="button" data-attach="gallery" class="w-full flex flex-col items-center gap-2 active:scale-95 transition">
                 <span class="w-full h-12 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
                     <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#3b9eff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
@@ -4030,6 +4033,18 @@ el.innerHTML = `
                     <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg>
                 </span>
                 <span class="text-gray-300 text-[14px]">Belge</span>
+            </button>
+            <button type="button" data-attach="poll" class="w-full flex flex-col items-center gap-1 active:scale-95 transition">
+                <span class="w-full h-12 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="12"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="18" y1="20" x2="18" y2="9"></line></svg>
+                </span>
+                <span class="text-gray-300 text-[14px]">Anket</span>
+            </button>
+            <button type="button" data-attach="screen" class="w-full flex flex-col items-center gap-1 active:scale-95 transition">
+                <span class="w-full h-12 rounded-full border border-white/15 active:bg-white/10 flex items-center justify-center transition">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                </span>
+                <span class="text-gray-300 text-[14px]">Ekran paylaş</span>
             </button>
         </div>
         </div>
@@ -4379,7 +4394,11 @@ function openAttachMenu() {
     // Popup rengini üst barla eşitle - tema değişip üst bar rengi
     // değişirse popup da otomatik takip etsin diye her açılışta canlı okunuyor
     const topBar = document.getElementById('chat-top-bar');
-    if (topBar) menu.style.backgroundColor = getComputedStyle(topBar).backgroundColor;
+    if (topBar) {
+        const tbc = getComputedStyle(topBar).backgroundColor;
+        // Üst bar şeffafsa (rgba(...,0)) atama: menü arkasından mesajlar görünmesin
+        if (tbc && tbc !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(tbc)) menu.style.backgroundColor = tbc;
+    }
 
 if (kbHeight > 100) window.__auraPopupH = kbHeight;
     attachMenuTargetHeight = kbHeight > 100
@@ -4440,6 +4459,16 @@ function handleAttachChoice(kind) {
     closeAttachMenu();
     if (kind === 'location') {
         sendCurrentLocation();
+        return;
+    }
+    if (kind === 'poll') {
+        if (isCurrentChatBlocked()) return;
+        openPollCreator({ onSend: sendPoll });
+        return;
+    }
+    if (kind === 'screen') {
+        if (typeof window.openScreenSharePicker === 'function') window.openScreenSharePicker();
+        else showToast('Ekran paylaşımı şu an açılamadı');
         return;
     }
     if (kind === 'document') {
@@ -5128,6 +5157,7 @@ function replyPreviewTextFor(msg) {
     }
     if (msg.type === 'audio') return `🎤 Sesli mesaj (${fmtAudioTime(msg.audioDuration)})`;
     if (msg.type === 'location') return '📍 Konum';
+    if (msg.type === 'poll') return pollSummary(msg);
     if (msg.type === 'document') return '📄 ' + (msg.fileName || 'Belge');
     return (msg.text || '').slice(0, 120);
 }
@@ -7118,6 +7148,66 @@ async function openSavedDocument(Filesystem, fname, mime) {
         showToast('Belge açılamadı', 3200);
     }
 }
+
+async function sendPoll(data) {
+    if (isCurrentChatBlocked()) return;
+    if (!currentUser || !currentChatId) return;
+    const chatIdAtStart = currentChatId;
+    const replyPayload = consumeReplyPayload();
+    await addDoc(collection(db, "chats", chatIdAtStart, "messages"), {
+        type: 'poll',
+        question: data.question,
+        options: data.options,
+        multi: !!data.multi,
+        votes: {},
+        text: '',
+        senderUid: currentUser.uid,
+        senderName: currentUser.name,
+        createdAt: serverTimestamp(),
+        read: false,
+        ...(replyPayload ? { replyTo: replyPayload } : {})
+    });
+    const label = pollSummary({ question: data.question });
+    await updateChatSummaries(label);
+    pushToGroupMembers('📊 Anket: ' + data.question.slice(0, 80));
+    if (chatIdAtStart !== 'global' && currentOtherUid) {
+        sendPushToUser(currentOtherUid, `${currentUser.name}`, '📊 Anket gönderdi: ' + data.question.slice(0, 80), {
+            chatId: chatIdAtStart,
+            otherUid: currentUser.uid,
+            otherName: currentUser.name
+        });
+    }
+    scrollToBottom();
+}
+
+// Ankette bir seçeneğe dokunma: yerelde hemen göster, sonra sunucuya yaz
+window.pollVote = async function (msgId, optId) {
+    if (selectionMode) return;
+    if (!currentUser || !currentUser.uid || !currentChatId) return;
+    const entry = findMessageEntry(msgId);
+    if (!entry || entry.data.type !== 'poll') return;
+    const voteChatId = currentChatId;
+    const uid = currentUser.uid;
+    const prev = Array.isArray(entry.data.votes && entry.data.votes[uid]) ? entry.data.votes[uid] : [];
+    const next = nextVotes(entry.data, uid, optId);
+    const setLocal = (arr) => {
+        entry.data.votes = Object.assign({}, entry.data.votes || {}, { [uid]: arr });
+        const sess = chatSessions.get(voteChatId);
+        if (sess && currentChatId === voteChatId) {
+            const top = messageContainer.scrollTop;
+            const nearBottom = isNearBottom();
+            renderSession(sess);
+            if (nearBottom) scrollToBottom(); else messageContainer.scrollTop = top;
+        }
+    };
+    setLocal(next);
+    try {
+        await updateDoc(doc(db, "chats", voteChatId, "messages", msgId), { [`votes.${uid}`]: next });
+    } catch (e) {
+        setLocal(prev);
+        showToast('Oy gönderilemedi');
+    }
+};
 
 async function sendCurrentLocation() {
     if (isCurrentChatBlocked()) return;
