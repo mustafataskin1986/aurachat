@@ -20,7 +20,7 @@ import {
     collection, onSnapshot, query, orderBy, doc, getDocs, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
-import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, showToast, openMemberSheet } from "./chat-core.js";
+import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, prewarmChatMedia, getCurrentChatId, showToast, openMemberSheet } from "./chat-core.js";
 import { auraDialog } from "./aura-dialog.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 
@@ -884,13 +884,15 @@ export async function loadContacts() {
                     <span class="text-[11px] text-gray-400">${lastTime}</span>
                 </div>
                 <div class="flex justify-between items-center mt-0.5">
-                    <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
+                    <p class="text-xs text-gray-400 truncate msg-preview flex items-center min-w-0">
                         ${tickHtml}
                                             <span class="preview-text truncate">${previewInnerHtml(chatData)}</span>
                     </p>
-                    ${pinIconHtml}
-                    ${unreadCount > 0 && chatData.hasMention ? `<div class="mention-badge bg-emerald-500 text-white text-[10px] font-bold rounded-full w-[18px] h-[18px] flex items-center justify-center ml-2">@</div>` : ''}
-                    ${unreadCount > 0 ? `<div class="unread-badge bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-1">${unreadCount}</div>` : ''}
+                    <div class="flex items-center flex-shrink-0 ml-auto">
+                        ${pinIconHtml}
+                        ${unreadCount > 0 && chatData.hasMention ? `<div class="mention-badge bg-emerald-500 text-white text-[10px] font-bold rounded-full w-[18px] h-[18px] flex items-center justify-center ml-2">@</div>` : ''}
+                        ${unreadCount > 0 ? `<div class="unread-badge bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-1">${unreadCount}</div>` : ''}
+                    </div>
                 </div>
             </div>
         `;
@@ -1006,6 +1008,9 @@ export async function loadContacts() {
                 return;
             }
         }
+        // Yeni mesaj gelen sohbetlerin oturumu ve resimleri arkada hazırlanır: sohbete girince hemen görünsün
+        const prevUnread = new Map();
+        myChats.forEach((v, k) => prevUnread.set(k, (v && v.unreadCount) || 0));
         myChats.clear();
         if (!window.__aurachatGroupIds) window.__aurachatGroupIds = new Set();
         snapshot.forEach((docSnap) => {
@@ -1015,6 +1020,15 @@ export async function loadContacts() {
                 window.__aurachatGroupIds.add(docSnap.id);
             }
         });
+        if (chatsLoaded) {
+            snapshot.forEach((docSnap) => {
+                const d = docSnap.data();
+                const now = d.unreadCount || 0;
+                if (now > (prevUnread.get(docSnap.id) || 0) && d.lastSenderUid !== currentUser.uid && getCurrentChatId() !== docSnap.id) {
+                    setTimeout(() => { prewarmChatMedia(docSnap.id, d.isGroup ? null : (d.otherUid || null)).catch(() => {}); }, 300);
+                }
+            });
+        }
         chatsLoaded = true;
         renderAll();
     });
