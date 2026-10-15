@@ -5920,6 +5920,8 @@ function openViewer(o) {
         label: 'Sohbette göster',
         fn: (it) => {
             window.closeImageViewer();
+            // Üstte açık kalan Tüm medyalar / kişi / grup bilgisi sayfaları kapansın
+            try { window.dispatchEvent(new CustomEvent('aura-show-in-chat')); } catch (e) {}
             if (it && it.id) setTimeout(() => scrollToOriginalMessage(it.id), 250);
         }
     }, {
