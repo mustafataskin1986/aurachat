@@ -6077,6 +6077,73 @@ window.openAlbumLightbox = async function (chatId, msgId, imagesCount, startInde
 };
 
 // ------------------------------------------
+// PAYLAŞILAN MEDYA / BELGE / BAĞLANTI LİSTESİ (kişi bilgisi sayfasındaki "Medya, bağlantılar ve belgeler")
+// Yalnızca bellekte yüklü mesajlardan okur (eski mesajlar sohbette yukarı kaydırılınca yüklenir).
+// ------------------------------------------
+export function getChatMedia(chatId) {
+    const out = { images: [], docs: [], links: [] };
+    const sess = chatSessions.get(chatId);
+    if (!sess) return out;
+    const all = sess.olderMessagesPrepended.concat(sess.messages);
+    const seen = new Set();
+    for (const m of all) {
+        const d = m && m.data;
+        if (!d || d.deleted || d.type === 'deleted' || seen.has(m.id)) continue;
+        seen.add(m.id);
+        let time = Date.now();
+        try { if (d.createdAt && d.createdAt.toMillis) time = d.createdAt.toMillis(); } catch (e) {}
+        if (d.type === 'image' && !d.viewOnce) {
+            const n = (d.imagesCount || 0) > 1 ? d.imagesCount : 1;
+            const star = isStarred(chatId, m.id);
+            for (let i = 0; i < n; i++) out.images.push({ msgId: m.id, idx: n > 1 ? i : null, count: n, time, starred: star });
+        } else if (d.type === 'document') {
+            out.docs.push({ msgId: m.id, name: d.fileName || 'Belge', mime: d.fileMime || '', time });
+        } else if (d.type === 'text' || d.type === undefined) {
+            const urls = String(d.text || '').match(/https?:\/\/[^\s<>"']+/gi);
+            if (urls) {
+                const lp = d.linkPreview || null;
+                urls.forEach((u, i) => {
+                    const url = u.replace(/[.,;:!?)\]]+$/, '');
+                    out.links.push({ msgId: m.id, url, title: (i === 0 && lp && lp.title) || '', time });
+                });
+            }
+        }
+    }
+    const byTime = (a, b) => b.time - a.time;
+    out.images.sort(byTime); out.docs.sort(byTime); out.links.sort(byTime);
+    return out;
+}
+
+export async function getChatMediaThumb(chatId, msgId, idx) {
+    try {
+        const entry = findMsgEntry(chatId, msgId);
+        if (!entry) return null;
+        const d = entry.data;
+        if (idx === null || idx === undefined) return await resolveLocalMedia(chatId, msgId, d.imageUrl, null) || null;
+        let src = mediaUriCache.get(`${chatId}/${msgId}_${idx}`);
+        if (!src) src = await resolveLocalMedia(chatId, msgId, findAlbumSourceImage(chatId, msgId, idx), idx);
+        return src || null;
+    } catch (e) { return null; }
+}
+
+export async function openChatMediaImage(chatId, msgId, idx, count) {
+    if (count > 1) { await window.openAlbumLightbox(chatId, msgId, count, idx || 0); return; }
+    const entry = findMsgEntry(chatId, msgId);
+    const src = await getChatMediaThumb(chatId, msgId, null);
+    if (!src) { showToast('Resim henüz hazır değil'); return; }
+    openViewer({ items: [makeViewerItem(entry, msgId, src)], index: 0, album: false });
+}
+
+export function openChatDocument(chatId, msgId) {
+    if (currentChatId !== chatId) { showToast('Belgeyi açmak için sohbete gir'); return; }
+    saveDocument(msgId);
+}
+
+export function openChatLink(url) {
+    try { window.open(url, '_blank', 'noopener'); } catch (e) {}
+}
+
+// ------------------------------------------
 // MESAJ GÖNDERME
 // ------------------------------------------
 // ------------------------------------------
