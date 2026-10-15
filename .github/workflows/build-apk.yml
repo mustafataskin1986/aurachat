@@ -3260,28 +3260,13 @@ jobs:
               p = "%s/mipmap-%s" % (RES, dens)
               os.makedirs(p, exist_ok=True)
               icon.resize((size, size), Image.LANCZOS).save(p + "/ic_launcher.png")
-              round_icon(icon, size).save(p + "/ic_launcher_round.png")
+              icon.resize((size, size), Image.LANCZOS).save(p + "/ic_launcher_round.png")
 
-          for dens, size in fg.items():
-              p = "%s/mipmap-%s" % (RES, dens)
-              os.makedirs(p, exist_ok=True)
-              canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-              inner = int(round(size * 0.8333))
-              canvas.paste(mask.resize((inner, inner), Image.LANCZOS), ((size - inner) // 2, (size - inner) // 2))
-              canvas.save(p + "/aura_icon_fg.png")
-
-          os.makedirs(RES + "/values", exist_ok=True)
-          open(RES + "/values/aura_icon_colors.xml", "w").write(
-              '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="aura_icon_bg">%s</color>\n</resources>\n' % bg_hex)
-
-          adaptive = ('<?xml version="1.0" encoding="utf-8"?>\n'
-                      '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
-                      '    <background android:drawable="@color/aura_icon_bg"/>\n'
-                      '    <foreground android:drawable="@mipmap/aura_icon_fg"/>\n'
-                      '</adaptive-icon>\n')
-          os.makedirs(RES + "/mipmap-anydpi-v26", exist_ok=True)
-          open(RES + "/mipmap-anydpi-v26/ic_launcher.xml", "w").write(adaptive)
-          open(RES + "/mipmap-anydpi-v26/ic_launcher_round.xml", "w").write(adaptive)
+          # ESKİ (legacy) SİSTEM: adaptive ikon yok, resim kenardan kenara olduğu gibi görünür
+          for f in glob.glob(RES + "/mipmap-anydpi*/ic_launcher*.xml"):
+              os.remove(f)
+          for f in glob.glob(RES + "/mipmap-*/aura_icon_fg.png"):
+              os.remove(f)
           print("Ikonlar static/icons'tan uretildi, arka plan:", bg_hex)
           PY
 
@@ -3326,20 +3311,7 @@ jobs:
                   p = "%s/mipmap-%s" % (RES, dens)
                   os.makedirs(p, exist_ok=True)
                   im.resize((size, size), Image.LANCZOS).save("%s/ic_alt_%d.png" % (p, n))
-                  rounded(im, size).save("%s/ic_alt_%d_round.png" % (p, n))
-              for dens, size in fgsz.items():
-                  p = "%s/mipmap-%s" % (RES, dens)
-                  canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-                  inner = int(round(size * 0.8333))
-                  canvas.paste(im.resize((inner, inner), Image.LANCZOS), ((size - inner) // 2, (size - inner) // 2))
-                  canvas.save("%s/aura_alt_fg_%d.png" % (p, n))
-              xml = ('<?xml version="1.0" encoding="utf-8"?>\n'
-                     '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
-                     '    <background android:drawable="@color/aura_alt_bg_%d"/>\n'
-                     '    <foreground android:drawable="@mipmap/aura_alt_fg_%d"/>\n'
-                     '</adaptive-icon>\n') % (n, n)
-              open("%s/mipmap-anydpi-v26/ic_alt_%d.xml" % (RES, n), "w").write(xml)
-              open("%s/mipmap-anydpi-v26/ic_alt_%d_round.xml" % (RES, n), "w").write(xml)
+                  im.resize((size, size), Image.LANCZOS).save("%s/ic_alt_%d_round.png" % (p, n))
               made.append(n)
 
           if colors:
