@@ -34,26 +34,51 @@ function dateText(ms) {
     return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
 }
 
-// Kişi / grup bilgisi sayfalarındaki "Medya, bağlantı ve belgeler" satırı (başlık + sayı + son 5 resim)
+// Kişi / grup bilgisi sayfalarındaki "Medya, bağlantı ve belgeler" satırı:
+// başlık + sayı + ok (Tüm medyalar sayfasını açar), altında en yeni 12 resim (sola kaydırılır, her biri kendi resmini açar)
 export function mediaBlockHtml(id) {
-    return `<div data-row="media" id="${id}" class="w-full px-5 pt-4 pb-3 active:bg-white/5 transition" style="cursor:pointer;">
-        <div class="flex items-center">
+    return `<div id="${id}" class="w-full pt-4 pb-3">
+        <button type="button" class="sm-head w-full px-5 flex items-center text-left active:opacity-70">
             <span class="flex-1 min-w-0 text-white text-[16px]">Medya, bağlantı ve belgeler</span>
             <span class="sm-count text-gray-400 text-[15px] mr-3">0</span>
             <i class="fa-solid fa-chevron-right text-gray-400 text-sm"></i>
-        </div>
-        <div class="sm-strip" style="gap:8px;margin-top:12px;overflow:hidden;display:none;"></div>
+        </button>
+        <div class="sm-strip" style="gap:8px;margin-top:12px;padding:0 20px;overflow-x:auto;overflow-y:hidden;display:none;scrollbar-width:none;-webkit-overflow-scrolling:touch;"></div>
     </div>`;
 }
 
-export function refreshMediaBlock(block, chatId) {
+// opts.ensure: async () => bool — resim / sayfa açılmadan önce (gerekirse) sohbeti açar
+export function refreshMediaBlock(block, chatId, opts) {
     if (!block || !chatId) return;
+    opts = opts || {};
+    block._smChat = chatId;
+    block._smEnsure = opts.ensure || null;
+    const strip = block.querySelector('.sm-strip');
+    if (!block._smWired) {
+        block._smWired = true;
+        strip.addEventListener('wheel', () => {}, { passive: true });
+        block.querySelector('.sm-head').addEventListener('click', async () => {
+            if (block._smEnsure && !(await block._smEnsure())) return;
+            setTimeout(() => openSharedMedia(block._smChat), 0);
+        });
+        strip.addEventListener('click', async (e) => {
+            const arrow = e.target.closest('.sm-more');
+            if (arrow) {
+                if (block._smEnsure && !(await block._smEnsure())) return;
+                setTimeout(() => openSharedMedia(block._smChat), 0);
+                return;
+            }
+            const box = e.target.closest('.sm-thumb');
+            if (!box) return;
+            if (block._smEnsure && !(await block._smEnsure())) return;
+            setTimeout(() => openChatMediaImage(block._smChat, box.dataset.msg, box.dataset.idx === '' ? null : +box.dataset.idx, +box.dataset.count), 0);
+        });
+    }
     const put = () => {
         if (!block.isConnected) return;
         const data = getChatMedia(chatId);
         block.querySelector('.sm-count').textContent = String(data.images.length + data.docs.length + data.links.length);
-        const strip = block.querySelector('.sm-strip');
-        const imgs = data.images.slice(0, 5);
+        const imgs = data.images.slice(0, 12);
         const key = chatId + '|' + imgs.map((i) => i.msgId + ':' + i.idx).join(',');
         if (strip.dataset.key === key) return;
         strip.dataset.key = key;
@@ -61,16 +86,30 @@ export function refreshMediaBlock(block, chatId) {
         strip.style.display = imgs.length ? 'flex' : 'none';
         imgs.forEach((it) => {
             const box = document.createElement('div');
-            box.style.cssText = 'width:84px;height:84px;border-radius:12px;background:#1f2c33;overflow:hidden;flex-shrink:0;';
+            box.className = 'sm-thumb';
+            box.dataset.msg = it.msgId;
+            box.dataset.idx = it.idx === null ? '' : String(it.idx);
+            box.dataset.count = String(it.count);
+            box.style.cssText = 'width:84px;height:84px;border-radius:12px;background:#1f2c33;overflow:hidden;flex-shrink:0;cursor:pointer;';
             strip.appendChild(box);
             getChatMediaThumb(chatId, it.msgId, it.idx).then((src) => {
                 if (!src || !box.isConnected) return;
                 const im = document.createElement('img');
                 im.src = src;
+                im.draggable = false;
                 im.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
                 box.appendChild(im);
             });
         });
+        if (imgs.length) {
+            const more = document.createElement('button');
+            more.type = 'button';
+            more.className = 'sm-more';
+            more.setAttribute('aria-label', 'Tüm medyalar');
+            more.style.cssText = 'width:84px;height:84px;border-radius:12px;background:#1f2c33;color:#9ca3af;font-size:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;';
+            more.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
+            strip.appendChild(more);
+        }
     };
     put();
     setTimeout(put, 800);
