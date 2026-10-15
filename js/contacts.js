@@ -866,7 +866,8 @@ export async function loadContacts() {
             tickHtml = `<span class="tick-container mr-1 flex-shrink-0"><i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i></span>`;
         }
 
-        const pinIconHtml = chatData.pinned ? `<i class="fa-solid fa-thumbtack text-[10px] text-amber-400 mr-1"></i>` : '';
+        // Sabitleme ikonu: isimden önce değil, alt satırın sağında (okunmamış rozetinin solunda), gri renkte
+        const pinIconHtml = chatData.pinned ? `<i class="fa-solid fa-thumbtack flex-shrink-0 ml-2" style="font-size:15px;color:#8696a0;"></i>` : '';
 
         let previewPrefix = '';
         if (isLastMsgMine) {
@@ -879,7 +880,7 @@ export async function loadContacts() {
             ${wrapAvatarWithSelectionBadge(chatId)}
             <div class="flex-1 overflow-hidden ml-3">
                 <div class="flex justify-between items-baseline">
-                    <h4 class="text-white font-medium text-sm">${pinIconHtml}${escapeHtml(displayName)}</h4>
+                    <h4 class="text-white font-medium text-sm">${escapeHtml(displayName)}</h4>
                     <span class="text-[11px] text-gray-400">${lastTime}</span>
                 </div>
                 <div class="flex justify-between items-center mt-0.5">
@@ -887,6 +888,7 @@ export async function loadContacts() {
                         ${tickHtml}
                                             <span class="preview-text truncate">${previewInnerHtml(chatData)}</span>
                     </p>
+                    ${pinIconHtml}
                     ${unreadCount > 0 && chatData.hasMention ? `<div class="mention-badge bg-emerald-500 text-white text-[10px] font-bold rounded-full w-[18px] h-[18px] flex items-center justify-center ml-2">@</div>` : ''}
                     ${unreadCount > 0 ? `<div class="unread-badge bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-1">${unreadCount}</div>` : ''}
                 </div>
