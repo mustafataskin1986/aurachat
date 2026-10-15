@@ -17,7 +17,7 @@ import { auraDialog, auraAccent } from "./aura-dialog.js";
 import "./dark-toggle.js";
 import { openBackupMenu } from "./backup.js";
 import { openContactInfo } from "./contact-info.js";
-import { openSharedMedia, mediaBlockHtml, refreshMediaBlock } from "./shared-media.js";
+import { mediaBlockHtml, refreshMediaBlock } from "./shared-media.js";
 import { openScreenSharePicker } from "./screen-share.js";
 
 const sidebar = document.getElementById('sidebar');
@@ -414,7 +414,6 @@ function ensureInfoPanel() {
     document.body.appendChild(el);
   el.querySelector('#group-info-back').addEventListener('click', closeInfoPanel);
   el.querySelector('#group-add-member-btn').addEventListener('click', () => openAddPanel());
-    el.querySelector('#group-media-block').addEventListener('click', () => { if (infoGroupId) openSharedMedia(infoGroupId); });
     el.querySelector('#group-rename-btn').addEventListener('click', () => renameGroup());
     el.querySelector('#group-photo-btn').addEventListener('click', () => changeGroupPhoto());
     el.querySelector('#group-leave-btn').addEventListener('click', async () => {
