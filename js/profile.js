@@ -289,7 +289,7 @@ function openAboutPage() {
     if (!aboutEl) {
         const el = document.createElement('div');
         el.className = 'fixed inset-0 bg-[#0b141a] hidden flex-col';
-        el.style.zIndex = '48';
+        el.style.zIndex = '52';
         el.innerHTML = `
             <div class="px-4 py-3.5 flex items-center space-x-4 flex-shrink-0">
                 <button type="button" id="about-back-btn" class="text-white text-lg px-1"><i class="fa-solid fa-arrow-left"></i></button>
@@ -517,8 +517,17 @@ function closeViewerFromBack() {
     viewerOpen = false;
 }
 function closeSheetFromBack() {
-    if (sheetEl) sheetEl.classList.add('hidden');
+    const el = sheetEl;
     sheetOpen = false;
+    if (!el) return;
+    sheetEl = null;
+    const panel = el.firstElementChild;
+    el.style.pointerEvents = 'none';
+    el.style.transition = 'background-color 220ms ease';
+    el.style.backgroundColor = 'rgba(0,0,0,0)';
+    panel.style.transition = 'transform 240ms cubic-bezier(0.4,0,1,1)';
+    panel.style.transform = 'translateY(100%)';
+    setTimeout(() => el.remove(), 260);
 }
 function closeSheet() {
     if (!sheetOpen) return;
@@ -533,41 +542,88 @@ async function deleteAvatar() {
     if (await saveUserFields({ avatar: null })) toastMsg('Profil resmi silindi');
 }
 
+function hasGoogleAccount() {
+    try {
+        const u = auth && auth.currentUser;
+        return !!(u && u.providerData && u.providerData.some(p => p.providerId === 'google.com' && p.photoURL));
+    } catch (e) { return false; }
+}
+
+async function importGooglePhoto() {
+    closeSheet();
+    try {
+        const pd = auth.currentUser.providerData.find(p => p.providerId === 'google.com');
+        let url = pd && pd.photoURL;
+        if (!url) { toastMsg('Google profil resmi bulunamadı'); return; }
+        url = url.replace(/=s\d+(-c)?$/, '=s400-c').replace(/\?sz=\d+$/, '?sz=400');
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const file = new File([blob], 'google.jpg', { type: blob.type || 'image/jpeg' });
+        const cropped = await openImageCropper(file, { size: 400, quality: 0.75 });
+        if (!cropped) return;
+        if (await saveUserFields({ avatar: cropped })) toastMsg('Profil resmi güncellendi');
+    } catch (e) {
+        toastMsg("Google'dan resim alınamadı");
+    }
+}
+
 function openAvatarSheet() {
     if (sheetOpen) return;
-    if (!sheetEl) {
-        const el = document.createElement('div');
-        el.className = 'fixed inset-0 hidden';
-        el.style.cssText = 'z-index:60;background:rgba(0,0,0,.6);';
-        el.innerHTML = `
-            <div id="ps-card" style="position:absolute;left:0;right:0;bottom:0;background:#1f2c33;border-radius:24px 24px 0 0;padding:10px 0 calc(env(safe-area-inset-bottom,0px) + 16px);">
-                <div style="width:40px;height:4px;border-radius:2px;background:#5b6870;margin:0 auto 10px;"></div>
-                <div class="flex items-center px-4 pb-3">
-                    <button type="button" id="ps-close" class="text-gray-300 text-xl w-10 text-left" aria-label="Kapat"><i class="fa-solid fa-xmark"></i></button>
-                    <h3 class="flex-1 text-center text-white text-lg font-medium">Profil resmi</h3>
-                    <button type="button" id="ps-del" class="text-gray-300 text-xl w-10 text-right" aria-label="Sil"><i class="fa-regular fa-trash-can"></i></button>
-                </div>
-                <div class="flex px-4 pt-2 pb-2" style="gap:12px;">
-                    <button type="button" id="ps-cam" class="flex-1 flex flex-col items-center py-4 rounded-2xl active:bg-white/10 transition" style="border:1px solid #33434c;">
-                        <i class="fa-solid fa-camera text-2xl" style="color:var(--aura-btn,#22c55e)"></i><span class="text-gray-200 text-sm mt-2">Kamera</span></button>
-                    <button type="button" id="ps-gal" class="flex-1 flex flex-col items-center py-4 rounded-2xl active:bg-white/10 transition" style="border:1px solid #33434c;">
-                        <i class="fa-solid fa-image text-2xl" style="color:var(--aura-btn,#22c55e)"></i><span class="text-gray-200 text-sm mt-2">Galeri</span></button>
-                    <button type="button" id="ps-fb" class="flex-1 flex flex-col items-center py-4 rounded-2xl active:bg-white/10 transition" style="border:1px solid #33434c;">
-                        <i class="fa-brands fa-facebook text-2xl" style="color:#1877f2"></i><span class="text-gray-200 text-sm mt-2 text-center">Facebook'tan içe aktar</span></button>
-                </div>
-            </div>`;
-        document.body.appendChild(el);
-        el.addEventListener('click', (e) => { if (e.target === el) closeSheet(); });
-        el.querySelector('#ps-close').addEventListener('click', closeSheet);
-        el.querySelector('#ps-del').addEventListener('click', deleteAvatar);
-        el.querySelector('#ps-cam').addEventListener('click', () => { closeSheet(); profileCameraInput && profileCameraInput.click(); });
-        el.querySelector('#ps-gal').addEventListener('click', () => { closeSheet(); profileAvatarInput && profileAvatarInput.click(); });
-        el.querySelector('#ps-fb').addEventListener('click', () => { closeSheet(); toastMsg("Facebook'tan içe aktarma şu an desteklenmiyor"); });
-        sheetEl = el;
-    }
-    sheetEl.classList.remove('hidden');
+    const google = hasGoogleAccount();
+    const card = (id, icon, color, label) => `
+        <button type="button" id="${id}" class="flex-1 flex flex-col items-center py-4 rounded-2xl active:bg-white/10 transition" style="border:1px solid #33434c;">
+            <i class="${icon} text-2xl" style="color:${color}"></i><span class="text-gray-200 text-sm mt-2 text-center">${label}</span></button>`;
+    const el = document.createElement('div');
+    el.className = 'fixed inset-0 flex items-end';
+    el.style.cssText = 'z-index:70;background-color:rgba(0,0,0,0);transition:background-color 240ms ease;';
+    el.innerHTML = `
+        <div class="w-full" style="background:#202c33;border-radius:16px 16px 0 0;padding:20px 16px calc(env(safe-area-inset-bottom,0px) + 20px);transform:translateY(100%);will-change:transform;touch-action:none;">
+            <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-4"></div>
+            <div class="flex items-center pb-3">
+                <button type="button" id="ps-close" class="text-gray-300 text-xl w-10 text-left" aria-label="Kapat"><i class="fa-solid fa-xmark"></i></button>
+                <h3 class="flex-1 text-center text-white text-lg font-medium">Profil resmi</h3>
+                <button type="button" id="ps-del" class="text-gray-300 text-xl w-10 text-right" aria-label="Sil"><i class="fa-regular fa-trash-can"></i></button>
+            </div>
+            <div class="flex pt-2" style="gap:12px;">
+                ${card('ps-cam', 'fa-solid fa-camera', 'var(--aura-btn,#22c55e)', 'Kamera')}
+                ${card('ps-gal', 'fa-solid fa-image', 'var(--aura-btn,#22c55e)', 'Galeri')}
+                ${google ? card('ps-gg', 'fa-brands fa-google', '#ea4335', "Google'dan içe aktar") : ''}
+            </div>
+        </div>`;
+    document.body.appendChild(el);
+    const panel = el.firstElementChild;
+    el.addEventListener('click', (e) => { if (e.target === el) closeSheet(); });
+    el.querySelector('#ps-close').addEventListener('click', closeSheet);
+    el.querySelector('#ps-del').addEventListener('click', deleteAvatar);
+    el.querySelector('#ps-cam').addEventListener('click', () => { closeSheet(); profileCameraInput && profileCameraInput.click(); });
+    el.querySelector('#ps-gal').addEventListener('click', () => { closeSheet(); profileAvatarInput && profileAvatarInput.click(); });
+    const gg = el.querySelector('#ps-gg');
+    if (gg) gg.addEventListener('click', importGooglePhoto);
+    sheetEl = el;
     sheetOpen = true;
     pushBackState(closeSheetFromBack);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        el.style.backgroundColor = 'rgba(0,0,0,0.6)';
+        panel.style.transition = 'transform 280ms cubic-bezier(0.2,0.9,0.3,1)';
+        panel.style.transform = 'translateY(0)';
+    }));
+    // Parmakla aşağı çekerek kapatma
+    let y0 = null, dy = 0;
+    panel.addEventListener('touchstart', (ev) => { if (ev.touches.length !== 1) return; y0 = ev.touches[0].clientY; dy = 0; panel.style.transition = 'none'; }, { passive: true });
+    panel.addEventListener('touchmove', (ev) => {
+        if (y0 === null) return;
+        dy = Math.max(0, ev.touches[0].clientY - y0);
+        panel.style.transform = `translateY(${dy}px)`;
+        el.style.backgroundColor = `rgba(0,0,0,${Math.max(0, 0.6 - dy / 600)})`;
+    }, { passive: true });
+    panel.addEventListener('touchend', () => {
+        if (y0 === null) return;
+        y0 = null;
+        if (dy > 90) { closeSheet(); return; }
+        panel.style.transition = 'transform 200ms ease';
+        panel.style.transform = 'translateY(0)';
+        el.style.backgroundColor = 'rgba(0,0,0,0.6)';
+    });
 }
 
 async function shareAvatar() {
