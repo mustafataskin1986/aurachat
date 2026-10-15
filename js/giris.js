@@ -50,7 +50,7 @@ async function offerSavePassword(email, password, name) {
 }
 
 // ------------------------------------------
-// E-POSTA YAZIM HATASI KORUMASI
+// E-POSTA YAZIM HATASI KORUMASI (bilinen servislerin yanlış yazımı "Geçersiz E-posta" sayılır)
 // ------------------------------------------
 const KNOWN_PROVIDERS = [
     ['gmail', 'com'], ['hotmail', 'com'], ['outlook', 'com'], ['yahoo', 'com'], ['icloud', 'com'],
@@ -95,37 +95,6 @@ function suggestEmail(email) {
     const newTld = tldOk ? tld : best.ptld;
     const fixed = local + '@' + best.pname + '.' + newTld;
     return fixed === email ? '' : fixed;
-}
-
-// Yeni hesap açmadan önce adresi büyük yazıyla gösterip onay ister.
-// Döner: { action:'create' } | { action:'replace', email } | { action:'cancel' }
-function confirmNewAccountEmail(email) {
-    return new Promise((resolve) => {
-        const suggestion = suggestEmail(email);
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:16px;';
-        const box = document.createElement('div');
-        box.style.cssText = 'background:#111b21;border:1px solid #1f2c34;border-radius:18px;padding:22px;width:100%;max-width:360px;text-align:center;color:#e9edef;box-shadow:0 10px 40px rgba(0,0,0,.6);';
-        const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-        box.innerHTML = `
-            <div style="font-size:18px;font-weight:700;margin-bottom:6px;">E-posta adresin doğru mu?</div>
-            <div style="font-size:12px;color:#9aa5ad;margin-bottom:12px;">Hesap yoksa yeni hesap açılacak ve doğrulama bağlantısı bu adrese gidecek. Şifren yanlışsa geri dön, şifreni düzelt.</div>
-            <div style="font-size:16px;font-weight:700;color:#34d399;word-break:break-all;background:#0b141a;border-radius:12px;padding:12px;margin-bottom:12px;">${esc(email)}</div>
-            ${suggestion ? `<div style="font-size:13px;color:#fbbf24;margin-bottom:10px;">Yazım hatası olabilir. Şunu mu demek istedin?</div>
-            <button type="button" data-act="use" style="width:100%;background:#059669;color:#fff;font-weight:700;padding:12px;border-radius:12px;margin-bottom:8px;word-break:break-all;">${esc(suggestion)}</button>` : ''}
-            <button type="button" data-act="ok" style="width:100%;background:${suggestion ? 'transparent' : '#059669'};border:${suggestion ? '1px solid #3b4650' : '0'};color:#fff;font-weight:600;padding:12px;border-radius:12px;margin-bottom:8px;">Evet, bu adres doğru</button>
-            <button type="button" data-act="fix" style="width:100%;color:#9aa5ad;padding:10px;font-size:14px;">Geri dön, düzelteyim</button>`;
-        wrap.appendChild(box);
-        document.body.appendChild(wrap);
-        box.addEventListener('click', (e) => {
-            const b = e.target.closest('[data-act]');
-            if (!b) return;
-            wrap.remove();
-            if (b.dataset.act === 'use') resolve({ action: 'replace', email: suggestion });
-            else if (b.dataset.act === 'ok') resolve({ action: 'create' });
-            else resolve({ action: 'cancel' });
-        });
-    });
 }
 
 // DOM ELEMENTLERİ
@@ -194,6 +163,9 @@ if (emailInput && emailStatus) {
         if (!email) {
             emailStatus.textContent = '';
             emailStatus.className = 'text-xs font-semibold';
+        } else if (emailRegex.test(email) && suggestEmail(email.toLowerCase())) {
+            emailStatus.textContent = 'Geçersiz E-posta';
+            emailStatus.className = 'text-xs font-semibold text-rose-400';
         } else if (emailRegex.test(email)) {
             emailStatus.textContent = '✓ Geçerli';
             emailStatus.className = 'text-xs font-semibold text-emerald-400';
@@ -262,6 +234,11 @@ function validateStep1() {
         alert("Lütfen geçerli bir e-posta adresi gir kanka!");
         return false;
     }
+    const typoFix = suggestEmail(email.toLowerCase());
+    if (typoFix) {
+        alert("E-posta adresini yanlış yazdın kanka! Şunu mu demek istedin: " + typoFix);
+        return false;
+    }
     if (!password || password.length < 6) {
         alert("Şifren en az 6 karakter olmalıdır!");
         return false;
@@ -287,17 +264,6 @@ if (btnStep1Next) {
             try {
                 userCred = await signInWithEmailAndPassword(auth, email, password);
             } catch (signInErr) {
-                // Yeni hesap açılacaksa: doğrulama kodu yanlış adrese gitmesin diye önce adresi onaylat
-                const decision = await confirmNewAccountEmail(email);
-                if (decision.action === 'replace') {
-                    emailInput.value = decision.email;
-                    emailInput.dispatchEvent(new Event('input'));
-                    return;
-                }
-                if (decision.action !== 'create') {
-                    emailInput.focus();
-                    return;
-                }
                 try {
                     userCred = await createUserWithEmailAndPassword(auth, email, password);
                     isNewAccount = true;
