@@ -34,6 +34,52 @@ function dateText(ms) {
     return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
 }
 
+// Kişi / grup bilgisi sayfalarındaki "Medya, bağlantı ve belgeler" satırı (başlık + sayı + son 5 resim)
+export function mediaBlockHtml(id) {
+    return `<div data-row="media" id="${id}" class="w-full px-5 pt-4 pb-3 active:bg-white/5 transition" style="cursor:pointer;">
+        <div class="flex items-center">
+            <span class="flex-1 min-w-0 text-white text-[16px]">Medya, bağlantı ve belgeler</span>
+            <span class="sm-count text-gray-400 text-[15px] mr-3">0</span>
+            <i class="fa-solid fa-chevron-right text-gray-400 text-sm"></i>
+        </div>
+        <div class="sm-strip" style="gap:8px;margin-top:12px;overflow:hidden;display:none;"></div>
+    </div>`;
+}
+
+export function refreshMediaBlock(block, chatId) {
+    if (!block || !chatId) return;
+    const put = () => {
+        if (!block.isConnected) return;
+        const data = getChatMedia(chatId);
+        block.querySelector('.sm-count').textContent = String(data.images.length + data.docs.length + data.links.length);
+        const strip = block.querySelector('.sm-strip');
+        const imgs = data.images.slice(0, 5);
+        const key = chatId + '|' + imgs.map((i) => i.msgId + ':' + i.idx).join(',');
+        if (strip.dataset.key === key) return;
+        strip.dataset.key = key;
+        strip.innerHTML = '';
+        strip.style.display = imgs.length ? 'flex' : 'none';
+        imgs.forEach((it) => {
+            const box = document.createElement('div');
+            box.style.cssText = 'width:84px;height:84px;border-radius:12px;background:#1f2c33;overflow:hidden;flex-shrink:0;';
+            strip.appendChild(box);
+            getChatMediaThumb(chatId, it.msgId, it.idx).then((src) => {
+                if (!src || !box.isConnected) return;
+                const im = document.createElement('img');
+                im.src = src;
+                im.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+                box.appendChild(im);
+            });
+        });
+    };
+    put();
+    setTimeout(put, 800);
+    setTimeout(put, 2500);
+}
+
+// "Sohbette göster" seçilince bu sayfa kapanıp sohbet görünsün
+window.addEventListener('aura-show-in-chat', () => { if (open) close(); });
+
 function closeFromBack() {
     if (observer) { observer.disconnect(); observer = null; }
     if (el) { el.remove(); el = null; }
