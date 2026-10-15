@@ -56,14 +56,14 @@ function probe(n) {
         const t = setTimeout(() => resolve(null), 4000);
         im.onload = () => {
             clearTimeout(t);
-            let bg = '#000';
+            let bg = 'transparent';
             try {
                 const c = document.createElement('canvas');
                 c.width = 8; c.height = 8;
                 const cx = c.getContext('2d');
                 cx.drawImage(im, 0, 0, 8, 8);
                 const d = cx.getImageData(1, 1, 1, 1).data;
-                bg = d[3] < 255 ? '#000' : `rgb(${d[0]},${d[1]},${d[2]})`;
+                bg = d[3] < 255 ? 'transparent' : `rgb(${d[0]},${d[1]},${d[2]})`;
             } catch (e) {}
             resolve({ n, bg });
         };
