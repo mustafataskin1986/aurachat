@@ -1,543 +1,1426 @@
 // ==========================================
-// KİŞİ BİLGİSİ SAYFASI (WhatsApp düzeni)
-// - Şeffaf üst bar: solda geri oku, sağda üç nokta
-// - Ortada büyük avatar, altında isim, telefon, Hakkımda yazısı
-// - Sesli / Görüntülü / Ara düğmeleri (sohbet içindekilerle aynı)
-// - Aşağı kaydırınca üst barda ok + küçük avatar + isim belirir
-// - Avatara dokununca tam ekran resim (yukarı/aşağı çekince kapanır)
-// - Sayfa açıkken ekran görüntüsü ve ekran kaydı engellenir (APK)
+// KİŞİ LİSTESİ + ADMİN PANEL
+//
+// Avatarlar cihaza yerel dosya olarak önbelleğe alınıyor (Capacitor
+// Filesystem). İlk açılışta baş harf placeholder'ı gösteriliyor,
+// arkaplanda avatar cihaza yazılıp hazır olunca yerine geçiyor.
+//
+// Filtre çipleri: Tümü / Okunmamış / Favoriler / Gruplar.
+// "archived" alanı "favori" anlamına geliyor. Sohbet seçim modunda
+// avatarın sağ alt köşesinde yeşil tik rozeti çıkıyor, Sabitle ve
+// Favorile butonları var (pinned/archived alanları
+// users/{uid}/chats/{chatId} dokümanında tutuluyor).
+//
+// Gruplar: users/{uid}/chats/{groupId} özet dokümanında isGroup:true
+// ve groupName alanı var, liste satırı 1'e 1 sohbetle aynı çizilir.
 // ==========================================
 
-import { db } from "./firebase-init.js";
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getCurrentUser, getCurrentChatId, selectChat, prewarmChatSession, showToast, openChatSearch, openStarredPanel, toggleBlockUser, wipeChat, setDisappearAfter } from "./chat-core.js";
-import { openChatThemePicker } from "./chat-theme.js";
-import { openSharedMedia, mediaBlockHtml, refreshMediaBlock } from "./shared-media.js";
-import { getUserColor, getInitials, escapeHtml, getChatId } from "./ui-helpers.js";
+import { db, ADMIN_EMAIL } from "./firebase-init.js";
+import {
+    collection, onSnapshot, query, orderBy, doc, getDocs, updateDoc
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
+import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, showToast, openMemberSheet } from "./chat-core.js";
+import { auraDialog } from "./aura-dialog.js";
 import { pushBackState, popBackState } from "./back-handler.js";
-import { auraDialog, auraAccent } from "./aura-dialog.js";
 
-let infoEl = null;
-let infoOpen = false;
-let curUser = null;
-let curBefore = null;
-
-function setSecure(on) {
-    try { if (window.AuraSecure && window.AuraSecure.set) window.AuraSecure.set(!!on); } catch (e) {}
+let contactList = document.getElementById('contact-list');
+if (!contactList) {
+    contactList = document.createElement('div');
+    contactList.id = 'contact-list';
+    contactList.className = 'divide-y divide-gray-800/40';
+    (document.getElementById('chat-scroll-wrapper') || document.body).appendChild(contactList);
 }
+const searchContact = document.getElementById('search-contact');
+const searchIcon = document.getElementById('search-icon');
+const filterTabsContainer = document.getElementById('chat-filter-tabs');
 
-function closeFromBack() {
-    if (infoEl) {
-        infoEl.classList.add('hidden');
-        infoEl.classList.remove('flex');
+const appTitle = document.getElementById('app-title');
+let isAdminUser = false;
+
+// Açılışta ilk çizimden ÖNCE: başlık rengi (yönetici ise sarı), çip sayıları ve çip satırındaki gri kaydırma çubuğu.
+// Böylece renk ve sayılar sonradan değişip ekranda sıçramaz.
+const CHIP_COUNTS_KEY = 'aurachat_chip_counts';
+(function earlyChrome() {
+    try {
+        const st = document.createElement('style');
+        st.textContent = '#chat-filter-tabs{scrollbar-width:none;-ms-overflow-style:none}#chat-filter-tabs::-webkit-scrollbar{display:none;width:0;height:0}';
+        document.head.appendChild(st);
+    } catch (e) {}
+    let cachedUser = null;
+    try { cachedUser = JSON.parse(localStorage.getItem('aurachat_user') || 'null'); } catch (e) {}
+    try {
+        const admin = localStorage.getItem('aurachat_is_admin') === '1'
+            || !!(cachedUser && cachedUser.email && ADMIN_EMAIL && String(cachedUser.email).toLowerCase() === String(ADMIN_EMAIL).toLowerCase());
+        if (admin && appTitle) {
+            document.documentElement.setAttribute('data-aura-admin', '1');
+            appTitle.classList.add('text-amber-400');
+            appTitle.classList.remove('text-emerald-500');
+        }
+    } catch (e) {}
+    try {
+        const raw = JSON.parse(localStorage.getItem(CHIP_COUNTS_KEY) || 'null');
+        const tabs = document.getElementById('chat-filter-tabs');
+        if (raw && tabs && cachedUser && raw.uid === cachedUser.uid) {
+            const set = (f, label, n) => {
+                const el = tabs.querySelector('[data-filter="' + f + '"]');
+                if (el && n > 0) el.textContent = label + ' ' + n;
+            };
+            set('unread', 'Okunmamış', raw.u);
+            set('favorites', 'Favoriler', raw.f);
+            set('groups', 'Gruplar', raw.g);
+        }
+    } catch (e) {}
+})();
+const adminModal = document.getElementById('admin-modal');
+const adminModalClose = document.getElementById('admin-modal-close');
+const adminUserList = document.getElementById('admin-user-list');
+
+const chatSelectionToolbar = document.getElementById('chat-selection-toolbar');
+const chatSelectionCancelBtn = document.getElementById('chat-selection-cancel-btn');
+const chatSelectionCountEl = document.getElementById('chat-selection-count');
+const chatSelectionDeleteBtn = document.getElementById('chat-selection-delete-btn');
+const chatSelectionPinBtn = document.getElementById('chat-selection-pin-btn');
+const chatSelectionArchiveBtn = document.getElementById('chat-selection-archive-btn');
+
+const contactElementsMap = new Map();
+let dynamicListContainer = null;
+
+let chatSelectionMode = false;
+const selectedChatIds = new Set();
+
+// Filtre çipi durumu - 'all' | 'unread' | 'favorites' | 'groups'
+let activeFilter = 'all';
+
+// Yeniden çizim tetikleyicisi - filtre çipine basınca dışarıdan çağrılır
+let renderAllRef = null;
+
+// Kişiler paneli (alt bardaki "Kişiler" sekmesi) durumu
+let contactsPanelEl = null;
+let contactsPanelOpen = false;
+
+// ------------------------------------------
+// AVATAR YEREL DOSYA ÖNBELLEĞİ (WhatsApp mantığı)
+// ------------------------------------------
+const AVATAR_CACHE_DIR = 'avatars';
+const avatarUriCache = new Map(); // "uid:hash" -> yerel dosyanın gösterilebilir src'si
+
+// Avatar her değiştiğinde farklı bir dosya adı üretmek için basit hash.
+function shortAvatarHash(base64Str) {
+    let hash = 0;
+    for (let i = 0; i < base64Str.length; i += 37) {
+        hash = (hash * 31 + base64Str.charCodeAt(i)) | 0;
     }
-    infoOpen = false;
-    setSecure(false);
+    return Math.abs(hash).toString(36);
 }
 
-function closeInfo() {
-    if (!infoOpen) return;
-    closeFromBack();
-    popBackState();
+const avatarInflight = new Map(); // cacheKey -> Promise
+
+function resolveLocalAvatar(uid, base64Avatar) {
+    if (!base64Avatar) return Promise.resolve(null);
+
+    const cacheKey = `${uid}:${shortAvatarHash(base64Avatar)}`;
+    if (avatarUriCache.has(cacheKey)) return Promise.resolve(avatarUriCache.get(cacheKey));
+    if (avatarInflight.has(cacheKey)) return avatarInflight.get(cacheKey);
+
+    const p = doResolveLocalAvatar(uid, base64Avatar, cacheKey)
+        .finally(() => avatarInflight.delete(cacheKey));
+    avatarInflight.set(cacheKey, p);
+    return p;
 }
 
-function avatarInner(u) {
-    if (u.avatar) return `<img src="${u.avatar}" class="w-full h-full object-cover">`;
-    return escapeHtml(getInitials(u.name || '?'));
-}
+async function doResolveLocalAvatar(uid, base64Avatar, cacheKey) {
+    const Filesystem = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+    if (!Filesystem || !window.Capacitor.convertFileSrc) {
+        return base64Avatar;
+    }
 
-function paintAvatar(box, u) {
-    if (u.avatar) {
-        box.style.background = '';
-        box.innerHTML = `<img src="${u.avatar}" class="w-full h-full object-cover">`;
-    } else {
-        box.style.background = getUserColor(u.name || '?');
-        box.textContent = getInitials(u.name || '?');
+    // Avatar bir internet adresiyse (örn. Google profil fotoğrafı) olduğu gibi kullan
+    if (typeof base64Avatar !== 'string' || /^https?:\/\//i.test(base64Avatar)) {
+        return base64Avatar;
+    }
+
+    const hash = cacheKey.split(':')[1];
+    const fileName = `${AVATAR_CACHE_DIR}/${uid}_${hash}.jpg`;
+
+    try {
+        const st = await Filesystem.stat({ path: fileName, directory: 'DATA' });
+        if (st && st.size > 0) {
+            const existing = await Filesystem.getUri({ path: fileName, directory: 'DATA' });
+            const src = window.Capacitor.convertFileSrc(existing.uri);
+            avatarUriCache.set(cacheKey, src);
+            return src;
+        }
+    } catch (e) {
+        // dosya yok, yazılacak
+    }
+
+    try {
+        const base64Data = (base64Avatar.includes(',') ? base64Avatar.split(',')[1] : base64Avatar).replace(/\s/g, '');
+        await Filesystem.mkdir({ path: AVATAR_CACHE_DIR, directory: 'DATA', recursive: true }).catch(() => {});
+        const written = await Filesystem.writeFile({ path: fileName, data: base64Data, directory: 'DATA' });
+        const src = window.Capacitor.convertFileSrc(written.uri);
+        avatarUriCache.set(cacheKey, src);
+
+        // Aynı kullanıcının eski avatar dosyalarını temizle
+        try {
+            const dir = await Filesystem.readdir({ path: AVATAR_CACHE_DIR, directory: 'DATA' });
+            for (const f of (dir.files || [])) {
+                const name = typeof f === 'string' ? f : f.name;
+                if (name && name.startsWith(`${uid}_`) && name !== `${uid}_${hash}.jpg`) {
+                    await Filesystem.deleteFile({ path: `${AVATAR_CACHE_DIR}/${name}`, directory: 'DATA' }).catch(() => {});
+                }
+            }
+        } catch (e) {}
+
+        return src;
+    } catch (err) {
+        console.warn("Avatar yerel diske yazılamadı:", err);
+        return base64Avatar;
     }
 }
 
-// Bu kişiyle olan sohbet açık değilse önce onu açar
-async function ensureChat() {
-    const me = getCurrentUser();
-    if (!me || !curUser) return false;
-    const cid = getChatId(me.uid, curUser.uid);
-    const u = curUser;
-    closeInfo();
-    if (getCurrentChatId() !== cid) {
-        if (typeof curBefore === 'function') curBefore();
-        await selectChat({ uid: u.uid, name: u.name, avatar: u.avatar || '' });
-    }
-    return true;
+function buildAvatarPlaceholder(name, sizeClasses) {
+    const initials = getInitials(name || '?');
+    const color = getUserColor(name || '?');
+    return `<div class="${sizeClasses} rounded-full flex items-center justify-center text-white font-bold text-sm shadow" style="background-color: ${color};">${initials}</div>`;
 }
 
-function rowHtml(id, icon, color, label, sub) {
+let localAvatarBroken = false; // yerel dosya src'si bu cihazda yüklenmiyorsa bir daha denenmez
+
+function renderAvatarInto(containerEl, uid, avatarBase64, name, sizeClasses) {
+    if (!containerEl) return;
+
+    if (!avatarBase64) {
+        containerEl.innerHTML = buildAvatarPlaceholder(name, sizeClasses);
+        return;
+    }
+
+    const imgHtml = (src) => `<img src="${src}" class="${sizeClasses} rounded-full object-cover shadow">`;
+
+    // Her zaman önce base64 göster: boş/kırık avatar asla kalmaz
+    containerEl.innerHTML = imgHtml(avatarBase64);
+
+    if (localAvatarBroken) return;
+
+    resolveLocalAvatar(uid, avatarBase64).then((src) => {
+        if (!src || src === avatarBase64 || !containerEl.isConnected) return;
+
+        // Yerel dosyaya SADECE gerçekten yükleniyorsa geç
+        const probe = new Image();
+        probe.onload = () => {
+            if (containerEl.isConnected) containerEl.innerHTML = imgHtml(src);
+        };
+        probe.onerror = () => {
+            localAvatarBroken = true;
+        };
+        probe.src = src;
+    });
+}
+
+// ------------------------------------------
+// İSKELET (LOADING) LİSTESİ
+// ------------------------------------------
+function renderSkeletonList() {
+    let skeletonHtml = '';
+    for (let i = 0; i < 5; i++) {
+        skeletonHtml += `
+            <div class="flex items-center px-4 py-3 animate-pulse border-b border-gray-800/30">
+                <div class="w-12 h-12 bg-gray-700/50 rounded-full mr-3 flex-shrink-0"></div>
+                <div class="flex-1">
+                    <div class="h-3.5 bg-gray-700/60 rounded w-1/3 mb-2"></div>
+                    <div class="h-2.5 bg-gray-800/80 rounded w-2/3"></div>
+                </div>
+            </div>
+        `;
+    }
+    contactList.innerHTML = skeletonHtml;
+}
+
+function wrapAvatarWithSelectionBadge(slotId) {
     return `
-        <button type="button" data-row="${id}" class="w-full px-5 py-4 flex items-center space-x-5 text-left active:bg-white/5 transition">
-            <i class="fa-solid ${icon} ${color} text-lg w-6 text-center"></i>
-            <span class="min-w-0 flex-1">
-                <span data-label class="block text-[16px] ${id === 'wipe' || id === 'block' ? 'text-rose-400' : 'text-white'}">${label}</span>
-                ${sub ? `<span class="block text-gray-400 text-xs mt-0.5">${sub}</span>` : ''}
-            </span>
-        </button>`;
-}
-
-const AV_BIG = 150, AV_SMALL = 36, COLLAPSE_PX = 140, NAME_SCALE = 0.75;
-const L = { cx0: 0, cy0: 0, nameW: 0, nameLeft0: 0, nameCy0: 0, nameH: 0, w: 0, tx: 74, ty: 30, nameLeft1: 104 };
-
-function measure() {
-    if (!infoEl) return;
-    const ph = infoEl.querySelector('#ci-avatar-ph');
-    const nm = infoEl.querySelector('#ci-name');
-    const fn = infoEl.querySelector('#ci-fname');
-    L.w = infoEl.clientWidth;
-    L.cx0 = L.w / 2;
-    L.cy0 = ph.offsetTop + AV_BIG / 2;
-    fn.style.width = 'auto';
-    const natural = fn.scrollWidth;
-    const maxBig = L.w - 48;
-    const maxSmall = (L.w - L.nameLeft1 - 56) / NAME_SCALE;
-    L.nameW = Math.max(40, Math.min(natural + 2, maxBig, maxSmall));
-    fn.style.width = L.nameW + 'px';
-    L.nameLeft0 = (L.w - L.nameW) / 2;
-    L.nameH = fn.offsetHeight || 32;
-    L.nameCy0 = nm.offsetTop + nm.offsetHeight / 2;
-}
-
-function applyCollapse() {
-    if (!infoEl) return;
-    const sc = infoEl.querySelector('#ci-scroll');
-    const st = sc.scrollTop;
-    const p = Math.max(0, Math.min(1, st / COLLAPSE_PX));
-    const lerp = (a, b) => a + (b - a) * p;
-
-    const av = infoEl.querySelector('#ci-avatar-btn');
-    const s = lerp(1, AV_SMALL / AV_BIG);
-    const cx = lerp(L.cx0, L.tx);
-    const cy = lerp(L.cy0 - st, L.ty);
-    av.style.transform = 'translate(' + (cx - AV_BIG / 2) + 'px,' + (cy - AV_BIG / 2) + 'px) scale(' + s + ')';
-
-    const fn = infoEl.querySelector('#ci-fname');
-    const ns = lerp(1, NAME_SCALE);
-    const nl = lerp(L.nameLeft0, L.nameLeft1);
-    const ncy = lerp(L.nameCy0 - st, L.ty);
-    fn.style.transform = 'translate(' + nl + 'px,' + (ncy - L.nameH / 2) + 'px) scale(' + ns + ')';
-
-    const bt = Math.max(0, Math.min(1, (st - COLLAPSE_PX * 0.6) / (COLLAPSE_PX * 0.4)));
-    const blk = document.documentElement.hasAttribute('data-aura-black');
-    infoEl.querySelector('#ci-bar').style.background = (blk ? 'rgba(0,0,0,' : 'rgba(11,20,26,') + bt + ')';
-}
-
-function ensureEl() {
-    if (infoEl) return infoEl;
-    const el = document.createElement('div');
-    el.className = 'fixed inset-0 bg-[#0b141a] hidden flex-col';
-    el.style.zIndex = '65';
-    el.innerHTML = `
-        <style>
-            #ci-scroll{position:relative;scrollbar-width:none;}
-            #ci-scroll::-webkit-scrollbar{display:none;}
-        </style>
-        <div id="ci-bar" class="absolute top-0 left-0 right-0 px-4 flex items-center" style="z-index:3;height:60px;background:rgba(11,20,26,0);">
-            <button type="button" id="ci-back" class="text-white text-lg px-1 w-9 text-left flex-shrink-0"><i class="fa-solid fa-arrow-left"></i></button>
-            <div class="flex-1"></div>
-            <button type="button" id="ci-dots" class="text-white text-lg px-2 w-9 text-right flex-shrink-0" aria-label="Menü"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-        </div>
-        <button type="button" id="ci-avatar-btn" aria-label="Fotoğrafı aç" style="position:absolute;left:0;top:0;width:150px;height:150px;z-index:4;transform-origin:center center;">
-            <div id="ci-avatar" class="rounded-full flex items-center justify-center text-white font-bold shadow-lg overflow-hidden" style="width:150px;height:150px;font-size:48px;"></div>
-        </button>
-        <div id="ci-fname" class="text-white text-2xl" style="position:absolute;left:0;top:0;z-index:4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transform-origin:left center;pointer-events:none;"></div>
-        <div id="ci-scroll" class="flex-1 overflow-y-auto">
-            <div id="ci-head" class="flex flex-col items-center px-6" style="padding-top:20px;">
-                <div id="ci-avatar-ph" style="width:150px;height:150px;"></div>
-                <h2 id="ci-name" class="text-2xl mt-4 text-center break-words max-w-full" style="visibility:hidden;"></h2>
-                <div id="ci-head-rest" class="flex flex-col items-center w-full"><p id="ci-phone" class="text-gray-400 text-base mt-1 text-center"></p>
-                <p id="ci-about" class="text-white text-base mt-3 text-center break-words max-w-full"></p>
-                <div class="flex w-full max-w-sm space-x-3 mt-6">
-                    <button type="button" data-act="voice" class="flex-1 rounded-2xl py-3 flex flex-col items-center space-y-1.5 active:scale-95 transition" style="background:#1f2c33;border:1px solid rgba(255,255,255,.06);">
-                        <i class="fa-solid fa-phone text-emerald-400 text-lg"></i><span class="text-emerald-400 text-xs">Sesli</span>
-                    </button>
-                    <button type="button" data-act="video" class="flex-1 rounded-2xl py-3 flex flex-col items-center space-y-1.5 active:scale-95 transition" style="background:#1f2c33;border:1px solid rgba(255,255,255,.06);">
-                        <i class="fa-solid fa-video text-emerald-400 text-lg"></i><span class="text-emerald-400 text-xs">Görüntülü</span>
-                    </button>
-                    <button type="button" data-act="search" class="flex-1 rounded-2xl py-3 flex flex-col items-center space-y-1.5 active:scale-95 transition" style="background:#1f2c33;border:1px solid rgba(255,255,255,.06);">
-                        <i class="fa-solid fa-magnifying-glass text-emerald-400 text-lg"></i><span class="text-emerald-400 text-xs">Ara</span>
-                    </button>
-                </div>
-                </div>
+        <div class="relative flex-shrink-0">
+            <div data-avatar-slot="${slotId}"></div>
+            <div class="selection-check hidden absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-emerald-500 border-2 border-[#111b21] items-center justify-center">
+                <i class="fa-solid fa-check text-white text-[9px]"></i>
             </div>
-            <div class="mt-6 border-t border-gray-800/60" id="ci-rows">
-                ${mediaBlockHtml('ci-media-block')}
-                ${rowHtml('fav', 'fa-heart', 'text-pink-400', 'Favorilere ekle', '')}
-                ${rowHtml('starred', 'fa-star', 'text-amber-400', 'Yıldızlı mesajlar', '')}
-                ${rowHtml('mute', 'fa-bell-slash', 'text-amber-400', 'Sohbeti sessize al', '')}
-                ${rowHtml('theme', 'fa-palette', 'text-pink-400', 'Sohbet teması', '')}
-                ${rowHtml('disappear', 'fa-hourglass-half', 'text-sky-300', 'Süreli mesajlar', 'Yeni mesajlar için')}
-                ${rowHtml('copy', 'fa-copy', 'text-gray-300', 'Numarayı kopyala', '')}
-                ${rowHtml('dial', 'fa-mobile-screen', 'text-gray-300', 'Telefonla ara', '')}
-                ${rowHtml('wipe', 'fa-trash-can', 'text-rose-400', 'Sohbeti temizle', '')}
-                ${rowHtml('block', 'fa-ban', 'text-rose-400', 'Engelle', '')}
-            </div>
-            <div style="height:45vh;"></div>
         </div>
     `;
-    document.body.appendChild(el);
-
-    el.querySelector('#ci-back').addEventListener('click', closeInfo);
-
-    // Kaydırınca avatar küçülüp okun yanına, isim de onun sağına kayar
-    const scroller = el.querySelector('#ci-scroll');
-    scroller.addEventListener('scroll', applyCollapse, { passive: true });
-    window.addEventListener('resize', () => { if (infoOpen) { measure(); applyCollapse(); } });
-
-    // Avatar sayfanın üstünde yüzdüğü için üstünden kaydırma da sayfayı kaydırsın
-    const avBtn = el.querySelector('#ci-avatar-btn');
-    let ty0 = 0, moved = false;
-    avBtn.addEventListener('touchstart', (e) => { ty0 = e.touches[0].clientY; moved = false; }, { passive: true });
-    avBtn.addEventListener('touchmove', (e) => {
-        const y = e.touches[0].clientY;
-        if (Math.abs(y - ty0) > 4) moved = true;
-        scroller.scrollTop -= (y - ty0);
-        ty0 = y;
-    }, { passive: true });
-    avBtn.addEventListener('click', () => { if (!moved) openPhotoViewer(); moved = false; });
-
-    el.querySelector('#ci-dots').addEventListener('click', (e) => {
-        e.stopPropagation();
-        openDotsMenu();
-    });
-
-    // Sesli / Görüntülü / Ara
-    el.querySelectorAll('[data-act]').forEach((b) => {
-        b.addEventListener('click', async () => {
-            const act = b.dataset.act;
-            const ok = await ensureChat();
-            if (!ok) return;
-            setTimeout(() => {
-                if (act === 'search') { openChatSearch(); return; }
-                const btn = document.getElementById(act === 'voice' ? 'voice-call-btn' : 'video-call-btn');
-                if (btn) btn.click();
-            }, 150);
-        });
-    });
-
-    // Alt satırlar
-    el.querySelector('#ci-rows').addEventListener('click', (e) => {
-        const r = e.target.closest('[data-row]');
-        if (r) onRow(r.dataset.row);
-    });
-
-    infoEl = el;
-    return el;
 }
 
-async function onRow(id) {
-    const me = getCurrentUser();
-    const u = curUser;
-    if (!me || !u) return;
-    const cid = getChatId(me.uid, u.uid);
-
-    if (id === 'fav') {
-        try {
-            const ref = doc(db, "users", me.uid, "chats", cid);
-            const snap = await getDoc(ref);
-            if (!snap.exists()) { showToast('Henüz mesajlaşılmamış bir sohbeti favorileyemezsin'); return; }
-            const fav = !!snap.data().archived;
-            await setDoc(ref, { archived: !fav }, { merge: true });
-            showToast(!fav ? 'Favorilere eklendi' : 'Favorilerden kaldırıldı');
-            refreshFavLabel();
-        } catch (err) {
-            showToast('İşlem yapılamadı: ' + err.message, 3500);
-        }
-        return;
-    }
-
-    if (id === 'media') {
-        if (getCurrentChatId() !== cid && !(await ensureChat())) return;
-        setTimeout(() => openSharedMedia(cid), getCurrentChatId() === cid ? 0 : 150);
-        return;
-    }
-
-    if (id === 'starred') { closeInfo(); openStarredPanel(); return; }
-
-    if (id === 'theme') {
-        if (!(await ensureChat())) return;
-        setTimeout(() => openChatThemePicker(cid), 150);
-        return;
-    }
-
-    if (id === 'mute') {
-        try {
-            const ref = doc(db, "users", me.uid, "chats", cid);
-            const snap = await getDoc(ref);
-            const muted = snap.exists() && !!snap.data().muted;
-            await setDoc(ref, { muted: !muted }, { merge: true });
-            showToast(!muted ? 'Sohbet sessize alındı' : 'Sohbetin sesi açıldı');
-            refreshMuteLabel();
-        } catch (err) {
-            showToast('İşlem yapılamadı: ' + err.message, 3500);
-        }
-        return;
-    }
-
-    if (id === 'disappear') {
-        const pick = await auraDialog({
-            accent: auraAccent(),
-            title: 'Süreli mesajlar (yeni mesajlar için)',
-            buttons: [
-                { id: 'off', label: 'Kapalı' },
-                { id: 'd1', label: '24 saat' },
-                { id: 'd7', label: '7 gün' },
-                { id: 'cancel', label: 'İptal' }
-            ]
+// ------------------------------------------
+// FİLTRE ÇİPLERİ
+// ------------------------------------------
+function setActiveFilter(filter) {
+    activeFilter = filter;
+    if (filterTabsContainer) {
+        filterTabsContainer.querySelectorAll('.chat-filter-chip').forEach((chip) => {
+            const isActive = chip.dataset.filter === filter;
+            chip.classList.toggle('bg-emerald-600', isActive);
+            chip.classList.toggle('text-white', isActive);
+            chip.classList.toggle('bg-[#202c33]', !isActive);
+            chip.classList.toggle('text-gray-300', !isActive);
         });
-        const map = { off: 0, d1: 24 * 3600 * 1000, d7: 7 * 24 * 3600 * 1000 };
-        if (!(pick.id in map)) return;
-        try {
-            await setDisappearAfter(cid, map[pick.id]);
-            showToast(map[pick.id] ? 'Süreli mesajlar açıldı' : 'Süreli mesajlar kapatıldı');
-        } catch (err) {
-            showToast('Ayarlanamadı: ' + err.message, 3500);
+    }
+    if (renderAllRef) renderAllRef();
+}
+
+if (filterTabsContainer) {
+    filterTabsContainer.addEventListener('click', (e) => {
+        const chip = e.target.closest('.chat-filter-chip');
+        if (!chip) return;
+        setActiveFilter(chip.dataset.filter);
+    });
+}
+
+function updateFilterChipLabels(unreadCount, favoritesCount, groupsCount) {
+    if (!filterTabsContainer) return;
+    const unreadChip = filterTabsContainer.querySelector('[data-filter="unread"]');
+    const favChip = filterTabsContainer.querySelector('[data-filter="favorites"]');
+    const groupsChip = filterTabsContainer.querySelector('[data-filter="groups"]');
+    if (unreadChip) unreadChip.textContent = unreadCount > 0 ? `Okunmamış ${unreadCount}` : 'Okunmamış';
+    if (favChip) favChip.textContent = favoritesCount > 0 ? `Favoriler ${favoritesCount}` : 'Favoriler';
+    if (groupsChip) groupsChip.textContent = groupsCount > 0 ? `Gruplar ${groupsCount}` : 'Gruplar';
+    // Bir sonraki açılışta çipler sayılarla birlikte hemen çizilsin
+    try {
+        const cu = getCurrentUser();
+        if (cu && cu.uid) localStorage.setItem(CHIP_COUNTS_KEY, JSON.stringify({ uid: cu.uid, u: unreadCount, f: favoritesCount, g: groupsCount }));
+    } catch (e) {}
+}
+
+// ------------------------------------------
+// KİŞİLERİ YÜKLE
+// ------------------------------------------
+export async function loadContacts() {
+    let listCacheOk = false;
+    try {
+        const lc = JSON.parse(localStorage.getItem('aurachat_list_cache') || 'null');
+        const cu = getCurrentUser();
+        listCacheOk = !!(lc && lc.html && cu && lc.uid === cu.uid && contactList.dataset.cached === '1');
+    } catch (e) {}
+    if (!listCacheOk) renderSkeletonList();
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+
+    let localPhoneNumbers = new Set();
+        window.__aurachatLocalPhones = localPhoneNumbers; // grupta rehberde kayıtlı olmayanların numarası için
+    let localContactCount = 0;   // rehberde okunan kişi sayısı
+    let localNumberCount = 0;    // okunan benzersiz numara sayısı
+    let contactsPermissionGranted = false;
+
+    const ContactsPlugin = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Contacts)
+        ? window.Capacitor.Plugins.Contacts
+        : null;
+
+    // Rehberi baştan okur (her çağrıda listeyi tazeler)
+    async function readLocalContacts() {
+        const result = await ContactsPlugin.getContacts({ projection: { phones: true } });
+        const fresh = new Set();
+        let contactCount = 0;
+        if (result && result.contacts) {
+            contactCount = result.contacts.length;
+            result.contacts.forEach(c => {
+                if (c.phones && Array.isArray(c.phones)) {
+                    c.phones.forEach(p => {
+                        if (p.number) {
+                            const last10 = getPhoneLast10(p.number);
+                            if (last10) fresh.add(last10);
+                        }
+                    });
+                }
+            });
         }
-        return;
+        localPhoneNumbers.clear();
+        fresh.forEach((n) => {
+            localPhoneNumbers.add(n);
+            localPhoneNumbers.add('+90' + n);
+        });
+        localContactCount = contactCount;
+        localNumberCount = fresh.size;
     }
 
-    if (id === 'copy') {
-        if (!u.phone) { showToast('Numara yok'); return; }
+    // İzin verilmişse rehberi yeniden okur, listeyi tazeler
+    async function refreshContactsFromPhone() {
+        if (!ContactsPlugin) return;
         try {
-            await navigator.clipboard.writeText(u.phone);
-            showToast('Numara kopyalandı');
+            const perm = await ContactsPlugin.checkPermissions();
+            if (perm.contacts === 'granted') {
+                await readLocalContacts();
+                contactsPermissionGranted = true;
+                renderAll();
+            } else {
+                contactsPermissionGranted = false;
+            }
+        } catch (err) {
+            console.warn("Rehber okunamadı:", err);
+        }
+    }
+
+    // Açılışta izin İSTEMİYORUZ, sadece mevcut durumu kontrol ediyoruz
+    if (ContactsPlugin) {
+        try {
+            const perm = await ContactsPlugin.checkPermissions();
+            if (perm.contacts === 'granted') {
+                await readLocalContacts();
+                contactsPermissionGranted = true;
+            }
+        } catch (err) {
+            console.warn("Rehber durumu okunamadı:", err);
+        }
+    }
+
+    // Android izin penceresini açar (şerit ve Kişiler paneli aynı fonksiyonu kullanır)
+    async function requestContactsPermission() {
+        try {
+            const perm = await ContactsPlugin.requestPermissions();
+            if (perm.contacts === 'granted') {
+                await readLocalContacts();
+                contactsPermissionGranted = true;
+                renderAll();
+                if (contactsPanelOpen) renderContactsPanel();
+                return true;
+            }
+            showToast('Rehber izni verilmedi. Ayarlar > Uygulamalar > AuraChat > İzinler > Kişiler yolundan izin verebilirsin.', 5000);
+        } catch (err) {
+            showToast('İzin istenemedi: ' + ((err && err.message) ? err.message : err), 4000);
+        }
+        return false;
+    }
+
+    // Rehber izni yoksa listenin üstünde "Onayla" şeridi
+    const permBanner = document.createElement('div');
+    permBanner.className = 'px-4 py-3 bg-[#182229] border-b border-gray-800/40 items-center justify-between gap-3';
+    permBanner.style.display = 'none';
+    permBanner.innerHTML = `
+        <p class="text-xs text-gray-300 flex-1">Rehberindeki AuraChat kullanıcılarını görmek için onaylayın</p>
+        <button type="button" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-full flex-shrink-0 transition">Onayla</button>
+    `;
+    permBanner.querySelector('button').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        await requestContactsPermission();
+        btn.disabled = false;
+    });
+
+    // ------------------------------------------
+    // BİLDİRİM İZNİ UYARISI: izin kapalıysa listenin üstünde şık bir kart, izin verilince kendiliğinden kalkar
+    // ------------------------------------------
+    let notifState = 'granted'; // 'granted' | 'prompt' | 'denied'
+    const notifBanner = document.createElement('div');
+    notifBanner.style.cssText = 'display:none;align-items:center;gap:12px;margin:10px 12px 4px;padding:12px 14px;border-radius:16px;background:linear-gradient(135deg,rgba(245,158,11,0.16),rgba(245,158,11,0.06));border:1px solid rgba(245,158,11,0.35);';
+    notifBanner.innerHTML = `
+        <div style="width:38px;height:38px;border-radius:9999px;background:rgba(245,158,11,0.2);color:#fbbf24;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;"><i class="fa-solid fa-bell-slash"></i></div>
+        <div style="flex:1;min-width:0;">
+            <p style="color:#fde68a;font-size:13px;font-weight:600;">Bildirimler kapalı</p>
+            <p data-notif-text style="color:#d6c9a5;font-size:11.5px;margin-top:2px;line-height:1.35;"></p>
+        </div>
+        <button type="button" data-notif-btn style="background:#f59e0b;color:#1f1300;font-size:12px;font-weight:700;padding:8px 16px;border-radius:9999px;flex-shrink:0;">Aç</button>
+    `;
+    const notifTextEl = notifBanner.querySelector('[data-notif-text]');
+    const notifBtnEl = notifBanner.querySelector('[data-notif-btn]');
+
+    function notifIsNative() {
+        const C = window.Capacitor;
+        return !!(C && typeof C.isNativePlatform === 'function' && C.isNativePlatform());
+    }
+
+    async function refreshNotifState() {
+        try {
+            if (notifIsNative()) {
+                const PN = window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+                if (!PN) { notifState = 'granted'; return; }
+                const p = await PN.checkPermissions();
+                notifState = p.receive === 'granted' ? 'granted' : (p.receive === 'denied' ? 'denied' : 'prompt');
+            } else if ('Notification' in window) {
+                notifState = Notification.permission === 'granted' ? 'granted' : (Notification.permission === 'denied' ? 'denied' : 'prompt');
+            } else {
+                notifState = 'granted'; // bildirim desteği olmayan ortamda uyarı gösterme
+            }
         } catch (e) {
-            showToast('Kopyalanamadı');
+            notifState = 'granted';
         }
-        return;
+        renderNotifBanner();
     }
 
-    if (id === 'dial') {
-        if (!u.phone) { showToast('Numara yok'); return; }
-        window.location.href = 'tel:' + String(u.phone).replace(/[^\d+]/g, '');
-        return;
+    function renderNotifBanner() {
+        if (notifState === 'granted') { notifBanner.style.display = 'none'; return; }
+        notifBanner.style.display = 'flex';
+        if (notifState === 'prompt') {
+            notifTextEl.textContent = 'Yeni mesajları ve aramaları kaçırmamak için bildirimleri aç.';
+            notifBtnEl.style.display = '';
+        } else {
+            notifTextEl.textContent = 'Telefon Ayarları > Uygulamalar > AuraChat > Bildirimler yolundan izin ver.';
+            notifBtnEl.style.display = 'none';
+        }
     }
 
-    if (id === 'wipe') {
-        const ans = await auraDialog({
-            accent: auraAccent(),
-            title: 'Bu sohbeti kalıcı olarak silmek üzeresiniz',
-            buttons: [{ id: 'ok', label: 'Sil' }, { id: 'cancel', label: 'İptal' }]
-        });
-        if (ans.id !== 'ok') return;
+    notifBtnEl.addEventListener('click', async () => {
+        notifBtnEl.disabled = true;
         try {
-            await wipeChat(cid);
-            showToast('Sohbet temizlendi');
-        } catch (err) {
-            showToast('Sohbet silinemedi: ' + err.message, 3500);
+            if (notifIsNative()) {
+                const PN = window.Capacitor.Plugins.PushNotifications;
+                await PN.requestPermissions();
+            } else if ('Notification' in window) {
+                await Notification.requestPermission();
+            }
+            await refreshNotifState();
+            if (notifState === 'granted' && window.initPushForUser && currentUser) {
+                window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
+            }
+        } catch (e) {
+            showToast('İzin istenemedi', 3000);
         }
-        return;
-    }
-
-    if (id === 'block') {
-        await toggleBlockUser(u.uid);
-        refreshBlockLabel();
-        return;
-    }
-}
-
-async function refreshMuteLabel() {
-    const me = getCurrentUser();
-    if (!me || !curUser || !infoEl) return;
-    const lab = infoEl.querySelector('[data-row="mute"] [data-label]');
-    const ico = infoEl.querySelector('[data-row="mute"] i');
-    try {
-        const snap = await getDoc(doc(db, "users", me.uid, "chats", getChatId(me.uid, curUser.uid)));
-        const muted = snap.exists() && !!snap.data().muted;
-        lab.textContent = muted ? 'Sohbetin sesini aç' : 'Sohbeti sessize al';
-        ico.className = 'fa-solid ' + (muted ? 'fa-bell' : 'fa-bell-slash') + ' text-amber-400 text-lg w-6 text-center';
-    } catch (e) {}
-}
-
-async function refreshFavLabel() {
-    const me = getCurrentUser();
-    if (!me || !curUser || !infoEl) return;
-    const lab = infoEl.querySelector('[data-row="fav"] [data-label]');
-    try {
-        const snap = await getDoc(doc(db, "users", me.uid, "chats", getChatId(me.uid, curUser.uid)));
-        const on = snap.exists() && !!snap.data().archived;
-        lab.textContent = on ? 'Favorilerden kaldır' : 'Favorilere ekle';
-        const ic = infoEl.querySelector('[data-row="fav"] i');
-        if (ic) ic.className = (on ? 'fa-solid fa-heart-crack' : 'fa-regular fa-heart') + ' text-pink-400 text-lg w-6 text-center';
-    } catch (e) {}
-}
-
-function refreshBlockLabel() {
-    const me = getCurrentUser();
-    if (!me || !curUser || !infoEl) return;
-    const map = window.__aurachatUsers;
-    const meRec = map && map.get(me.uid);
-    const blocked = !!(meRec && Array.isArray(meRec.blockedUids) && meRec.blockedUids.includes(curUser.uid));
-    const lab = infoEl.querySelector('[data-row="block"] [data-label]');
-    lab.textContent = blocked ? 'Engeli kaldır' : 'Engelle';
-    lab.className = 'block text-[16px] ' + (blocked ? 'text-white' : 'text-rose-400');
-}
-
-// Üç nokta menüsü
-function openDotsMenu() {
-    const old = document.getElementById('ci-dots-menu');
-    if (old) { old.remove(); return; }
-    const m = document.createElement('div');
-    m.id = 'ci-dots-menu';
-    m.style.cssText = 'position:fixed;inset:0;z-index:68;';
-    m.innerHTML = `
-        <div style="position:absolute;top:52px;right:12px;min-width:190px;background:#233138;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.6);overflow:hidden;">
-            <button type="button" data-m="msg" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 text-left active:bg-white/10"><i class="fa-solid fa-message text-emerald-400 w-4"></i><span>Mesaj gönder</span></button>
-            <button type="button" data-m="copy" class="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-100 text-left active:bg-white/10"><i class="fa-solid fa-copy text-gray-300 w-4"></i><span>Numarayı kopyala</span></button>
-        </div>`;
-    document.body.appendChild(m);
-    m.addEventListener('click', (e) => {
-        const b = e.target.closest('[data-m]');
-        m.remove();
-        if (!b) return;
-        if (b.dataset.m === 'msg') ensureChat();
-        else onRow('copy');
+        notifBtnEl.disabled = false;
     });
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') refreshNotifState();
+    });
+    refreshNotifState();
+    setTimeout(refreshNotifState, 5000);
+    setTimeout(refreshNotifState, 15000);
+
+    // Kullanıcı ayarlardan izin verip uygulamaya dönünce şerit kendiliğinden kalksın
+    document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState !== 'visible' || !ContactsPlugin || contactsPermissionGranted) return;
+        await refreshContactsFromPhone();
+        if (contactsPermissionGranted && contactsPanelOpen) renderContactsPanel();
+    });
+
+    // ------------------------------------------
+    // KİŞİLER PANELİ (alt bardaki "Kişiler" sekmesi)
+    // Rehberden okunan numaralarla eşleşen AuraChat kullanıcılarını gösterir.
+    // Panel her açıldığında rehber telefondan yeniden okunur.
+    // ------------------------------------------
+    function closeContactsPanelFromBack() {
+        if (contactsPanelEl) {
+            contactsPanelEl.classList.add('hidden');
+            contactsPanelEl.classList.remove('flex');
+        }
+        contactsPanelOpen = false;
+    }
+
+    function closeContactsPanel() {
+        if (!contactsPanelOpen) return;
+        closeContactsPanelFromBack();
+        popBackState();
+    }
+
+    function ensureContactsPanel() {
+        if (contactsPanelEl) return contactsPanelEl;
+        const el = document.createElement('div');
+        el.className = 'fixed inset-0 z-50 bg-[#0b141a] hidden flex-col';
+        el.innerHTML = `
+            <div class="bg-[#202c33] px-4 py-3.5 flex items-center justify-between border-b border-gray-800 flex-shrink-0">
+                <div class="flex items-center space-x-4">
+                    <button type="button" id="contacts-panel-back" class="text-gray-400 hover:text-white transition text-lg px-1">
+                        <i class="fa-solid fa-arrow-left"></i>
+                    </button>
+                    <h2 class="text-white font-medium text-base">Kişiler</h2>
+                </div>
+                <button type="button" id="contacts-panel-refresh" class="text-gray-400 hover:text-white transition text-lg px-1">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
+            </div>
+            <div id="contacts-panel-info" class="px-4 py-3 text-xs text-gray-400 border-b border-gray-800/40 flex-shrink-0"></div>
+            <div id="contacts-panel-list" class="flex-1 overflow-y-auto min-h-0"></div>
+        `;
+        document.body.appendChild(el);
+        el.querySelector('#contacts-panel-back').addEventListener('click', closeContactsPanel);
+        el.querySelector('#contacts-panel-refresh').addEventListener('click', () => reloadContactsPanel());
+        contactsPanelEl = el;
+        return el;
+    }
+
+    function renderContactsPanel() {
+        const el = ensureContactsPanel();
+        const infoEl = el.querySelector('#contacts-panel-info');
+        const listEl = el.querySelector('#contacts-panel-list');
+        listEl.innerHTML = '';
+
+        if (!ContactsPlugin) {
+            infoEl.textContent = 'Rehber sadece Android uygulamasında okunabilir.';
+            return;
+        }
+
+        if (!contactsPermissionGranted) {
+            infoEl.textContent = 'Rehber izni verilmedi.';
+            const wrap = document.createElement('div');
+            wrap.className = 'p-6 flex flex-col items-center text-center space-y-4';
+            wrap.innerHTML = `
+                <p class="text-sm text-gray-300">Rehberindeki AuraChat kullanıcılarını görmek için onaylayın</p>
+                <button type="button" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-6 py-2.5 rounded-full transition">Onayla</button>
+            `;
+            wrap.querySelector('button').addEventListener('click', async (e) => {
+                const btn = e.currentTarget;
+                btn.disabled = true;
+                await requestContactsPermission();
+                btn.disabled = false;
+            });
+            listEl.appendChild(wrap);
+            return;
+        }
+
+        const matched = [];
+        allUsersById.forEach((user, uid) => {
+            if (uid === currentUser.uid) return;
+            const last10 = getPhoneLast10(user.phone);
+            if (last10 && localPhoneNumbers.has(last10)) matched.push(user);
+        });
+        matched.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+
+        infoEl.textContent = `Rehberde ${localContactCount} kişi, ${localNumberCount} numara okundu · AuraChat kullanan: ${matched.length}`;
+
+        if (!matched.length) {
+            const empty = document.createElement('p');
+            empty.className = 'px-6 py-10 text-center text-gray-500 text-xs';
+            empty.textContent = 'Rehberinde AuraChat kullanan kimse bulunamadı. Numaraların son 10 hanesi eşleşmeli.';
+            listEl.appendChild(empty);
+            return;
+        }
+
+        matched.forEach((user) => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer border-b border-gray-800/30';
+            row.innerHTML = `
+                <div data-avatar-slot="panel-${user.uid}" class="flex-shrink-0"></div>
+                <div class="ml-3 overflow-hidden flex-1">
+                    <h4 class="text-white text-sm font-medium truncate">${escapeHtml(user.name || '')}</h4>
+                    <p class="text-[11px] text-gray-400 truncate">${escapeHtml(user.about || user.phone || '')}</p>
+                </div>
+            `;
+            const slot = row.querySelector(`[data-avatar-slot="panel-${user.uid}"]`);
+            renderAvatarInto(slot, user.uid, user.avatar, user.name, 'w-11 h-11');
+            row.addEventListener('click', () => {
+                closeContactsPanel();
+                selectChat({ uid: user.uid, name: user.name, avatar: user.avatar || '' });
+            });
+            listEl.appendChild(row);
+        });
+    }
+
+    async function reloadContactsPanel() {
+        const el = ensureContactsPanel();
+        el.querySelector('#contacts-panel-info').textContent = 'Rehber okunuyor...';
+        await refreshContactsFromPhone();
+        renderContactsPanel();
+    }
+
+    async function openContactsPanel() {
+        const el = ensureContactsPanel();
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+        if (!contactsPanelOpen) {
+            contactsPanelOpen = true;
+            pushBackState(closeContactsPanelFromBack);
+        }
+        await reloadContactsPanel();
+    }
+
+    const navContacts = document.getElementById('nav-contacts');
+    if (navContacts && !navContacts.dataset.bound) {
+        navContacts.dataset.bound = '1';
+        navContacts.addEventListener('click', openContactsPanel);
+    }
+
+    dynamicListContainer = document.createElement('div');
+
+    let allUsersById = new Map();
+    window.__aurachatUsers = allUsersById; // ilet ekranı ve grup ekranları bu listeyi kullanıyor
+    let myChats = new Map();
+    window.__aurachatMyChats = myChats; // ilet ekranı grupları buradan listeler
+    let usersLoaded = false;
+    let chatsLoaded = false;
+    let listMounted = false;
+    let resolveFirstData = null;
+    const firstDataReady = new Promise((resolve) => { resolveFirstData = resolve; });
+
+    function mergeLiveUser(chatData) {
+        const liveUser = allUsersById.get(chatData.otherUid);
+        return {
+            ...chatData,
+            otherName: liveUser ? liveUser.name : chatData.otherName,
+            otherAvatar: liveUser ? (liveUser.avatar || '') : chatData.otherAvatar
+        };
+    }
+
+    function isClearedChat(chatData) {
+        const clearedAt = chatData.clearedAt;
+        if (!clearedAt) return false;
+        if (chatData.keepRow) return false; // "Sohbeti temizle": satır listede kalır
+        const lastTimeMs = chatData.lastMessageTime ? chatData.lastMessageTime.toDate().getTime() : 0;
+        const clearedAtMs = clearedAt.toDate().getTime();
+        return lastTimeMs <= clearedAtMs;
+    }
+
+    // Android "Paylaş" menüsünde en son konuşulan sohbetler kişi olarak görünsün (Direct Share)
+    let shareTargetsSig = '';
+    let shareTargetsTimer = null;
+    function publishShareTargets() {
+        if (!window.AuraNotif || !window.AuraNotif.publishShortcut) return;
+        clearTimeout(shareTargetsTimer);
+        shareTargetsTimer = setTimeout(() => {
+            try {
+                const rows = [];
+                myChats.forEach((d, chatId) => {
+                    if (!d || isClearedChat(d)) return;
+                    const t = d.lastMessageTime && d.lastMessageTime.toMillis ? d.lastMessageTime.toMillis() : 0;
+                    rows.push({ chatId: chatId, d: d, t: t });
+                });
+                rows.sort((a, b) => b.t - a.t);
+                const top = rows.slice(0, 6);
+                const sig = top.map((r) => r.chatId + '|' + (r.d.isGroup ? (r.d.groupName || '') : (r.d.otherName || ''))).join(',');
+                if (sig === shareTargetsSig) return;
+                shareTargetsSig = sig;
+                top.forEach((r) => {
+                    const d = r.d;
+                    const live = !d.isGroup ? allUsersById.get(d.otherUid) : null;
+                    const name = d.isGroup ? (d.groupName || 'Grup') : ((live && live.name) || d.otherName || '');
+                    const avatar = d.isGroup ? (d.groupPhoto || '') : ((live && live.avatar) || '');
+                    window.AuraNotif.publishShortcut(String(r.chatId), name, (typeof avatar === 'string' && avatar.indexOf('data:') === 0) ? avatar : '');
+                });
+            } catch (e) {}
+        }, 3000);
+    }
+
+    function renderAll() {
+    if (!usersLoaded || !chatsLoaded) return;
+        if (resolveFirstData) { resolveFirstData(); resolveFirstData = null; }
+
+        if (!listMounted) {
+            contactList.innerHTML = '';
+            contactList.appendChild(notifBanner);
+            contactList.appendChild(permBanner);
+            contactList.appendChild(dynamicListContainer);
+            listMounted = true;
+        }
+
+        permBanner.style.display = (ContactsPlugin && !contactsPermissionGranted) ? 'flex' : 'none';
+
+        let unreadChatsCount = 0;
+        let favoritesCount = 0;
+        let groupsCount = 0;
+        myChats.forEach((chatData) => {
+            const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
+            const unreadCount = isLastMsgMine ? 0 : (chatData.unreadCount || 0);
+            if (unreadCount > 0) unreadChatsCount++;
+            if (chatData.archived) favoritesCount++;
+            if (chatData.isGroup && !isClearedChat(chatData)) groupsCount++;
+        });
+        updateFilterChipLabels(unreadChatsCount, favoritesCount, groupsCount);
+
+        dynamicListContainer.innerHTML = '';
+        contactElementsMap.clear();
+        exitChatSelectionMode();
+
+        if (activeFilter === 'groups') {
+            // Sadece grup sohbetleri
+            myChats.forEach((chatData, chatId) => {
+                if (!chatData.isGroup) return;
+                if (isClearedChat(chatData)) return;
+                renderChatItem(chatId, chatData);
+            });
+
+            if (dynamicListContainer.children.length === 0) {
+                renderEmptyStateRow("Henüz bir grubun yok kanka. Sağ üstteki üç noktadan yeni grup oluşturabilirsin.");
+            }
+        } else if (activeFilter === 'favorites') {
+            // Sadece favorilenen (eski adıyla "archived") sohbetler
+            myChats.forEach((chatData, chatId) => {
+                if (!chatData.archived) return;
+                renderChatItem(chatId, mergeLiveUser(chatData));
+            });
+
+            if (dynamicListContainer.children.length === 0) {
+                renderEmptyStateRow("Henüz favori sohbetin yok kanka. Bir sohbeti uzun basıp favorile.");
+            }
+        } else if (activeFilter === 'unread') {
+            // Sadece okunmamış mesajı olan sohbetler (favoriler dahil)
+            myChats.forEach((chatData, chatId) => {
+                const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
+                const unreadCount = isLastMsgMine ? 0 : (chatData.unreadCount || 0);
+                if (unreadCount <= 0) return;
+                if (isClearedChat(chatData)) return;
+                renderChatItem(chatId, mergeLiveUser(chatData));
+            });
+
+            if (dynamicListContainer.children.length === 0) {
+                renderEmptyStateRow("Okunmamış mesajın yok kanka.");
+            }
+        } else {
+            // "Tümü" - favoriler ve gruplar dahil hepsi
+            myChats.forEach((chatData, chatId) => {
+                if (isClearedChat(chatData)) return;
+                renderChatItem(chatId, mergeLiveUser(chatData));
+            });
+
+            allUsersById.forEach((user, uid) => {
+                if (uid === currentUser.uid) return;
+                const chatId = getChatId(currentUser.uid, uid);
+                if (myChats.has(chatId)) return;
+
+                const targetPhoneLast10 = getPhoneLast10(user.phone);
+                const isInContacts = targetPhoneLast10 && (localPhoneNumbers.has(targetPhoneLast10) || localPhoneNumbers.has('+90' + targetPhoneLast10));
+                if (!isInContacts) return;
+
+                renderEmptyContactItem(chatId, user);
+            });
+        }
+
+        sortContactList();
+        prewarmTopChats();
+        publishShareTargets();
+        saveListCache();
+    }
+
+    renderAllRef = renderAll;
+
+    function renderEmptyStateRow(message) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = "px-4 py-8 text-center text-gray-500 text-xs";
+        emptyDiv.textContent = message;
+        dynamicListContainer.appendChild(emptyDiv);
+    }
+
+    function prewarmTopChats() {
+        const warmCandidates = Array.from(contactElementsMap.entries())
+            .filter(([, item]) => item.hasChat && (item.otherUid || item.isGroup))
+            .sort((a, b) => {
+                const ai = a[1], bi = b[1];
+                if (ai.pinned && !bi.pinned) return -1;
+                if (!ai.pinned && bi.pinned) return 1;
+                if (!ai.lastTimeObj) return 1;
+                if (!bi.lastTimeObj) return -1;
+                return bi.lastTimeObj - ai.lastTimeObj;
+            })
+            .slice(0, 6);
+
+        warmCandidates.forEach(([chatId, item]) => {
+            prewarmChatSession(chatId, item.otherUid || null);
+        });
+    }
+    // "yazıyor..." aktif mi? (gönderen uygulamayı kapatırsa takılı kalmasın diye 6 sn sınırı)
+    function isTypingActive(d) {
+        return !!(d && d.typing === true && Date.now() - (d.typingAt || 0) < 6000);
+    }
+
+    // Satırdaki önizleme metni (yazıyor... varsa o, yoksa son mesaj)
+    function previewInnerHtml(chatData) {
+        if (isTypingActive(chatData)) return `<span class="text-emerald-400 font-medium">yazıyor...</span>`;
+        const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
+        const lastText = chatData.lastMessage || "Henüz mesaj yok";
+        let prefix = '';
+        if (isLastMsgMine) prefix = 'Siz: ';
+        else if (chatData.isGroup && chatData.lastSenderName) prefix = escapeHtml(chatData.lastSenderName) + ': ';
+        return prefix + escapeHtml(lastText);
+    }
+
+    // Sadece yazıyor bilgisi değiştiyse listeyi baştan çizmeden o satırı güncelle
+    const typingResetTimers = new Map();
+    function applyTypingToItem(chatId, chatData) {
+        const entry = contactElementsMap.get(chatId);
+        const span = entry && entry.element ? entry.element.querySelector('.preview-text') : null;
+        if (!span) return;
+        span.innerHTML = previewInnerHtml(chatData);
+        clearTimeout(typingResetTimers.get(chatId));
+        if (isTypingActive(chatData)) {
+            typingResetTimers.set(chatId, setTimeout(() => {
+                const cur = myChats.get(chatId);
+                const e2 = contactElementsMap.get(chatId);
+                const sp2 = e2 && e2.element ? e2.element.querySelector('.preview-text') : null;
+                if (cur && sp2) sp2.innerHTML = previewInnerHtml(cur);
+            }, 6200));
+        }
+    }
+
+    function sameExceptTyping(a, b) {
+        const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+        for (const k of keys) {
+            if (k === 'typing' || k === 'typingAt') continue;
+            const x = a[k];
+            const y = b[k];
+            if (x === y) continue;
+            const xm = x && typeof x.toMillis === 'function' ? x.toMillis() : undefined;
+            const ym = y && typeof y.toMillis === 'function' ? y.toMillis() : undefined;
+            if (xm !== undefined || ym !== undefined) { if (xm !== ym) return false; continue; }
+            if (JSON.stringify(x) !== JSON.stringify(y)) return false;
+        }
+        return true;
+    }
+    function renderChatItem(chatId, chatData) {
+        const isGroup = !!chatData.isGroup;
+        const displayName = isGroup ? (chatData.groupName || 'Grup') : (chatData.otherName || '');
+
+        const userDiv = document.createElement('div');
+        userDiv.className = "contact-list-item flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
+        userDiv.dataset.chatId = chatId;
+
+        const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
+        const lastText = chatData.lastMessage || "Henüz mesaj yok";
+        const lastTime = chatData.lastMessageTime ? formatTimestamp(chatData.lastMessageTime.toDate()) : '';
+        const unreadCount = isLastMsgMine ? 0 : (chatData.unreadCount || 0);
+
+        let tickHtml = '';
+        if (isLastMsgMine) {
+            const tickColor = chatData.lastMessageRead ? 'text-[#53bdeb]' : 'text-gray-400';
+            tickHtml = `<span class="tick-container mr-1 flex-shrink-0"><i class="fa-solid fa-check-double text-[10px] ${tickColor}"></i></span>`;
+        }
+
+        // Sabitleme ikonu: isimden önce değil, alt satırın sağında (okunmamış rozetinin solunda), gri renkte
+        const pinIconHtml = chatData.pinned ? `<i class="fa-solid fa-thumbtack flex-shrink-0 ml-2" style="font-size:15px;color:#8696a0;"></i>` : '';
+
+        let previewPrefix = '';
+        if (isLastMsgMine) {
+            previewPrefix = 'Siz: ';
+        } else if (isGroup && chatData.lastSenderName) {
+            previewPrefix = escapeHtml(chatData.lastSenderName) + ': ';
+        }
+
+        userDiv.innerHTML = `
+            ${wrapAvatarWithSelectionBadge(chatId)}
+            <div class="flex-1 overflow-hidden ml-3">
+                <div class="flex justify-between items-baseline">
+                    <h4 class="text-white font-medium text-sm">${escapeHtml(displayName)}</h4>
+                    <span class="text-[11px] text-gray-400">${lastTime}</span>
+                </div>
+                <div class="flex justify-between items-center mt-0.5">
+                    <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
+                        ${tickHtml}
+                                            <span class="preview-text truncate">${previewInnerHtml(chatData)}</span>
+                    </p>
+                    ${pinIconHtml}
+                    ${unreadCount > 0 && chatData.hasMention ? `<div class="mention-badge bg-emerald-500 text-white text-[10px] font-bold rounded-full w-[18px] h-[18px] flex items-center justify-center ml-2">@</div>` : ''}
+                    ${unreadCount > 0 ? `<div class="unread-badge bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ml-1">${unreadCount}</div>` : ''}
+                </div>
+            </div>
+        `;
+
+        const avatarSlot = userDiv.querySelector(`[data-avatar-slot="${chatId}"]`);
+        if (isGroup) {
+            avatarSlot.innerHTML = chatData.groupPhoto
+                ? `<img src="${chatData.groupPhoto}" class="w-12 h-12 rounded-full object-cover shadow">`
+                : `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white shadow" style="background-color:${getUserColor(displayName)};"><i class="fa-solid fa-user-group"></i></div>`;
+        } else {
+            renderAvatarInto(avatarSlot, chatData.otherUid, chatData.otherAvatar, chatData.otherName, 'w-12 h-12');
+            // Avatara basınca sohbet açılmaz, profil kartı (Mesaj / Sesli / Görüntülü / Kaydet) açılır
+            avatarSlot.addEventListener('click', (e) => {
+                if (chatSelectionMode) return;
+                e.stopPropagation();
+                openMemberSheet(chatData.otherUid, chatData.otherName);
+            });
+        }
+
+        userDiv.addEventListener('pointerdown', () => {
+            if (!chatSelectionMode) prewarmChatSession(chatId, isGroup ? null : (chatData.otherUid || null));
+        }, { passive: true });
+
+        userDiv.addEventListener('click', () => {
+            if (chatSelectionMode) return;
+            if (isGroup) {
+                selectChat({ isGroup: true, groupId: chatId, name: displayName });
+            } else {
+                selectChat({ uid: chatData.otherUid, name: chatData.otherName, avatar: chatData.otherAvatar || '' });
+            }
+        });
+
+        attachChatSelectionHandlers(userDiv, chatId);
+        if (chatSelectionMode && selectedChatIds.has(chatId)) {
+            setItemSelectedVisual(userDiv, true);
+        }
+        contactElementsMap.set(chatId, {
+            element: userDiv,
+            lastTimeObj: chatData.lastMessageTime ? chatData.lastMessageTime.toDate() : null,
+            pinned: !!chatData.pinned,
+            archived: !!chatData.archived,
+            hasChat: true,
+            otherUid: chatData.otherUid,
+            isGroup: isGroup
+        });
+        dynamicListContainer.appendChild(userDiv);
+    }
+
+    function renderEmptyContactItem(chatId, user) {
+        const userDiv = document.createElement('div');
+        userDiv.className = "contact-list-item flex items-center px-4 py-3 hover:bg-[#202c33]/60 cursor-pointer transition border-b border-gray-800/30";
+        userDiv.dataset.chatId = chatId;
+
+        userDiv.innerHTML = `
+            ${wrapAvatarWithSelectionBadge(chatId)}
+            <div class="flex-1 overflow-hidden ml-3">
+                <div class="flex justify-between items-baseline">
+                    <h4 class="text-white font-medium text-sm">${escapeHtml(user.name)}</h4>
+                    <span class="text-[11px] text-gray-400"></span>
+                </div>
+                <div class="flex justify-between items-center mt-0.5">
+                    <p class="text-xs text-gray-400 truncate msg-preview flex items-center">
+                        <span class="preview-text truncate">Henüz mesaj yok</span>
+                    </p>
+                </div>
+            </div>
+        `;
+
+        const avatarSlot = userDiv.querySelector(`[data-avatar-slot="${chatId}"]`);
+        renderAvatarInto(avatarSlot, user.uid, user.avatar, user.name, 'w-12 h-12');
+
+        userDiv.addEventListener('click', () => {
+            if (!chatSelectionMode) {
+                selectChat({ uid: user.uid, name: user.name, avatar: user.avatar || '' });
+            }
+        });
+
+        attachChatSelectionHandlers(userDiv, chatId);
+        if (chatSelectionMode && selectedChatIds.has(chatId)) {
+            setItemSelectedVisual(userDiv, true);
+        }
+        contactElementsMap.set(chatId, { element: userDiv, lastTimeObj: null, pinned: false, archived: false, hasChat: false });
+        dynamicListContainer.appendChild(userDiv);
+    }
+
+    onSnapshot(collection(db, "users"), (snapshot) => {
+        allUsersById.clear();
+        snapshot.forEach((docSnap) => {
+            let user = docSnap.data();
+            if (!user || !user.name) return;
+            user.uid = user.uid || docSnap.id;
+            user = formatAdminUser(user, ADMIN_EMAIL);
+            allUsersById.set(user.uid, user);
+        });
+        usersLoaded = true;
+        renderAll();
+    });
+
+        onSnapshot(query(collection(db, "users", currentUser.uid, "chats"), orderBy("updatedAt", "desc")), (snapshot) => {
+        // Sadece "yazıyor..." değiştiyse listeyi yeniden çizme, o satırı yerinde güncelle
+        if (chatsLoaded) {
+            const changes = snapshot.docChanges();
+            const onlyTyping = changes.length > 0 && changes.every((ch) => {
+                if (ch.type !== 'modified') return false;
+                const prev = myChats.get(ch.doc.id);
+                return !!prev && sameExceptTyping(prev, ch.doc.data());
+            });
+            if (onlyTyping) {
+                changes.forEach((ch) => {
+                    myChats.set(ch.doc.id, ch.doc.data());
+                    applyTypingToItem(ch.doc.id, ch.doc.data());
+                });
+                return;
+            }
+        }
+        myChats.clear();
+        if (!window.__aurachatGroupIds) window.__aurachatGroupIds = new Set();
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            myChats.set(docSnap.id, data);
+            if (data.isGroup) {
+                window.__aurachatGroupIds.add(docSnap.id);
+            }
+        });
+        chatsLoaded = true;
+        renderAll();
+    });
+
+    // İlk kullanıcı + sohbet verisi gelene kadar (en fazla 2.5 sn) bekle: bildirimden açılışta kişi/grup bilgisi hazır olsun
+    await Promise.race([firstDataReady, new Promise((resolve) => setTimeout(resolve, 2500))]);
 }
 
-// ---------- Tam ekran profil fotoğrafı ----------
-let photoEl = null;
-let photoOpen = false;
-
-function closePhotoFromBack() {
-    if (photoEl) { photoEl.remove(); photoEl = null; }
-    photoOpen = false;
+let listCacheTimer = null;
+function saveListCache() {
+    clearTimeout(listCacheTimer);
+    listCacheTimer = setTimeout(() => {
+        try {
+            const u = getCurrentUser();
+            if (!u || !dynamicListContainer || activeFilter !== 'all') return;
+            if (searchContact && searchContact.value.trim()) return;
+            localStorage.setItem('aurachat_list_cache', JSON.stringify({ uid: u.uid, html: dynamicListContainer.innerHTML }));
+        } catch (e) {
+            try { localStorage.removeItem('aurachat_list_cache'); } catch (e2) {}
+        }
+    }, 600);
 }
-function closePhoto() {
-    if (!photoOpen) return;
-    closePhotoFromBack();
+
+function sortContactList() {
+    const itemsArray = Array.from(contactElementsMap.values());
+    itemsArray.sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+
+        if (!a.lastTimeObj) return 1;
+        if (!b.lastTimeObj) return -1;
+        return b.lastTimeObj - a.lastTimeObj;
+    });
+    if (dynamicListContainer) {
+        itemsArray.forEach(item => dynamicListContainer.appendChild(item.element));
+    }
+}
+
+// ------------------------------------------
+// SOHBET LİSTESİ SEÇME MODU (silmek/sabitlemek/favorilemek için)
+// ------------------------------------------
+function enterChatSelectionMode(firstChatId) {
+    chatSelectionMode = true;
+    selectedChatIds.clear();
+    if (firstChatId) toggleChatSelectionInternal(firstChatId);
+    updateChatSelectionUI();
+    pushBackState(exitChatSelectionModeFromBack);
+}
+
+function exitChatSelectionModeFromBack() {
+    chatSelectionMode = false;
+    selectedChatIds.forEach((id) => {
+        const item = contactElementsMap.get(id);
+        if (item) setItemSelectedVisual(item.element, false);
+    });
+    selectedChatIds.clear();
+    updateChatSelectionUI();
+}
+
+function exitChatSelectionMode() {
+    if (!chatSelectionMode) return;
+    exitChatSelectionModeFromBack();
     popBackState();
 }
 
-function openPhotoViewer() {
-    const u = curUser;
-    if (!u || !u.avatar || photoOpen) return;
-    const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;inset:0;z-index:70;background:#000;touch-action:none;';
-    el.innerHTML = `
-        <div data-top style="position:absolute;top:0;left:0;right:0;height:60px;display:flex;align-items:center;padding:0 16px;background:rgba(0,0,0,.55);z-index:2;">
-            <button type="button" data-back style="color:#fff;font-size:18px;padding:4px 8px 4px 0;"><i class="fa-solid fa-arrow-left"></i></button>
-            <span style="flex:1;min-width:0;color:#fff;font-size:18px;margin-left:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(u.name || '')}</span>
-            <button type="button" data-dots style="color:#fff;font-size:18px;padding:4px 0 4px 12px;"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-        </div>
-        <div data-stage style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
-            <img data-img src="${u.avatar}" style="max-width:100%;max-height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none;">
-        </div>`;
-    document.body.appendChild(el);
-    photoEl = el;
-    photoOpen = true;
-    pushBackState(closePhotoFromBack);
+function setItemSelectedVisual(el, isSelected) {
+    el.classList.toggle('chat-selected', isSelected);
+    const checkBadge = el.querySelector('.selection-check');
+    if (checkBadge) {
+        checkBadge.classList.toggle('hidden', !isSelected);
+        checkBadge.classList.toggle('flex', isSelected);
+    }
+}
 
-    el.querySelector('[data-back]').addEventListener('click', closePhoto);
-    el.querySelector('[data-dots]').addEventListener('click', () => {
-        closePhoto();
-        ensureChat();
+function toggleChatSelectionInternal(chatId) {
+    if (selectedChatIds.has(chatId)) {
+        selectedChatIds.delete(chatId);
+    } else {
+        selectedChatIds.add(chatId);
+    }
+    const item = contactElementsMap.get(chatId);
+    if (item) setItemSelectedVisual(item.element, selectedChatIds.has(chatId));
+}
+
+function toggleChatSelection(chatId) {
+    toggleChatSelectionInternal(chatId);
+    if (selectedChatIds.size === 0) {
+        exitChatSelectionMode();
+    } else {
+        updateChatSelectionUI();
+    }
+}
+
+function updateChatSelectionUI() {
+    if (!chatSelectionToolbar) return;
+    if (chatSelectionMode) {
+        chatSelectionToolbar.classList.remove('hidden');
+        chatSelectionToolbar.classList.add('flex');
+        if (chatSelectionCountEl) chatSelectionCountEl.textContent = `${selectedChatIds.size} seçildi`;
+                // Seçilenlerin hepsi zaten sabit / favori ise ikon "kaldır" haline döner
+        const selItems = Array.from(selectedChatIds).map((id) => contactElementsMap.get(id)).filter((it) => it && it.hasChat);
+        const allPinned = selItems.length > 0 && selItems.every((it) => it.pinned);
+        const allFav = selItems.length > 0 && selItems.every((it) => it.archived);
+        if (chatSelectionPinBtn) {
+            chatSelectionPinBtn.title = allPinned ? 'Sabitlemeyi kaldır' : 'Sabitle';
+            chatSelectionPinBtn.innerHTML = allPinned
+                ? '<span style="position:relative;display:inline-block"><i class="fa-solid fa-thumbtack"></i><span style="position:absolute;left:50%;top:-2px;width:2px;height:calc(100% + 4px);background:currentColor;transform:translateX(-50%) rotate(45deg);box-shadow:0 0 0 1px #2a3942"></span></span>'
+                : '<i class="fa-solid fa-thumbtack"></i>';
+        }
+        if (chatSelectionArchiveBtn) {
+            chatSelectionArchiveBtn.title = allFav ? 'Favorilerden kaldır' : 'Favorile';
+            chatSelectionArchiveBtn.innerHTML = allFav
+                ? '<i class="fa-solid fa-star text-amber-400"></i>'
+                : '<i class="fa-regular fa-star"></i>';
+        }
+    } else {
+        chatSelectionToolbar.classList.add('hidden');
+        chatSelectionToolbar.classList.remove('flex');
+    }
+}
+
+if (chatSelectionCancelBtn) {
+    chatSelectionCancelBtn.addEventListener('click', () => exitChatSelectionMode());
+}
+
+if (chatSelectionDeleteBtn) {
+    chatSelectionDeleteBtn.addEventListener('click', async () => {
+        if (selectedChatIds.size === 0) return;
+
+        const count = selectedChatIds.size;
+        const groupIds = Array.from(selectedChatIds).filter((id) => window.__aurachatGroupIds && window.__aurachatGroupIds.has(id));
+            const oneGroup = count === 1 && groupIds.length === 1;
+        const delChoice = await auraDialog({
+            title: oneGroup ? 'Bu grup silinsin mi?' : (count === 1 ? 'Sohbet silinsin mi?' : `${count} sohbet silinsin mi?`),
+            checkbox: groupIds.length ? { label: groupIds.length === 1 ? 'Gruptan çık' : `${groupIds.length} gruptan çık` } : null,
+            buttons: [{ id: 'cancel', label: 'İptal' }, { id: 'ok', label: oneGroup ? 'Grubu sil' : (count === 1 ? 'Sil' : 'Tümünü sil') }]
+        });
+             if (delChoice.id !== 'ok') { exitChatSelectionMode(); return; }
+        const leaveIds = delChoice.checked ? new Set(groupIds) : new Set();
+
+        chatSelectionDeleteBtn.disabled = true;
+
+        try {
+            for (const chatId of selectedChatIds) {
+                                if (leaveIds.has(chatId)) await leaveGroup(chatId);
+                else await clearChatForMe(chatId);
+                const item = contactElementsMap.get(chatId);
+                if (item && item.element && item.element.parentNode) {
+                    item.element.parentNode.removeChild(item.element);
+                }
+                contactElementsMap.delete(chatId);
+            }
+        } catch (err) {
+            alert("Bazı sohbetler silinemedi: " + err.message);
+        }
+
+        chatSelectionDeleteBtn.disabled = false;
+        selectedChatIds.clear();
+        exitChatSelectionMode();
     });
+}
 
-    // Yukarı / aşağı çekince kapanır (ekran yüksekliğinin %10'u)
-    const stage = el.querySelector('[data-stage]');
-    const top = el.querySelector('[data-top]');
-    let startY = 0, dy = 0, drag = false;
-    el.addEventListener('touchstart', (e) => {
-        if (e.touches.length !== 1) return;
-        drag = true; startY = e.touches[0].clientY; dy = 0;
-        stage.style.transition = 'none';
-    }, { passive: true });
-    el.addEventListener('touchmove', (e) => {
-        if (!drag) return;
-        dy = e.touches[0].clientY - startY;
-        stage.style.transform = 'translateY(' + dy + 'px)';
-        const k = Math.max(0, 1 - Math.abs(dy) / (window.innerHeight * 0.6));
-        el.style.background = 'rgba(0,0,0,' + k + ')';
-        top.style.opacity = String(k);
-    }, { passive: true });
-    const end = () => {
-        if (!drag) return;
-        drag = false;
-        if (Math.abs(dy) > window.innerHeight * 0.1) {
-            closePhoto();
+if (chatSelectionPinBtn) {
+    chatSelectionPinBtn.addEventListener('click', async () => {
+        if (selectedChatIds.size === 0) return;
+
+        const currentUser = getCurrentUser();
+        if (!currentUser) return;
+
+        const validIds = Array.from(selectedChatIds).filter((chatId) => {
+            const item = contactElementsMap.get(chatId);
+            return item && item.hasChat;
+        });
+
+        if (validIds.length === 0) {
+            alert("Henüz mesajlaşılmamış bir sohbeti sabitleyemezsin kanka.");
             return;
         }
-        stage.style.transition = 'transform .2s';
-        stage.style.transform = '';
-        el.style.background = '#000';
-        top.style.opacity = '1';
-    };
-    el.addEventListener('touchend', end);
-    el.addEventListener('touchcancel', end);
-}
 
-// ---------- Dışa açılan ----------
-function refreshMediaCount() {
-    const me = getCurrentUser();
-    if (!me || !curUser || !infoEl) return;
-    const cid = getChatId(me.uid, curUser.uid);
-    if (getCurrentChatId() !== cid) {
-        try { prewarmChatSession(cid, curUser.uid); } catch (e) {}
-    }
-    refreshMediaBlock(infoEl.querySelector('#ci-media-block'), cid);
-}
-
-// "Sohbette göster": kişi bilgisi sayfası da kapansın (Tüm medyalar önce kapanır)
-window.addEventListener('aura-show-in-chat', () => setTimeout(closeInfo, 0));
-
-export function openContactInfo(uid, beforeMessage) {
-    const me = getCurrentUser();
-    const map = window.__aurachatUsers;
-    let u = map && map.get(uid);
-    if (!u && me && me.uid === uid) u = me;
-    if (!u) return;
-
-    curUser = u;
-    curBefore = beforeMessage;
-    const el = ensureEl();
-
-    paintAvatar(el.querySelector('#ci-avatar'), u);
-    el.querySelector('#ci-name').textContent = u.name || '';
-    el.querySelector('#ci-fname').textContent = u.name || '';
-
-    const phoneEl = el.querySelector('#ci-phone');
-    phoneEl.textContent = u.phone || '';
-    phoneEl.style.display = u.phone ? '' : 'none';
-
-    const aboutEl = el.querySelector('#ci-about');
-    aboutEl.textContent = u.about || 'Neler oluyor?';
-    aboutEl.style.color = u.about ? '' : '#6b7280';
-
-    el.querySelector('#ci-avatar-btn').style.pointerEvents = u.avatar ? '' : 'none';
-
-    // Kendi kartı: arama ve sohbet satırları anlamsız
-    const isMe = !!(me && me.uid === uid);
-    el.querySelectorAll('[data-act]').forEach((b) => { b.style.display = isMe ? 'none' : ''; });
-    el.querySelector('#ci-rows').style.display = isMe ? 'none' : '';
-
-    // Telefon yoksa numara satırları gizlenir
-    ['copy', 'dial'].forEach((k) => {
-        const r = el.querySelector('[data-row="' + k + '"]');
-        if (r) r.style.display = u.phone ? '' : 'none';
+                const allPinnedNow = validIds.every((id) => contactElementsMap.get(id).pinned);
+        chatSelectionPinBtn.disabled = true;
+        try {
+            for (const chatId of validIds) {
+                const item = contactElementsMap.get(chatId);
+                await updateDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
+                                        pinned: !allPinnedNow
+                });
+            }
+        } catch (err) {
+            alert("Sabitleme işlemi başarısız: " + err.message);
+        }
+        chatSelectionPinBtn.disabled = false;
+        exitChatSelectionMode();
     });
+}
 
-    const scroller = el.querySelector('#ci-scroll');
-    scroller.scrollTop = 0;
-    el.querySelector('#ci-bar').style.background = 'rgba(0,0,0,0)';
+// Not: alan adı hâlâ "archived" (Firestore'da geriye dönük uyum için),
+// ama artık gizlemiyor - Favoriler sekmesinde canlı gösteriliyor.
+if (chatSelectionArchiveBtn) {
+    chatSelectionArchiveBtn.addEventListener('click', async () => {
+        if (selectedChatIds.size === 0) return;
 
-    refreshMuteLabel();
-    refreshFavLabel();
-    refreshBlockLabel();
-    refreshMediaCount();
+        const currentUser = getCurrentUser();
+        if (!currentUser) return;
 
-    if (infoOpen) { measure(); applyCollapse(); return; }
-    el.classList.remove('hidden');
-    el.classList.add('flex');
-    infoOpen = true;
-    setSecure(true);
-    pushBackState(closeFromBack);
-    measure();
-    applyCollapse();
-    requestAnimationFrame(() => { measure(); applyCollapse(); });
+        const validIds = Array.from(selectedChatIds).filter((chatId) => {
+            const item = contactElementsMap.get(chatId);
+            return item && item.hasChat;
+        });
+
+        if (validIds.length === 0) {
+            alert("Henüz mesajlaşılmamış bir sohbeti favorileyemezsin kanka.");
+            return;
+        }
+
+                const allFavNow = validIds.every((id) => contactElementsMap.get(id).archived);
+        chatSelectionArchiveBtn.disabled = true;
+        try {
+            for (const chatId of validIds) {
+                const item = contactElementsMap.get(chatId);
+                await updateDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
+                                        archived: !allFavNow
+                });
+            }
+        } catch (err) {
+            alert("Favorileme işlemi başarısız: " + err.message);
+        }
+        chatSelectionArchiveBtn.disabled = false;
+        exitChatSelectionMode();
+    });
+}
+
+function attachChatSelectionHandlers(el, chatId) {
+    let pressTimer = null;
+    let longPressTriggered = false;
+
+    const startPress = () => {
+        longPressTriggered = false;
+        pressTimer = setTimeout(() => {
+            longPressTriggered = true;
+            if (!chatSelectionMode) {
+                enterChatSelectionMode(chatId);
+            } else {
+                toggleChatSelection(chatId);
+            }
+            if (navigator.vibrate) navigator.vibrate(30);
+        }, 450);
+    };
+
+    const cancelPress = () => {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    };
+
+    el.addEventListener('pointerdown', startPress);
+    el.addEventListener('pointerup', cancelPress);
+    el.addEventListener('pointerleave', cancelPress);
+    el.addEventListener('pointercancel', cancelPress);
+
+    el.addEventListener('click', (e) => {
+        if (longPressTriggered) {
+            e.stopPropagation();
+            longPressTriggered = false;
+            return;
+        }
+        if (chatSelectionMode) {
+            e.stopPropagation();
+            toggleChatSelection(chatId);
+        }
+    }, true);
+}
+
+// ------------------------------------------
+// ARAMA BARI
+// ------------------------------------------
+searchContact.addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase().trim();
+
+    if (term.length > 0) {
+        searchIcon.className = "fa-solid fa-arrow-left text-emerald-400 text-sm mr-2.5 ml-0.5 cursor-pointer hover:text-white transition flex-shrink-0";
+    } else {
+        searchIcon.className = "fa-solid fa-magnifying-glass text-gray-400 text-sm mr-2.5 ml-0.5 flex-shrink-0";
+    }
+
+    const items = contactList.querySelectorAll('.contact-list-item');
+    items.forEach((item) => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = text.includes(term) ? 'flex' : 'none';
+    });
+});
+
+searchIcon.addEventListener('click', () => {
+    if (searchContact.value.length > 0) {
+        searchContact.value = '';
+        searchContact.dispatchEvent(new Event('input'));
+    }
+});
+
+
+// ------------------------------------------
+// ADMİN PANEL (AuraChat yazısına tıklayınca açılır, sadece admin)
+// ------------------------------------------
+export function initAdminPanel() {
+    const currentUser = getCurrentUser();
+    if (!currentUser || !appTitle) return;
+
+    isAdminUser = !!(currentUser.email && ADMIN_EMAIL && currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase());
+    
+    try {
+        localStorage.setItem('aurachat_is_admin', isAdminUser ? '1' : '0');
+        document.documentElement.toggleAttribute('data-aura-admin', isAdminUser);
+    } catch (e) {}
+
+    appTitle.classList.toggle('text-amber-400', isAdminUser);
+    appTitle.classList.toggle('text-emerald-500', !isAdminUser);
+    appTitle.classList.toggle('cursor-pointer', isAdminUser);
+}
+
+function openAdminModal() {
+    adminModal.classList.remove('hidden');
+    adminModal.classList.add('flex');
+}
+
+function closeAdminModal() {
+    if (!adminModal) return;
+    adminModal.classList.add('hidden');
+    adminModal.classList.remove('flex');
+}
+
+if (appTitle) {
+    appTitle.addEventListener('click', async () => {
+        if (!isAdminUser) return;
+        if (!adminModal.classList.contains('hidden')) return;
+
+        const currentUser = getCurrentUser();
+
+        adminUserList.innerHTML = `
+            <div class="text-center py-8 text-gray-400">
+                <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-amber-400"></i>
+                <p class="text-xs">Veritabanından tüm kullanıcılar çekiliyor...</p>
+            </div>`;
+        openAdminModal();
+        pushBackState(closeAdminModal);
+
+        try {
+            const snapshot = await getDocs(collection(db, "users"));
+            adminUserList.innerHTML = '';
+
+            if (snapshot.empty) {
+                adminUserList.innerHTML = `<p class="text-xs text-gray-400 text-center py-4">Kayıtlı kullanıcı bulunamadı.</p>`;
+                return;
+            }
+
+            snapshot.forEach((docSnap) => {
+                let user = docSnap.data();
+                user.uid = user.uid || docSnap.id;
+                user = formatAdminUser(user, ADMIN_EMAIL);
+
+                const isMe = currentUser && user.uid === currentUser.uid;
+
+                const userDiv = document.createElement('div');
+                userDiv.className = "flex items-center justify-between p-3 bg-[#202c33]/60 hover:bg-[#202c33] rounded-xl border border-gray-800 transition";
+
+                const avatarSlotId = `admin-${user.uid}`;
+
+                userDiv.innerHTML = `
+                    <div class="flex items-center space-x-3 overflow-hidden">
+                        <div data-avatar-slot="${avatarSlotId}" class="flex-shrink-0"></div>
+                        <div class="overflow-hidden">
+                            <h5 class="text-white text-sm font-medium truncate flex items-center gap-1.5">
+                                ${escapeHtml(user.name || 'İsimsiz')}
+                                ${isMe ? '<span class="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-bold">SEN</span>' : ''}
+                            </h5>
+                            <p class="text-xs text-gray-400 truncate">${escapeHtml(user.email || '-')}</p>
+                            <p class="text-[11px] text-emerald-400 font-mono">${escapeHtml(user.phone || '-')}</p>
+                        </div>
+                    </div>
+                    ${!isMe ? `
+                    <button class="btn-admin-chat bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl text-xs font-medium transition flex-shrink-0 ml-2 flex items-center space-x-1">
+                        <i class="fa-solid fa-comment"></i>
+                        <span>Sohbet Et</span>
+                    </button>` : ''}
+                `;
+
+                const avatarSlot = userDiv.querySelector(`[data-avatar-slot="${avatarSlotId}"]`);
+                renderAvatarInto(avatarSlot, user.uid, user.avatar, user.name, 'w-10 h-10');
+
+                if (!isMe) {
+                    const chatBtn = userDiv.querySelector('.btn-admin-chat');
+                    chatBtn.addEventListener('click', () => {
+                        closeAdminModal();
+                        popBackState();
+                        selectChat({ uid: user.uid, name: user.name, avatar: user.avatar || '' });
+                    });
+                }
+
+                adminUserList.appendChild(userDiv);
+            });
+        } catch (err) {
+            adminUserList.innerHTML = `<p class="text-xs text-rose-400 text-center py-4">Hata oluştu: ${err.message}</p>`;
+        }
+    });
+}
+
+if (adminModalClose) {
+    adminModalClose.addEventListener('click', () => {
+        closeAdminModal();
+        popBackState();
+    });
 }
