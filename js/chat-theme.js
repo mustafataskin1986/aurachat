@@ -141,6 +141,9 @@ function applyTheme(chatId) {
     syncAccentToNative();
 }
 
+// Bildirimle açılışta sohbet adı, currentChatId atanmadan çizilir; erken çizimler temayı buradan hemen uygular
+window.__auraApplyTheme = applyTheme;
+
 // Sohbet temasının ana rengini (--aura-btn) APK'ya bildirir: seçim tutamakları bu renge boyanır
 function syncAccentToNative() {
     try {
