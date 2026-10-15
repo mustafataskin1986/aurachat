@@ -81,6 +81,10 @@ jobs:
 
       - name: Web Dosyalarını Hazırla ve Konfigüre Et
         run: |
+          # Tailwind CSS dosyası depoda yok (Vercel derlemede üretiyor): APK'ya girmeden önce burada üret
+          npm install --no-save --legacy-peer-deps tailwindcss@3.4.17
+          npx tailwindcss -c tailwind.config.js -i css/tailwind-input.css -o css/tailwind.css --minify
+          ls -la css/tailwind.css
           rm -rf www
           mkdir -p www
           cp -r *.html *.js *.json *.css www/ 2>/dev/null || true
