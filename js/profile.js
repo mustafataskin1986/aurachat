@@ -204,23 +204,6 @@ function openPrivacyPage() {
         const list = el.querySelector('#privacy-list');
         addPrivacySwitchRow(list, 'fa-eye', 'Son görülme', 'Kapalıyken kimse son görülmeni görmez', () => !getPresenceHidden(), (on) => setPresenceHidden(!on));
         addPrivacySwitchRow(list, 'fa-check-double', 'Okundu bilgisi', 'Kapalıyken okundu tikini ne sen gönderirsin ne de görürsün', () => !getReadReceiptsHidden(), (on) => setReadReceiptsHidden(!on));
-        // Uygulama ikonu (yalnızca APK'da görünür)
-        if (appIconAvailable()) {
-            const iconRow = document.createElement('button');
-            iconRow.type = 'button';
-            iconRow.className = 'w-full px-5 py-3.5 flex items-center justify-between text-left active:bg-white/5 transition';
-            iconRow.innerHTML = `
-                <span class="flex items-center space-x-4 min-w-0">
-                    <i class="fa-solid fa-palette text-gray-400 w-5 text-center"></i>
-                    <span class="min-w-0">
-                        <span class="block text-white text-[15px]">Uygulama ikonu</span>
-                        <span class="block text-gray-400 text-xs mt-0.5">Ana ekrandaki uygulama simgesini değiştir</span>
-                    </span>
-                </span>
-                <i class="fa-solid fa-chevron-right text-gray-500 text-xs flex-shrink-0 ml-3"></i>`;
-            iconRow.addEventListener('click', openAppIconPanel);
-            list.appendChild(iconRow);
-        }
         privacyEl = el;
     }
     updatePrivacyLabel();
@@ -397,6 +380,20 @@ function openSettingsPage() {
             head.style.opacity = String(1 - Math.min(1, scroller.scrollTop / 260));
         }, { passive: true });
         el.querySelector('#settings-privacy-row').addEventListener('click', openPrivacyPage);
+        // Uygulama ikonu: Gizlilik'in altında ayrı satır (yalnızca APK'da görünür)
+        if (appIconAvailable()) {
+            const iconRow = document.createElement('button');
+            iconRow.type = 'button';
+            iconRow.className = 'w-full px-5 py-4 flex items-center space-x-5 text-left active:bg-white/5 transition';
+            iconRow.innerHTML = `
+                <i class="fa-solid fa-palette text-gray-400 text-xl w-6 text-center"></i>
+                <span class="min-w-0">
+                    <span class="block text-white text-[17px]">Uygulama ikonu</span>
+                    <span class="block text-gray-400 text-sm mt-0.5">Ana ekrandaki simgeyi değiştir</span>
+                </span>`;
+            iconRow.addEventListener('click', openAppIconPanel);
+            el.querySelector('#settings-privacy-row').insertAdjacentElement('afterend', iconRow);
+        }
         el.querySelector('#settings-about-btn').addEventListener('click', openAboutPage);
         settingsEl = el;
     }
