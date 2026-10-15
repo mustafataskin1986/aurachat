@@ -119,6 +119,10 @@ function openPanel() {
     pushBackState(() => closePanel(true));
 }
 
+// Ayarlar > Gizlilik sayfası kullanır: APK'da mı, panel aç
+export function appIconAvailable() { return !!bridge(); }
+export function openAppIconPanel() { openPanel(); }
+
 // Profil sayfasına "Uygulama ikonu" satırı ekler (yalnızca APK'da)
 export function addAppearanceRow(beforeEl) {
     if (!beforeEl || !bridge()) return;
