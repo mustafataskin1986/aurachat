@@ -558,6 +558,31 @@ jobs:
                   applyPendingIcon();
               }
 
+              // "Şimdi değiştir": ikonu hemen uygular ve uygulamayı yeniden açar.
+              // Süreç kapanırsa diye bir alarm da kurulur (süreç yaşıyorsa alarm iptal edilir, doğrudan yeniden açılır).
+              void applyIconNowAndRestart() {
+                  final int target = pendingIcon;
+                  if (target < 0) return;
+                  final android.content.Intent relaunch = new android.content.Intent(android.content.Intent.ACTION_MAIN);
+                  relaunch.addCategory(android.content.Intent.CATEGORY_LAUNCHER);
+                  relaunch.setComponent(new android.content.ComponentName(getPackageName(), iconAliasName(target)));
+                  relaunch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                  int imm = android.os.Build.VERSION.SDK_INT >= 23 ? android.app.PendingIntent.FLAG_IMMUTABLE : 0;
+                  final android.app.PendingIntent pi = android.app.PendingIntent.getActivity(this, 9301, relaunch, android.app.PendingIntent.FLAG_CANCEL_CURRENT | imm);
+                  final android.app.AlarmManager am = (android.app.AlarmManager) getSystemService(android.content.Context.ALARM_SERVICE);
+                  try {
+                      if (am != null) am.set(android.app.AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 2000, pi);
+                  } catch (Throwable t) {}
+                  applyPendingIcon();
+                  new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+                      @Override
+                      public void run() {
+                          try { if (am != null) am.cancel(pi); } catch (Throwable t) {}
+                          try { startActivity(relaunch); } catch (Throwable t) {}
+                      }
+                  }, 600);
+              }
+
               public class IconBridge {
                   @JavascriptInterface
                   public int current() {
@@ -575,6 +600,15 @@ jobs:
                           }
                       } catch (Throwable t) {}
                       return 0;
+                  }
+                  @JavascriptInterface
+                  public boolean applyNow() {
+                      if (pendingIcon < 0) return false;
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() { applyIconNowAndRestart(); }
+                      });
+                      return true;
                   }
                   @JavascriptInterface
                   public boolean set(final int target) {
@@ -2609,8 +2643,13 @@ jobs:
               static volatile WebView webView = null;
               static ComponentActivity activity = null;
               private static ActivityResultLauncher<Intent> launcher = null;
+              private static ActivityResultLauncher<String> permLauncher = null;
+              static final java.util.concurrent.atomic.AtomicInteger audioInflight = new java.util.concurrent.atomic.AtomicInteger(0);
               static volatile boolean busy = false;
               static volatile boolean sharing = false;
+              static volatile boolean pendingH264 = false;   // sonraki başlatma H.264 ile mi?
+              static volatile boolean needKey = false;       // zincir koptu: sonraki anahtar kareyi bekle
+              static final java.util.concurrent.atomic.AtomicInteger inflight = new java.util.concurrent.atomic.AtomicInteger(0);
               private static final Handler main = new Handler(Looper.getMainLooper());
 
               public static void install(final ComponentActivity act, WebView wv) {
@@ -2625,6 +2664,7 @@ jobs:
                                       Intent svc = new Intent(act, AuraScreenService.class);
                                       svc.putExtra("code", r.getResultCode());
                                       svc.putExtra("data", r.getData());
+                                      svc.putExtra("h264", pendingH264);
                                       if (Build.VERSION.SDK_INT >= 26) act.startForegroundService(svc);
                                       else act.startService(svc);
                                   } else {
@@ -2636,6 +2676,13 @@ jobs:
                           }
                       });
                   } catch (Throwable t) { launcher = null; }
+                  // Telefonun iç sesini yakalamak için mikrofon izni gerekir (Android 10+). Verilmese de görüntü paylaşılır.
+                  try {
+                      permLauncher = act.registerForActivityResult(new ActivityResultContracts.RequestPermission(), new ActivityResultCallback<Boolean>() {
+                          @Override
+                          public void onActivityResult(Boolean granted) { launchProjection(); }
+                      });
+                  } catch (Throwable t) { permLauncher = null; }
                   if (wv != null) wv.addJavascriptInterface(new Bridge(), "AuraScreen");
               }
 
@@ -2673,8 +2720,74 @@ jobs:
                   }, 1500);
               }
 
+              // H.264 ayar paketi (SPS/PPS) ve kareler: JS'e base64 olarak gider. JS yetişemezse (3'ten fazla bekleyen)
+              // delta kareler atılır ve yeni anahtar kare istenir, böylece gecikme birikmez.
+              static void sendH264Config(final String b64, final int w, final int h) {
+                  main.post(new Runnable() {
+                      @Override
+                      public void run() {
+                          try { if (webView != null) webView.evaluateJavascript("window.__auraScreenCfg&&window.__auraScreenCfg('" + b64 + "'," + w + "," + h + ")", null); } catch (Throwable t) {}
+                      }
+                  });
+              }
+
+              static void sendH264(final String b64, final boolean key, final long ptsMs) {
+                  if (needKey && !key) return;
+                  if (!key && inflight.get() > 3) {
+                      needKey = true;
+                      AuraScreenService.requestKeyFrameStatic();
+                      return;
+                  }
+                  if (key) needKey = false;
+                  inflight.incrementAndGet();
+                  main.post(new Runnable() {
+                      @Override
+                      public void run() {
+                          try {
+                              if (webView == null) { inflight.decrementAndGet(); return; }
+                              try { webView.resumeTimers(); } catch (Throwable t) {}
+                              webView.evaluateJavascript("window.__auraScreenH264&&window.__auraScreenH264('" + b64 + "'," + (key ? 1 : 0) + "," + ptsMs + ")", new ValueCallback<String>() {
+                                  @Override
+                                  public void onReceiveValue(String v) { inflight.decrementAndGet(); }
+                              });
+                          } catch (Throwable t) { inflight.decrementAndGet(); }
+                      }
+                  });
+              }
+
+              // İç ses: 24 kHz, mono, 16 bit PCM parçaları (base64). JS yetişemezse parça atılır.
+              static void sendAudio(final String b64) {
+                  if (audioInflight.get() > 6) return;
+                  audioInflight.incrementAndGet();
+                  main.post(new Runnable() {
+                      @Override
+                      public void run() {
+                          try {
+                              if (webView == null) { audioInflight.decrementAndGet(); return; }
+                              webView.evaluateJavascript("window.__auraScreenAudio&&window.__auraScreenAudio('" + b64 + "')", new ValueCallback<String>() {
+                                  @Override
+                                  public void onReceiveValue(String v) { audioInflight.decrementAndGet(); }
+                              });
+                          } catch (Throwable t) { audioInflight.decrementAndGet(); }
+                      }
+                  });
+              }
+
+              static void launchProjection() {
+                  try {
+                      if (launcher == null || activity == null) { js("window.__auraScreenDenied&&window.__auraScreenDenied()"); return; }
+                      MediaProjectionManager mpm = (MediaProjectionManager) activity.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+                      launcher.launch(mpm.createScreenCaptureIntent());
+                  } catch (Throwable t) {
+                      js("window.__auraScreenDenied&&window.__auraScreenDenied()");
+                  }
+              }
+
               static void notifyStarted() {
                   sharing = true;
+                  needKey = false;
+                  audioInflight.set(0);
+                  inflight.set(0);
                   js("window.__auraScreenStarted&&window.__auraScreenStarted()");
               }
 
@@ -2693,15 +2806,47 @@ jobs:
                   @JavascriptInterface
                   public boolean isSharing() { return sharing; }
 
+                  // Cihazın H.264 donanım/yazılım kodlayıcısı var mı?
+                  @JavascriptInterface
+                  public boolean supportsH264() {
+                      try {
+                          if (Build.VERSION.SDK_INT < 23) return false;
+                          android.media.MediaCodec c = android.media.MediaCodec.createEncoderByType("video/avc");
+                          c.release();
+                          return true;
+                      } catch (Throwable t) { return false; }
+                  }
+
+                  // İzleyen yeni bir anahtar kare isterse / JS geri kaldıysa
+                  @JavascriptInterface
+                  public void requestKeyFrame() { AuraScreenService.requestKeyFrameStatic(); }
+
+                  @JavascriptInterface
+                  public void startWithMode(final boolean h264) {
+                      pendingH264 = h264;
+                      doStart();
+                  }
+
+                  // Eski çağrı (JPEG yöntemi): H.264 kapalı
                   @JavascriptInterface
                   public void start() {
+                      pendingH264 = false;
+                      doStart();
+                  }
+
+                  void doStart() {
                       main.post(new Runnable() {
                           @Override
                           public void run() {
                               try {
                                   if (launcher == null || activity == null) { js("window.__auraScreenDenied&&window.__auraScreenDenied()"); return; }
-                                  MediaProjectionManager mpm = (MediaProjectionManager) activity.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-                                  launcher.launch(mpm.createScreenCaptureIntent());
+                                  // H.264 modunda iç ses için mikrofon izni (bir kez sorulur); sonra ekran yakalama izni
+                                  if (pendingH264 && Build.VERSION.SDK_INT >= 29 && permLauncher != null
+                                      && activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                      permLauncher.launch(android.Manifest.permission.RECORD_AUDIO);
+                                      return;
+                                  }
+                                  launchProjection();
                               } catch (Throwable t) {
                                   js("window.__auraScreenDenied&&window.__auraScreenDenied()");
                               }
@@ -2741,14 +2886,19 @@ jobs:
           import android.hardware.display.VirtualDisplay;
           import android.media.Image;
           import android.media.ImageReader;
+          import android.media.MediaCodec;
+          import android.media.MediaCodecInfo;
+          import android.media.MediaFormat;
           import android.media.projection.MediaProjection;
           import android.media.projection.MediaProjectionManager;
           import android.os.Build;
+          import android.os.Bundle;
           import android.os.Handler;
           import android.os.HandlerThread;
           import android.os.IBinder;
           import android.util.Base64;
           import android.util.DisplayMetrics;
+          import android.view.Surface;
           import android.view.WindowManager;
           import java.io.ByteArrayOutputStream;
           import java.nio.ByteBuffer;
@@ -2767,6 +2917,150 @@ jobs:
               private Handler handler = null;
               private long lastFrame = 0;
               private boolean stopped = false;
+              private MediaCodec encoder = null;
+              private Surface inputSurface = null;
+              private android.media.AudioRecord audioRec = null;
+              private volatile boolean audioRun = false;
+              private Thread audioThread = null;
+              private static volatile AuraScreenService instance = null;
+
+              static void requestKeyFrameStatic() {
+                  AuraScreenService s = instance;
+                  if (s != null) s.requestKeyFrame();
+              }
+
+              void requestKeyFrame() {
+                  try {
+                      MediaCodec c = encoder;
+                      if (c == null) return;
+                      Bundle b = new Bundle();
+                      b.putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0);
+                      c.setParameters(b);
+                  } catch (Throwable t) {}
+              }
+
+              // Telefonun iç sesi (medya/oyun sesi; Android 10+, mikrofon izni gerekir). 48 kHz mono alınır, 24 kHz'e indirilip gönderilir.
+              // Sessiz anlar gönderilmez.
+              private void startAudio() {
+                  if (Build.VERSION.SDK_INT < 29 || projection == null) return;
+                  try {
+                      if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+                      android.media.AudioPlaybackCaptureConfiguration cfg = new android.media.AudioPlaybackCaptureConfiguration.Builder(projection)
+                          .addMatchingUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                          .addMatchingUsage(android.media.AudioAttributes.USAGE_GAME)
+                          .addMatchingUsage(android.media.AudioAttributes.USAGE_UNKNOWN)
+                          .build();
+                      android.media.AudioFormat af = new android.media.AudioFormat.Builder()
+                          .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                          .setSampleRate(48000)
+                          .setChannelMask(android.media.AudioFormat.CHANNEL_IN_MONO)
+                          .build();
+                      int minBuf = android.media.AudioRecord.getMinBufferSize(48000, android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT);
+                      int bufSize = Math.max(minBuf, 48000 * 2 / 4);
+                      android.media.AudioRecord rec = new android.media.AudioRecord.Builder()
+                          .setAudioPlaybackCaptureConfig(cfg)
+                          .setAudioFormat(af)
+                          .setBufferSizeInBytes(bufSize)
+                          .build();
+                      if (rec.getState() != android.media.AudioRecord.STATE_INITIALIZED) { try { rec.release(); } catch (Throwable t) {} return; }
+                      rec.startRecording();
+                      audioRec = rec;
+                      audioRun = true;
+                      final android.media.AudioRecord r = rec;
+                      audioThread = new Thread(new Runnable() {
+                          @Override
+                          public void run() {
+                              short[] in = new short[2880];      // 60 ms @ 48 kHz
+                              byte[] out = new byte[1440 * 2];   // 60 ms @ 24 kHz
+                              while (audioRun) {
+                                  int got = 0;
+                                  while (audioRun && got < in.length) {
+                                      int n = r.read(in, got, in.length - got);
+                                      if (n <= 0) { audioRun = false; break; }
+                                      got += n;
+                                  }
+                                  if (!audioRun || got < in.length) break;
+                                  int peak = 0;
+                                  for (int i = 0; i < 1440; i++) {
+                                      int v = (in[2 * i] + in[2 * i + 1]) / 2;
+                                      int a = v < 0 ? -v : v;
+                                      if (a > peak) peak = a;
+                                      out[2 * i] = (byte) (v & 0xff);
+                                      out[2 * i + 1] = (byte) ((v >> 8) & 0xff);
+                                  }
+                                  if (peak < 8) continue; // sessizlik: gönderme
+                                  AuraScreen.sendAudio(Base64.encodeToString(out, Base64.NO_WRAP));
+                              }
+                          }
+                      }, "AuraScreenAudio");
+                      audioThread.setDaemon(true);
+                      audioThread.start();
+                  } catch (Throwable t) {
+                      audioRun = false;
+                      try { if (audioRec != null) audioRec.release(); } catch (Throwable t2) {}
+                      audioRec = null;
+                  }
+              }
+
+              // H.264 kodlayıcı: ekran doğrudan donanımla videoya çevrilir. Önce ayrıntılı ayarlarla, olmazsa sade ayarlarla dener.
+              private MediaCodec buildEncoder(int w, int h, boolean extras) throws Exception {
+                  MediaFormat fmt = MediaFormat.createVideoFormat("video/avc", w, h);
+                  fmt.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+                  int bitrate = (int) Math.max(1500000L, Math.min(4000000L, (long) (w * (long) h * 30L / 10L)));
+                  fmt.setInteger(MediaFormat.KEY_BIT_RATE, bitrate);
+                  fmt.setInteger(MediaFormat.KEY_FRAME_RATE, 30);
+                  fmt.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2);
+                  if (extras) {
+                      try { fmt.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR); } catch (Throwable t) {}
+                      try { fmt.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline); } catch (Throwable t) {}
+                      try { fmt.setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 400000L); } catch (Throwable t) {}
+                      try { fmt.setInteger("prepend-sps-pps-to-idr-frames", 1); } catch (Throwable t) {}
+                      try { if (Build.VERSION.SDK_INT >= 23) fmt.setInteger(MediaFormat.KEY_PRIORITY, 0); } catch (Throwable t) {}
+                      try { if (Build.VERSION.SDK_INT >= 30) fmt.setInteger(MediaFormat.KEY_LATENCY, 1); } catch (Throwable t) {}
+                  }
+                  final int fw = w, fh = h;
+                  MediaCodec c = MediaCodec.createEncoderByType("video/avc");
+                  try {
+                      c.setCallback(new MediaCodec.Callback() {
+                          @Override
+                          public void onInputBufferAvailable(MediaCodec codec, int index) {}
+
+                          @Override
+                          public void onOutputBufferAvailable(MediaCodec codec, int index, MediaCodec.BufferInfo info) {
+                              try {
+                                  java.nio.ByteBuffer ob = codec.getOutputBuffer(index);
+                                  if (ob != null && info.size > 0) {
+                                      byte[] data = new byte[info.size];
+                                      ob.position(info.offset);
+                                      ob.limit(info.offset + info.size);
+                                      ob.get(data);
+                                      String b64 = Base64.encodeToString(data, Base64.NO_WRAP);
+                                      if ((info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                                          AuraScreen.sendH264Config(b64, fw, fh);
+                                      } else {
+                                          boolean key = (info.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
+                                          AuraScreen.sendH264(b64, key, info.presentationTimeUs / 1000L);
+                                      }
+                                  }
+                              } catch (Throwable t) {
+                              } finally {
+                                  try { codec.releaseOutputBuffer(index, false); } catch (Throwable t) {}
+                              }
+                          }
+
+                          @Override
+                          public void onOutputFormatChanged(MediaCodec codec, MediaFormat format) {}
+
+                          @Override
+                          public void onError(MediaCodec codec, MediaCodec.CodecException e) { shutdown(true); }
+                      }, handler);
+                      c.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+                  } catch (Exception e) {
+                      try { c.release(); } catch (Throwable t) {}
+                      throw e;
+                  }
+                  return c;
+              }
 
               @Override
               public IBinder onBind(Intent intent) { return null; }
@@ -2778,7 +3072,9 @@ jobs:
                       return START_NOT_STICKY;
                   }
                   try {
+                      instance = this;
                       startAsForeground();
+                      boolean h264 = intent.getBooleanExtra("h264", false);
                       int code = intent.getIntExtra("code", 0);
                       Intent data = (Intent) intent.getParcelableExtra("data");
                       if (data == null) { shutdown(true); return START_NOT_STICKY; }
@@ -2802,6 +3098,23 @@ jobs:
                       float scale = Math.min(1f, (float) MAX_SIDE / (float) Math.max(dm.widthPixels, dm.heightPixels));
                       final int w = Math.max(2, (Math.round(dm.widthPixels * scale) / 2) * 2);
                       final int h = Math.max(2, (Math.round(dm.heightPixels * scale) / 2) * 2);
+
+                      if (h264) {
+                          try {
+                              try { encoder = buildEncoder(w, h, true); }
+                              catch (Exception e1) { encoder = buildEncoder(w, h, false); }
+                              inputSurface = encoder.createInputSurface();
+                              encoder.start();
+                              display = projection.createVirtualDisplay("AuraChatScreen", w, h, dm.densityDpi,
+                                  DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, inputSurface, null, handler);
+                              AuraScreen.js("window.__auraScreenSize&&window.__auraScreenSize(" + w + "," + h + ")");
+                              AuraScreen.notifyStarted();
+                              startAudio();
+                          } catch (Throwable t) {
+                              shutdown(true);
+                          }
+                          return START_NOT_STICKY;
+                      }
 
                       reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2);
                       reader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
@@ -2874,6 +3187,14 @@ jobs:
                   stopped = true;
                   try { if (display != null) display.release(); } catch (Throwable t) {}
                   try { if (reader != null) reader.close(); } catch (Throwable t) {}
+                  audioRun = false;
+                  try { if (audioRec != null) { audioRec.stop(); } } catch (Throwable t) {}
+                  try { if (audioRec != null) { audioRec.release(); } } catch (Throwable t) {}
+                  audioRec = null;
+                  try { if (encoder != null) { encoder.stop(); } } catch (Throwable t) {}
+                  try { if (encoder != null) { encoder.release(); } } catch (Throwable t) {}
+                  try { if (inputSurface != null) inputSurface.release(); } catch (Throwable t) {}
+                  encoder = null; inputSurface = null; instance = null;
                   try { if (projection != null) projection.stop(); } catch (Throwable t) {}
                   try { if (thread != null) thread.quitSafely(); } catch (Throwable t) {}
                   display = null; reader = null; projection = null;
@@ -3209,7 +3530,6 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk AuraChat.apk
           gh release view apk-latest > /dev/null 2>&1 || gh release create apk-latest --title "AuraChat APK" --notes "En güncel Android uygulaması" --latest
           gh release upload apk-latest AuraChat.apk --clobber
-          gh release edit apk-latest --notes "Son derleme: $(TZ=Europe/Istanbul date '+%d.%m.%Y %H:%M') - commit ${GITHUB_SHA::7}"
 
       - name: Eski Çıktıları ve Kayıtları Temizle
         env:
