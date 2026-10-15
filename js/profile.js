@@ -17,14 +17,63 @@ import { appIconAvailable, openAppIconPanel } from "./app-icon.js";
 
 const profileBtn = document.getElementById('profile-btn');
 const profilePanel = document.getElementById('profile-panel');
+// Profil paneli: WhatsApp tarzı yeni tasarım (içerik dinamik kurulur, id'ler korunur)
+if (profilePanel) {
+    profilePanel.innerHTML = `
+        <div class="px-4 py-3.5 flex items-center space-x-4 flex-shrink-0">
+            <button id="profile-back-btn" class="text-white text-lg px-1"><i class="fa-solid fa-arrow-left"></i></button>
+            <h2 class="text-white font-medium text-xl">Profil</h2>
+        </div>
+        <div class="flex-1 overflow-y-auto pb-8">
+            <div class="flex justify-center pt-4 pb-8">
+                <div class="relative" style="width:180px;height:180px;">
+                    <button type="button" id="profile-avatar-btn" class="block rounded-full overflow-hidden" style="width:180px;height:180px;" aria-label="Profil resmini göster">
+                        <div id="profile-avatar" class="w-full h-full rounded-full flex items-center justify-center text-white font-bold overflow-hidden" style="font-size:64px;"></div>
+                    </button>
+                    <button type="button" id="profile-cam-btn" class="absolute flex items-center justify-center text-white shadow-lg active:scale-95 transition" style="right:2px;bottom:2px;width:48px;height:48px;border-radius:9999px;background:var(--aura-btn,#22c55e);border:3px solid #0b141a;" aria-label="Profil resmini düzenle"><i class="fa-solid fa-camera"></i></button>
+                </div>
+            </div>
+            <input type="file" id="profile-avatar-input" accept="image/*" class="hidden">
+            <input type="file" id="profile-camera-input" accept="image/*" capture="user" class="hidden">
+            <button type="button" id="prow-name" class="w-full px-5 py-3 flex items-start space-x-5 text-left active:bg-white/5 transition">
+                <i class="fa-regular fa-user text-gray-400 text-xl w-6 text-center mt-1"></i>
+                <span class="flex-1 min-w-0"><span class="block text-gray-400 text-sm">Ad</span><span id="prow-name-v" class="block text-white text-[17px] break-words"></span></span>
+                <i class="fa-solid fa-pencil text-green-500 mt-2"></i>
+            </button>
+            <div class="px-5 pb-2 pl-16 text-gray-500 text-sm">Bu, kullanıcı adınız veya PIN'iniz değil. Bu ad AuraChat kişilerinize görünür olacaktır.</div>
+            <button type="button" id="prow-about" class="w-full px-5 py-3 flex items-start space-x-5 text-left active:bg-white/5 transition">
+                <i class="fa-solid fa-circle-info text-gray-400 text-xl w-6 text-center mt-1"></i>
+                <span class="flex-1 min-w-0"><span class="block text-gray-400 text-sm">Hakkımda</span><span id="prow-about-v" class="block text-[17px] break-words"></span></span>
+                <i class="fa-solid fa-pencil text-green-500 mt-2"></i>
+            </button>
+            <div class="w-full px-5 py-3 flex items-start space-x-5">
+                <i class="fa-solid fa-at text-gray-400 text-xl w-6 text-center mt-1"></i>
+                <span class="flex-1 min-w-0"><span class="block text-gray-400 text-sm">Kullanıcı adı</span><span id="prow-user-v" class="block text-white text-[17px] break-all"></span></span>
+            </div>
+            <div class="w-full px-5 py-3 flex items-start space-x-5">
+                <i class="fa-solid fa-phone text-gray-400 text-xl w-6 text-center mt-1"></i>
+                <span class="flex-1 min-w-0"><span class="block text-gray-400 text-sm">Telefon</span><span id="profile-phone" class="block text-white text-[17px] break-words"></span></span>
+            </div>
+            <div class="w-full px-5 py-3 flex items-start space-x-5">
+                <i class="fa-regular fa-envelope text-gray-400 text-xl w-6 text-center mt-1"></i>
+                <span class="flex-1 min-w-0"><span class="block text-gray-400 text-sm">E-posta</span><span id="profile-email" class="block text-white text-[17px] break-all"></span></span>
+            </div>
+            <div class="px-5 mt-6">
+                <button id="profile-logout-btn" class="w-full bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 font-medium py-3 rounded-xl transition flex items-center justify-center space-x-2 border border-rose-600/20">
+                    <i class="fa-solid fa-right-from-bracket"></i><span>Çıkış Yap</span>
+                </button>
+            </div>
+        </div>`;
+}
 const profileBackBtn = document.getElementById('profile-back-btn');
 const profileAvatar = document.getElementById('profile-avatar');
 const profileAvatarInput = document.getElementById('profile-avatar-input');
-const profileName = document.getElementById('profile-name');
-const profileAbout = document.getElementById('profile-about');
+const profileCameraInput = document.getElementById('profile-camera-input');
+const profileName = null;
+const profileAbout = null;
 const profileEmail = document.getElementById('profile-email');
 const profilePhone = document.getElementById('profile-phone');
-const profileSaveBtn = document.getElementById('profile-save-btn');
+const profileSaveBtn = null;
 const profileLogoutBtn = document.getElementById('profile-logout-btn');
 
 let pendingAvatarBase64 = null;
@@ -306,8 +355,8 @@ function openAboutPage() {
                 const updatedUser = { ...u, about: newAbout };
                 localStorage.setItem('aurachat_user', JSON.stringify(updatedUser));
                 setCurrentUser(updatedUser);
-                if (profileAbout) profileAbout.value = newAbout;
                 refreshSettingsHeader();
+                refreshProfileView();
                 closeAboutFromBack();
                 popBackState();
             } catch (err) {
@@ -405,52 +454,223 @@ function openSettingsPage() {
     pushBackState(closeSettingsFromBack);
 }
 
-async function openProfilePanel() {
-        let user = getCurrentUser();
+function toastMsg(t) {
+    const d = document.createElement('div');
+    d.textContent = t;
+    d.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#323b41;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:400;max-width:80%;text-align:center;';
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 2200);
+}
+
+function refreshProfileView() {
+    const user = getCurrentUser();
     if (!user || !profilePanel) return;
-    updatePrivacyLabel();
-
-    pendingAvatarBase64 = null;
-
-    // 1. Önce geçici verileri temiz bir şekilde göster
-    if (profileName) profileName.value = user.name || '';
-    if (profileAbout) profileAbout.value = user.about || '';
+    renderAvatar(user);
+    const n = document.getElementById('prow-name-v'); if (n) n.textContent = user.name || '';
+    const a = document.getElementById('prow-about-v');
+    if (a) {
+        a.textContent = user.about || 'Hakkımda bilgisini ayarlayın';
+        a.className = 'block text-[17px] break-words ' + (user.about ? 'text-white' : 'text-green-500');
+    }
+    const un = document.getElementById('prow-user-v');
+    if (un) un.textContent = user.username || (user.email ? user.email.split('@')[0] : '-');
     if (profileEmail) profileEmail.textContent = user.email || '-';
     if (profilePhone) profilePhone.textContent = user.phone || '-';
-    renderAvatar(user);
+}
 
+async function saveUserFields(fields) {
+    const user = getCurrentUser();
+    if (!user) return false;
+    try {
+        await updateDoc(doc(db, "users", user.uid), fields);
+        const updated = { ...user, ...fields };
+        localStorage.setItem('aurachat_user', JSON.stringify(updated));
+        setCurrentUser(updated);
+        refreshProfileView();
+        refreshSettingsHeader();
+        refreshViewerPhoto();
+        return true;
+    } catch (err) {
+        alert("Kaydedilemedi: " + err.message);
+        return false;
+    }
+}
+
+// ---------- Tam ekran profil resmi + alttan menü ----------
+let viewerEl = null, viewerOpen = false;
+let sheetEl = null, sheetOpen = false;
+
+function refreshViewerPhoto() {
+    if (!viewerEl) return;
+    const user = getCurrentUser() || {};
+    const box = viewerEl.querySelector('#pv-photo');
+    if (user.avatar) {
+        box.innerHTML = `<img src="${user.avatar}" style="width:100%;max-height:100%;object-fit:contain;">`;
+        box.style.backgroundColor = '';
+    } else {
+        box.innerHTML = `<div style="width:100%;aspect-ratio:1/1;max-height:100%;display:flex;align-items:center;justify-content:center;background:${getUserColor(user.name || '')};color:#fff;font-size:96px;font-weight:700;">${getInitials(user.name || '')}</div>`;
+    }
+}
+
+function closeViewerFromBack() {
+    if (viewerEl) { viewerEl.classList.add('hidden'); viewerEl.classList.remove('flex'); }
+    viewerOpen = false;
+}
+function closeSheetFromBack() {
+    if (sheetEl) sheetEl.classList.add('hidden');
+    sheetOpen = false;
+}
+function closeSheet() {
+    if (!sheetOpen) return;
+    closeSheetFromBack();
+    popBackState();
+}
+
+async function deleteAvatar() {
+    const user = getCurrentUser();
+    if (!user || !user.avatar) { toastMsg('Silinecek profil resmi yok'); return; }
+    closeSheet();
+    if (await saveUserFields({ avatar: null })) toastMsg('Profil resmi silindi');
+}
+
+function openAvatarSheet() {
+    if (sheetOpen) return;
+    if (!sheetEl) {
+        const el = document.createElement('div');
+        el.className = 'fixed inset-0 hidden';
+        el.style.cssText = 'z-index:60;background:rgba(0,0,0,.6);';
+        el.innerHTML = `
+            <div id="ps-card" style="position:absolute;left:0;right:0;bottom:0;background:#1f2c33;border-radius:24px 24px 0 0;padding:10px 0 calc(env(safe-area-inset-bottom,0px) + 16px);">
+                <div style="width:40px;height:4px;border-radius:2px;background:#5b6870;margin:0 auto 10px;"></div>
+                <div class="flex items-center px-4 pb-3">
+                    <button type="button" id="ps-close" class="text-gray-300 text-xl w-10 text-left" aria-label="Kapat"><i class="fa-solid fa-xmark"></i></button>
+                    <h3 class="flex-1 text-center text-white text-lg font-medium">Profil resmi</h3>
+                    <button type="button" id="ps-del" class="text-gray-300 text-xl w-10 text-right" aria-label="Sil"><i class="fa-regular fa-trash-can"></i></button>
+                </div>
+                <div class="flex px-4 pt-2 pb-2" style="gap:12px;">
+                    <button type="button" id="ps-cam" class="flex-1 flex flex-col items-center py-4 rounded-2xl active:bg-white/10 transition" style="border:1px solid #33434c;">
+                        <i class="fa-solid fa-camera text-2xl" style="color:var(--aura-btn,#22c55e)"></i><span class="text-gray-200 text-sm mt-2">Kamera</span></button>
+                    <button type="button" id="ps-gal" class="flex-1 flex flex-col items-center py-4 rounded-2xl active:bg-white/10 transition" style="border:1px solid #33434c;">
+                        <i class="fa-solid fa-image text-2xl" style="color:var(--aura-btn,#22c55e)"></i><span class="text-gray-200 text-sm mt-2">Galeri</span></button>
+                    <button type="button" id="ps-fb" class="flex-1 flex flex-col items-center py-4 rounded-2xl active:bg-white/10 transition" style="border:1px solid #33434c;">
+                        <i class="fa-brands fa-facebook text-2xl" style="color:#1877f2"></i><span class="text-gray-200 text-sm mt-2 text-center">Facebook'tan içe aktar</span></button>
+                </div>
+            </div>`;
+        document.body.appendChild(el);
+        el.addEventListener('click', (e) => { if (e.target === el) closeSheet(); });
+        el.querySelector('#ps-close').addEventListener('click', closeSheet);
+        el.querySelector('#ps-del').addEventListener('click', deleteAvatar);
+        el.querySelector('#ps-cam').addEventListener('click', () => { closeSheet(); profileCameraInput && profileCameraInput.click(); });
+        el.querySelector('#ps-gal').addEventListener('click', () => { closeSheet(); profileAvatarInput && profileAvatarInput.click(); });
+        el.querySelector('#ps-fb').addEventListener('click', () => { closeSheet(); toastMsg("Facebook'tan içe aktarma şu an desteklenmiyor"); });
+        sheetEl = el;
+    }
+    sheetEl.classList.remove('hidden');
+    sheetOpen = true;
+    pushBackState(closeSheetFromBack);
+}
+
+async function shareAvatar() {
+    const user = getCurrentUser();
+    if (!user || !user.avatar) { toastMsg('Paylaşılacak profil resmi yok'); return; }
+    try {
+        const blob = await (await fetch(user.avatar)).blob();
+        const file = new File([blob], 'profil.jpg', { type: blob.type || 'image/jpeg' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: user.name || 'Profil resmi' });
+        } else if (navigator.share) {
+            await navigator.share({ title: user.name || 'Profil resmi', text: user.name || '' });
+        } else {
+            toastMsg('Bu cihazda paylaşım desteklenmiyor');
+        }
+    } catch (e) { /* kullanıcı iptal etti */ }
+}
+
+function openAvatarViewer() {
+    if (viewerOpen) return;
+    if (!viewerEl) {
+        const el = document.createElement('div');
+        el.className = 'fixed inset-0 hidden flex-col';
+        el.style.cssText = 'z-index:55;background:#0b141a;';
+        el.innerHTML = `
+            <div class="px-4 py-3.5 flex items-center flex-shrink-0">
+                <button type="button" id="pv-back" class="text-white text-lg px-1 w-10 text-left"><i class="fa-solid fa-arrow-left"></i></button>
+                <h2 class="flex-1 min-w-0 text-white text-xl ml-2">Profil resmi</h2>
+                <button type="button" id="pv-edit" class="text-white text-lg w-10 text-center" aria-label="Düzenle"><i class="fa-solid fa-pencil"></i></button>
+                <button type="button" id="pv-share" class="text-white text-lg w-10 text-center" aria-label="Paylaş"><i class="fa-solid fa-share-nodes"></i></button>
+            </div>
+            <div id="pv-photo" class="flex-1 flex items-center justify-center min-h-0 overflow-hidden"></div>`;
+        document.body.appendChild(el);
+        el.querySelector('#pv-back').addEventListener('click', () => { closeViewerFromBack(); popBackState(); });
+        el.querySelector('#pv-edit').addEventListener('click', openAvatarSheet);
+        el.querySelector('#pv-share').addEventListener('click', shareAvatar);
+        viewerEl = el;
+    }
+    refreshViewerPhoto();
+    viewerEl.classList.remove('hidden');
+    viewerEl.classList.add('flex');
+    viewerOpen = true;
+    pushBackState(closeViewerFromBack);
+}
+
+// ---------- Ad düzenleme (alttan kutu) ----------
+function openNameEditor() {
+    const user = getCurrentUser();
+    if (!user) return;
+    const el = document.createElement('div');
+    el.className = 'fixed inset-0';
+    el.style.cssText = 'z-index:60;background:rgba(0,0,0,.6);';
+    el.innerHTML = `
+        <div style="position:absolute;left:0;right:0;bottom:0;background:#1f2c33;border-radius:24px 24px 0 0;padding:20px 20px calc(env(safe-area-inset-bottom,0px) + 16px);">
+            <h3 class="text-white text-lg mb-4">Adınızı girin</h3>
+            <input id="ne-input" type="text" maxlength="40" class="w-full bg-transparent text-white text-lg outline-none pb-2" style="border-bottom:2px solid var(--aura-btn,#22c55e);" autocomplete="off">
+            <div class="flex justify-end mt-5" style="gap:24px;">
+                <button type="button" id="ne-cancel" class="text-lg" style="color:var(--aura-btn,#22c55e)">İptal</button>
+                <button type="button" id="ne-save" class="text-lg" style="color:var(--aura-btn,#22c55e)">Kaydet</button>
+            </div>
+        </div>`;
+    document.body.appendChild(el);
+    const inp = el.querySelector('#ne-input');
+    inp.value = user.name || '';
+    let done = false;
+    const close = () => { if (done) return; done = true; el.remove(); popBackState(); };
+    pushBackState(() => { if (!done) { done = true; el.remove(); } });
+    setTimeout(() => inp.focus(), 50);
+    el.addEventListener('click', (e) => { if (e.target === el) close(); });
+    el.querySelector('#ne-cancel').addEventListener('click', close);
+    el.querySelector('#ne-save').addEventListener('click', async () => {
+        const v = inp.value.trim();
+        if (!v) { alert("İsim boş olamaz kanka!"); return; }
+        if (v !== user.name) await saveUserFields({ name: v });
+        close();
+    });
+}
+
+async function openProfilePanel() {
+    let user = getCurrentUser();
+    if (!user || !profilePanel) return;
+    updatePrivacyLabel();
+    refreshProfileView();
     profilePanel.classList.remove('hidden');
     profilePanel.classList.add('flex');
     pushBackState(closeProfilePanel);
 
-    // 2. Firestore'dan güncel ve taze kullanıcı dokümanını çek
     try {
-        const userDocRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userDocRef);
-
+        const userSnap = await getDoc(doc(db, "users", user.uid));
         if (userSnap.exists()) {
-            const freshData = userSnap.data();
-
-            // Güncel bilgileri objeye ve ekrana yansıt
+            const f = userSnap.data();
             user = {
                 ...user,
-                name: freshData.name || user.name || '',
-                about: freshData.about || user.about || '',
-                email: freshData.email || user.email || '',
-                phone: freshData.phone || user.phone || '',
-                avatar: freshData.avatar || user.avatar || null
+                name: f.name || user.name || '',
+                about: f.about || user.about || '',
+                email: f.email || user.email || '',
+                phone: f.phone || user.phone || '',
+                username: f.username || user.username || '',
+                avatar: f.avatar || user.avatar || null
             };
-
-            // Önbellekleri ve state'i tazele
             localStorage.setItem('aurachat_user', JSON.stringify(user));
             setCurrentUser(user);
-
-            // Arayüz elemanlarını taze veriyle doldur
-            if (profileName) profileName.value = user.name;
-            if (profileAbout) profileAbout.value = user.about;
-            if (profileEmail) profileEmail.textContent = user.email || '-';
-            if (profilePhone) profilePhone.textContent = user.phone || '-';
-            renderAvatar(user);
+            refreshProfileView();
         }
     } catch (err) {
         console.error("Taze profil verisi alınamadı:", err);
@@ -473,79 +693,24 @@ if (profileBackBtn) {
         refreshSettingsHeader();
     });
 }
-
-// Avatara tıklayınca yeni fotoğraf seç - sadece önizleme, kaydet'e basınca yazılır
-if (profileAvatarInput) {
-    profileAvatarInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        profileAvatarInput.value = '';
-        if (!file) return;
-
-        // WhatsApp tarzı kırpma ekranı
-        const cropped = await openImageCropper(file, { size: 400, quality: 0.75 });
-        if (!cropped) return; // İptal
-
-        if (profileAvatar) {
-            profileAvatar.innerHTML = `<div class="w-full h-full flex items-center justify-center"><i class="fa-solid fa-spinner fa-spin text-white"></i></div>`;
-        }
-
-        try {
-            pendingAvatarBase64 = cropped;
-            if (profileAvatar) {
-                profileAvatar.style.backgroundColor = '';
-                profileAvatar.innerHTML = `<img src="${pendingAvatarBase64}" class="w-full h-full object-cover">`;
-            }
-        } catch (err) {
-            alert("Fotoğraf işlenemedi kanka, başka bir tane dene: " + err.message);
-            const user = getCurrentUser();
-            if (user) renderAvatar(user);
-        }
-    });
+if (profilePanel) {
+    profilePanel.querySelector('#profile-avatar-btn').addEventListener('click', openAvatarViewer);
+    profilePanel.querySelector('#profile-cam-btn').addEventListener('click', openAvatarSheet);
+    profilePanel.querySelector('#prow-name').addEventListener('click', openNameEditor);
+    profilePanel.querySelector('#prow-about').addEventListener('click', openAboutPage);
 }
 
-// İsim + durum + (varsa) yeni avatarı Firestore'a ve localStorage'a kaydeder
-if (profileSaveBtn) {
-    profileSaveBtn.addEventListener('click', async () => {
-        const user = getCurrentUser();
-        if (!user) return;
-
-        const newName = profileName ? profileName.value.trim() : user.name;
-        const newAbout = profileAbout ? profileAbout.value.trim() : (user.about || '');
-
-        if (!newName) {
-            alert("İsim boş olamaz kanka!");
-            return;
-        }
-
-        const originalContent = profileSaveBtn.innerHTML;
-        profileSaveBtn.disabled = true;
-        profileSaveBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Kaydediliyor...</span>`;
-
-        try {
-            const updates = { name: newName, about: newAbout };
-            if (pendingAvatarBase64) updates.avatar = pendingAvatarBase64;
-
-            await updateDoc(doc(db, "users", user.uid), updates);
-
-            const updatedUser = {
-                ...user,
-                name: newName,
-                about: newAbout,
-                avatar: pendingAvatarBase64 || user.avatar
-            };
-            localStorage.setItem('aurachat_user', JSON.stringify(updatedUser));
-            setCurrentUser(updatedUser);
-            pendingAvatarBase64 = null;
-
-            alert("Profilin güncellendi kanka!");
-        } catch (err) {
-            alert("Profil güncellenemedi: " + err.message);
-        } finally {
-            profileSaveBtn.disabled = false;
-            profileSaveBtn.innerHTML = originalContent;
-        }
-    });
+// Kamera / galeriden seçilen resim: kırp, hemen kaydet
+async function handleAvatarFile(input) {
+    const file = input.files[0];
+    input.value = '';
+    if (!file) return;
+    const cropped = await openImageCropper(file, { size: 400, quality: 0.75 });
+    if (!cropped) return;
+    if (await saveUserFields({ avatar: cropped })) toastMsg('Profil resmi güncellendi');
 }
+if (profileAvatarInput) profileAvatarInput.addEventListener('change', () => handleAvatarFile(profileAvatarInput));
+if (profileCameraInput) profileCameraInput.addEventListener('change', () => handleAvatarFile(profileCameraInput));
 
 // Çıkış yaparken hem Firebase oturumunu hem tüm önbelleği temizle
 if (profileLogoutBtn) {
