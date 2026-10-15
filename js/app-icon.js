@@ -7,9 +7,11 @@
 
 import { pushBackState, popBackState } from "./back-handler.js";
 import { showToast } from "./chat-core.js";
+import { auraDialog } from "./aura-dialog.js";
 
 const COUNT = 15;
 let panelEl = null;
+let changedInPanel = false; // bu açılışta ikon değiştirildi mi
 
 function bridge() {
     return window.AuraIcon && window.AuraIcon.set ? window.AuraIcon : null;
@@ -83,6 +85,7 @@ function renderGrid(cur) {
 
 function openPanel() {
     if (panelEl) return;
+    changedInPanel = false;
     const black = document.documentElement.hasAttribute('data-aura-black');
     panelEl = document.createElement('div');
     panelEl.className = 'fixed inset-0 flex flex-col';
@@ -102,7 +105,17 @@ function openPanel() {
     document.body.appendChild(panelEl);
         loadAvailable().then(() => { if (panelEl) renderGrid(currentIcon()); });
     panelEl.querySelector('[data-back]').addEventListener('click', () => closePanel(false));
-    panelEl.querySelector('[data-ok]').addEventListener('click', () => closePanel(false));
+    panelEl.querySelector('[data-ok]').addEventListener('click', async () => {
+        // İkon değiştirildiyse ortada uyarı penceresi: ne zaman devreye gireceğini söyler
+        if (changedInPanel) {
+            await auraDialog({
+                title: 'Uygulama ikonu, uygulamayı kapattıktan sonra devreye girecek.',
+                buttons: [{ id: 'ok', label: 'Tamam' }],
+                accent: accent()
+            });
+        }
+        closePanel(false);
+    });
     panelEl.addEventListener('click', (e) => {
         const b = e.target.closest('[data-icon]');
         if (!b) return;
@@ -111,6 +124,7 @@ function openPanel() {
         let ok = false;
         try { ok = bridge().set(n); } catch (err) {}
         if (ok) {
+            changedInPanel = true;
             renderGrid(n);
         } else {
             showToast('İkon değiştirilemedi', 2500);
