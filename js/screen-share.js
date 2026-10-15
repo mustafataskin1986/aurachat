@@ -2,7 +2,9 @@
 // EKRAN PAYLAŞIMI (tek yönlü, 1'e 1)
 // - Paylaşan: telefonun tamamını paylaşır. Sadece Android uygulamasında (APK) çalışır,
 //   ekran yakalama native tarafta (AuraScreen), kareler buraya JPEG olarak gelir,
-//   canvas -> captureStream -> WebRTC ile karşıya gider.
+//   canvas -> captureStream -> WebRTC ile karşıya gider (YEDEK yöntem, "jpeg").
+//   Asıl yöntem "h264": telefonun donanım kodlayıcısı ekranı H.264 videoya çevirir, parçalar WebRTC veri kanalından
+//   gider, izleyen tarayıcı WebCodecs (VideoDecoder) ile açıp canvas'a çizer. İzleyen cihaz desteklemiyorsa "jpeg"e düşer.
 // - İzleyen: uygulamada ya da tarayıcıda izleyebilir.
 // - Sinyalleşme: chats/{chatId}/call/screen (arama belgesi 'current' ile karışmaz),
 //   davet: screenInvites/{izleyenUid}
@@ -194,6 +196,9 @@ export async function startScreenShareTo(otherUid, otherName, otherAvatar) {
         if (d.status === 'ended') { endSession('Ekran paylaşımı sona erdi', false); return; }
         if (d.status === 'accepted' && !sess.capturing) {
             sess.capturing = true;
+            // İzleyen H.264 çözebiliyor ve bu telefonda kodlayıcı varsa H.264, yoksa eski JPEG yöntemi
+            const A = window.AuraScreen;
+            sess.mode = (d.h264 === true && A && typeof A.supportsH264 === 'function' && typeof A.startWithMode === 'function' && A.supportsH264()) ? 'h264' : 'jpeg';
             hideWait();
             beginCapture();
         }
@@ -218,7 +223,8 @@ function hideWait() { if (waitEl) { waitEl.remove(); waitEl = null; } }
 function beginCapture() {
     if (!sess) return;
     try {
-        window.AuraScreen.start();
+        if (sess.mode === 'h264') window.AuraScreen.startWithMode(true);
+        else window.AuraScreen.start();
     } catch (e) {
         endSession('Ekran yakalama başlatılamadı', true);
     }
@@ -230,7 +236,14 @@ window.__auraScreenDenied = function () {
 };
 
 window.__auraScreenStarted = function () {
-    if (sess && sess.role === 'sharer') showBar('Ekranın paylaşılıyor');
+    if (sess && sess.role === 'sharer') {
+        showBar('Ekranın paylaşılıyor');
+        // H.264'te video hemen akar: bağlantıyı şimdi kur (JPEG'de ilk kare gelince kurulur)
+        if (sess.mode === 'h264' && !sess.pc && !sess.connecting) {
+            sess.connecting = true;
+            connectSharer('h264').catch(() => endSession('Bağlantı kurulamadı', true));
+        }
+    }
 };
 
 window.__auraScreenStopped = function () {
@@ -252,29 +265,146 @@ window.__auraScreenFrame = function (b64) {
         sharerCtx.drawImage(img, 0, 0, sharerCanvas.width, sharerCanvas.height);
         if (!sess.pc && !sess.connecting) {
             sess.connecting = true;
-            connectSharer().catch(() => endSession('Bağlantı kurulamadı', true));
+            connectSharer('jpeg').catch(() => endSession('Bağlantı kurulamadı', true));
         }
     };
     img.src = 'data:image/jpeg;base64,' + b64;
 };
 
-async function connectSharer() {
+// ---- H.264 yardımcıları ----
+function b64ToBytes(b64) {
+    const bin = atob(b64);
+    const u = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return u;
+}
+
+// Başta SPS (NAL tipi 7) var mı?
+function hasSps(u8) {
+    const n = Math.min(u8.length - 5, 48);
+    for (let i = 0; i < n; i++) {
+        if (u8[i] === 0 && u8[i + 1] === 0) {
+            if (u8[i + 2] === 1 && (u8[i + 3] & 31) === 7) return true;
+            if (u8[i + 2] === 0 && u8[i + 3] === 1 && (u8[i + 4] & 31) === 7) return true;
+        }
+    }
+    return false;
+}
+
+// SPS'ten WebCodecs codec dizesi: avc1.PPCCLL
+function codecFromSps(u8) {
+    const hex = (v) => ('0' + (v & 255).toString(16)).slice(-2);
+    for (let i = 0; i < u8.length - 8; i++) {
+        let k = -1;
+        if (u8[i] === 0 && u8[i + 1] === 0 && u8[i + 2] === 1 && (u8[i + 3] & 31) === 7) k = i + 4;
+        else if (u8[i] === 0 && u8[i + 1] === 0 && u8[i + 2] === 0 && u8[i + 3] === 1 && (u8[i + 4] & 31) === 7) k = i + 5;
+        if (k > 0) return 'avc1.' + hex(u8[k]) + hex(u8[k + 1]) + hex(u8[k + 2]);
+    }
+    return 'avc1.42E01F';
+}
+
+function askKeyFrame() {
+    try { if (window.AuraScreen && window.AuraScreen.requestKeyFrame) window.AuraScreen.requestKeyFrame(); } catch (e) {}
+}
+
+function sendMeta() {
+    const s = sess;
+    if (!s || s.role !== 'sharer' || !s.dc || s.dc.readyState !== 'open' || !s.codec || !s.w || !s.h) return;
+    try {
+        s.dc.send(JSON.stringify({ t: 'meta', codec: s.codec, w: s.w, h: s.h }));
+        s.metaSent = true;
+        s.waitKey = true;
+        askKeyFrame();
+    } catch (e) {}
+}
+
+// Native taraf: H.264 ayar paketi (SPS/PPS)
+window.__auraScreenCfg = function (b64, w, h) {
+    const s = sess;
+    if (!s || s.role !== 'sharer' || s.ended) return;
+    try { s.cfg = b64ToBytes(b64); s.codec = codecFromSps(s.cfg); s.w = w; s.h = h; } catch (e) { return; }
+    sendMeta();
+};
+
+// Native taraf: yakalama boyutu (bazı cihazlar SPS/PPS'i ayrı pakette vermez, boyut yine de bilinsin)
+window.__auraScreenSize = function (w, h) {
+    const s = sess;
+    if (!s || s.role !== 'sharer') return;
+    s.w = w; s.h = h;
+    sendMeta();
+};
+
+// Native taraf: H.264 kare. Paket: [tip(1: delta, 2: anahtar)][süre ms (4 bayt)][veri]
+window.__auraScreenH264 = function (b64, key, pts) {
+    const s = sess;
+    if (!s || s.role !== 'sharer' || s.ended || s.mode !== 'h264') return;
+    // Ayrı SPS/PPS paketi gelmediyse codec bilgisini anahtar karenin içinden al
+    if (!s.codec && key) {
+        try { const u0 = b64ToBytes(b64); if (hasSps(u0)) { s.codec = codecFromSps(u0); sendMeta(); } } catch (e) {}
+    }
+    const dc = s.dc;
+    if (!dc || dc.readyState !== 'open' || !s.metaSent) return;
+    // Hat tıkandıysa her şeyi atla, yeni anahtar kare bekle (gecikme birikmesin)
+    if (dc.bufferedAmount > 600000) {
+        if (!s.waitKey) s.waitKey = true;
+        const now = Date.now();
+        if (!s.lastKeyReq || now - s.lastKeyReq > 1000) { s.lastKeyReq = now; askKeyFrame(); }
+        return;
+    }
+    if (s.waitKey && !key) return;
+    let u;
+    try { u = b64ToBytes(b64); } catch (e) { return; }
+    if (key) {
+        s.waitKey = false;
+        // Anahtar karede SPS/PPS yoksa başına ekle (izleyen çözücü her anahtar karede başlayabilsin)
+        if (s.cfg && !hasSps(u)) {
+            const m = new Uint8Array(s.cfg.length + u.length);
+            m.set(s.cfg, 0);
+            m.set(u, s.cfg.length);
+            u = m;
+        }
+    }
+    if (u.length > 250000) { s.waitKey = true; askKeyFrame(); return; }
+    const out = new Uint8Array(u.length + 5);
+    out[0] = key ? 2 : 1;
+    new DataView(out.buffer).setUint32(1, pts >>> 0);
+    out.set(u, 5);
+    try { dc.send(out); } catch (e) {}
+};
+
+async function connectSharer(mode) {
     const s = sess;
     if (!s) return;
-    const stream = sharerCanvas.captureStream(10);
-    const track = stream.getVideoTracks()[0];
-    try { track.contentHint = 'detail'; } catch (e) {}
-
+    const h264 = mode === 'h264';
     const pc = new RTCPeerConnection(RTC_CONFIG);
     s.pc = pc;
-    const sender = pc.addTrack(track, stream);
-    try {
-        const p = sender.getParameters();
-        if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-        p.encodings[0].maxBitrate = 2500000;
-        p.degradationPreference = 'maintain-resolution';
-        await sender.setParameters(p);
-    } catch (e) {}
+
+    if (h264) {
+        const dc = pc.createDataChannel('screen', { ordered: true });
+        dc.binaryType = 'arraybuffer';
+        s.dc = dc;
+        dc.onopen = () => sendMeta();
+        dc.onmessage = (ev) => {
+            if (typeof ev.data !== 'string') return;
+            try { if (JSON.parse(ev.data).t === 'kf') { s.waitKey = true; askKeyFrame(); } } catch (e) {}
+        };
+    } else {
+        const stream = sharerCanvas.captureStream(10);
+        const track = stream.getVideoTracks()[0];
+        try { track.contentHint = 'detail'; } catch (e) {}
+        const sender = pc.addTrack(track, stream);
+        try {
+            const p = sender.getParameters();
+            if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+            p.encodings[0].maxBitrate = 2500000;
+            p.degradationPreference = 'maintain-resolution';
+            await sender.setParameters(p);
+        } catch (e) {}
+        // Ekran duruyorsa da görüntü akması için son kare periyodik yeniden çizilir
+        redrawTimer = setInterval(() => {
+            if (sharerCtx && lastImg) { try { sharerCtx.drawImage(lastImg, 0, 0, sharerCanvas.width, sharerCanvas.height); } catch (e) {} }
+        }, 250);
+    }
 
     pc.onicecandidate = (ev) => {
         if (ev.candidate) addDoc(candCol(s.chatId, 'callerCandidates'), Object.assign({ sid: s.sid }, ev.candidate.toJSON())).catch(() => {});
@@ -283,11 +413,6 @@ async function connectSharer() {
         if (!sess || sess !== s) return;
         if (pc.connectionState === 'failed') endSession('Bağlantı koptu', true);
     };
-
-    // Ekran duruyorsa da görüntü akması için son kare periyodik yeniden çizilir
-    redrawTimer = setInterval(() => {
-        if (sharerCtx && lastImg) { try { sharerCtx.drawImage(lastImg, 0, 0, sharerCanvas.width, sharerCanvas.height); } catch (e) {} }
-    }, 250);
 
     s.unsubCand = onSnapshot(candCol(s.chatId, 'calleeCandidates'), (snap) => {
         snap.docChanges().forEach((ch) => {
@@ -301,7 +426,7 @@ async function connectSharer() {
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await updateDoc(screenDoc(s.chatId), { status: 'offer', offer: { type: offer.type, sdp: offer.sdp } });
+    await updateDoc(screenDoc(s.chatId), { status: 'offer', mode: h264 ? 'h264' : 'jpeg', offer: { type: offer.type, sdp: offer.sdp } });
 }
 
 // ==========================================
@@ -364,6 +489,7 @@ async function acceptInvite() {
     const pc = new RTCPeerConnection(RTC_CONFIG);
     s.pc = pc;
     pc.addTransceiver('video', { direction: 'recvonly' });
+    pc.ondatachannel = (ev) => viewerAttachChannel(s, ev.channel);
     pc.ontrack = (ev) => {
         const v = viewerEl && viewerEl.querySelector('video');
         if (v) {
@@ -409,12 +535,82 @@ async function acceptInvite() {
         }
     });
 
-    await updateDoc(screenDoc(s.chatId), { status: 'accepted' }).catch(() => {});
+    // Bu cihaz H.264 çözebiliyor mu? (WebCodecs) Paylaşan buna göre yöntem seçer
+    let h264ok = false;
+    try {
+        if (window.VideoDecoder && window.EncodedVideoChunk && VideoDecoder.isConfigSupported) {
+            const r = await VideoDecoder.isConfigSupported({ codec: 'avc1.42E01F', optimizeForLatency: true, avc: { format: 'annexb' } });
+            h264ok = !!(r && r.supported);
+        }
+    } catch (e) {}
+    await updateDoc(screenDoc(s.chatId), { status: 'accepted', h264: h264ok }).catch(() => {});
     deleteDoc(doc(db, "screenInvites", me.uid)).catch(() => {});
 
     s.timers.push(setTimeout(() => {
         if (sess === s && !s.answered) endSession('Paylaşım başlamadı', true);
     }, 40000));
+}
+
+// H.264 veri kanalı: paketleri WebCodecs ile çöz, canvas'a çiz (her zaman en yeni kare gösterilir)
+function viewerAttachChannel(s, ch) {
+    ch.binaryType = 'arraybuffer';
+    let pending = null;
+    let raf = 0;
+    const requestKey = () => { try { if (ch.readyState === 'open') ch.send(JSON.stringify({ t: 'kf' })); } catch (e) {} };
+
+    function paint(canvas, ctx) {
+        raf = 0;
+        if (!pending) return;
+        try { ctx.drawImage(pending, 0, 0, canvas.width, canvas.height); } catch (e) {}
+        try { pending.close(); } catch (e) {}
+        pending = null;
+    }
+
+    function makeDecoder(meta) {
+        if (!viewerEl || sess !== s) return;
+        const canvas = viewerEl.querySelector('#ss-view-canvas');
+        const video = viewerEl.querySelector('video');
+        if (!canvas) return;
+        canvas.width = meta.w;
+        canvas.height = meta.h;
+        const ctx = canvas.getContext('2d');
+        if (video) video.style.display = 'none';
+        canvas.style.display = 'block';
+        if (s.dec) { try { s.dec.close(); } catch (e) {} }
+        const dec = new VideoDecoder({
+            output: (frame) => {
+                if (pending) { try { pending.close(); } catch (e) {} }
+                pending = frame;
+                const st = viewerEl && viewerEl.querySelector('#ss-view-status');
+                if (st) st.style.display = 'none';
+                if (!raf) raf = requestAnimationFrame(() => paint(canvas, ctx));
+            },
+            error: () => { s.gotKey = false; requestKey(); }
+        });
+        dec.configure({ codec: meta.codec, codedWidth: meta.w, codedHeight: meta.h, optimizeForLatency: true, avc: { format: 'annexb' } });
+        s.dec = dec;
+        s.gotKey = false;
+    }
+
+    ch.onmessage = (ev) => {
+        if (sess !== s) return;
+        if (typeof ev.data === 'string') {
+            try { const m = JSON.parse(ev.data); if (m && m.t === 'meta') makeDecoder(m); } catch (e) {}
+            return;
+        }
+        const dec = s.dec;
+        if (!dec || dec.state === 'closed') return;
+        const u = new Uint8Array(ev.data);
+        if (u.length < 6) return;
+        const key = u[0] === 2;
+        if (!s.gotKey) { if (!key) return; s.gotKey = true; }
+        // Çözücü geride kaldıysa: delta kareleri atla, yeni anahtar kare iste
+        if (dec.decodeQueueSize > 8 && !key) { s.gotKey = false; requestKey(); return; }
+        const ts = new DataView(ev.data).getUint32(1) * 1000;
+        try {
+            dec.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: ts, data: u.subarray(5) }));
+        } catch (e) { s.gotKey = false; requestKey(); }
+    };
 }
 
 function showViewer(title) {
@@ -428,6 +624,7 @@ function showViewer(title) {
         </div>
         <div style="position:relative;flex:1;min-height:0;">
             <video autoplay playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;"></video>
+            <canvas id="ss-view-canvas" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none;"></canvas>
             <div id="ss-view-status" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:14px;">Bağlanıyor...</div>
         </div>`;
     document.body.appendChild(viewerEl);
@@ -481,6 +678,8 @@ function endSession(message, notifyRemote) {
     if (redrawTimer) { clearInterval(redrawTimer); redrawTimer = null; }
     if (s.unsubDoc) { try { s.unsubDoc(); } catch (e) {} }
     if (s.unsubCand) { try { s.unsubCand(); } catch (e) {} }
+    if (s.dec) { try { s.dec.close(); } catch (e) {} s.dec = null; }
+    if (s.dc) { try { s.dc.close(); } catch (e) {} }
     if (s.pc) { try { s.pc.close(); } catch (e) {} }
 
     if (s.role === 'sharer') {
