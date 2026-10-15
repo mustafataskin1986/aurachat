@@ -251,12 +251,6 @@ async function onRow(id) {
         return;
     }
 
-    if (id === 'media') {
-        if (getCurrentChatId() !== cid && !(await ensureChat())) return;
-        setTimeout(() => openSharedMedia(cid), getCurrentChatId() === cid ? 0 : 150);
-        return;
-    }
-
     if (id === 'starred') { closeInfo(); openStarredPanel(); return; }
 
     if (id === 'theme') {
@@ -480,7 +474,7 @@ function refreshMediaCount() {
     if (getCurrentChatId() !== cid) {
         try { prewarmChatSession(cid, curUser.uid); } catch (e) {}
     }
-    refreshMediaBlock(infoEl.querySelector('#ci-media-block'), cid);
+    refreshMediaBlock(infoEl.querySelector('#ci-media-block'), cid, { ensure: async () => (getCurrentChatId() === cid) || ensureChat() });
 }
 
 // "Sohbette göster": kişi bilgisi sayfası da kapansın (Tüm medyalar önce kapanır)
