@@ -106,13 +106,20 @@ function openPanel() {
         loadAvailable().then(() => { if (panelEl) renderGrid(currentIcon()); });
     panelEl.querySelector('[data-back]').addEventListener('click', () => closePanel(false));
     panelEl.querySelector('[data-ok]').addEventListener('click', async () => {
-        // İkon değiştirildiyse ortada uyarı penceresi: ne zaman devreye gireceğini söyler
+        // İkon değiştirildiyse ortada pencere: şimdi mi, uygulamadan çıkınca mı?
         if (changedInPanel) {
-            await auraDialog({
-                title: 'Uygulama ikonu, uygulamayı kapattıktan sonra devreye girecek.',
-                buttons: [{ id: 'ok', label: 'Tamam' }],
+            const r = await auraDialog({
+                title: 'Uygulama ikonu, uygulama kapandıktan sonra devreye girer. Uygulama şimdi kapanıp yeniden açılsın mı?',
+                buttons: [{ id: 'now', label: 'Şimdi değiştir' }, { id: 'later', label: 'Daha sonra' }],
                 accent: accent()
             });
+            if (r && r.id === 'now') {
+                let started = false;
+                try { started = !!(bridge().applyNow && bridge().applyNow()); } catch (err) {}
+                if (!started) showToast('Uygulamadan çıkınca değişecek', 2500);
+            } else {
+                showToast('İkon, uygulamadan çıkınca değişecek', 2500);
+            }
         }
         closePanel(false);
     });
