@@ -372,6 +372,20 @@ window.__auraScreenH264 = function (b64, key, pts) {
     try { dc.send(out); } catch (e) {}
 };
 
+// Native taraf: iç ses parçası (24 kHz mono 16 bit PCM). Paket: [3][süre(4 bayt, kullanılmaz)][PCM]
+window.__auraScreenAudio = function (b64) {
+    const s = sess;
+    if (!s || s.role !== 'sharer' || s.ended || s.mode !== 'h264') return;
+    const dc = s.dc;
+    if (!dc || dc.readyState !== 'open' || dc.bufferedAmount > 400000) return;
+    let u;
+    try { u = b64ToBytes(b64); } catch (e) { return; }
+    const out = new Uint8Array(u.length + 5);
+    out[0] = 3;
+    out.set(u, 5);
+    try { dc.send(out); } catch (e) {}
+};
+
 async function connectSharer(mode) {
     const s = sess;
     if (!s) return;
@@ -508,6 +522,16 @@ async function acceptInvite() {
 
     showViewer(inv.fromName || 'Ekran paylaşımı');
     pushBackState(() => endSession('Ekran izleme kapatıldı', true));
+    // Ses çalma izni için "İzle" dokunuşu sırasında bağlam oluşturulur; ekrana dokununca da yeniden başlatılır
+    try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) {
+            try { s.actx = new AC({ sampleRate: 24000 }); } catch (e) { s.actx = new AC(); }
+            s.nextT = 0;
+            s.actx.resume().catch(() => {});
+            viewerEl.addEventListener('click', () => { try { if (s.actx && s.actx.state === 'suspended') s.actx.resume(); } catch (e) {} });
+        }
+    } catch (e) {}
 
     s.unsubCand = onSnapshot(candCol(s.chatId, 'callerCandidates'), (snap) => {
         snap.docChanges().forEach((ch) => {
@@ -549,6 +573,35 @@ async function acceptInvite() {
     s.timers.push(setTimeout(() => {
         if (sess === s && !s.answered) endSession('Paylaşım başlamadı', true);
     }, 40000));
+}
+
+// İzleyen: gelen iç ses parçalarını kısa bir tamponla sırayla çal (24 kHz mono PCM)
+function playAudioChunk(s, u8) {
+    try {
+        if (!s.actx) {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            try { s.actx = new AC({ sampleRate: 24000 }); } catch (e) { s.actx = new AC(); }
+            s.nextT = 0;
+        }
+        const ctx = s.actx;
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        const n = u8.length >> 1;
+        if (n < 10) return;
+        const buf = ctx.createBuffer(1, n, 24000);
+        const ch = buf.getChannelData(0);
+        const dv = new DataView(u8.buffer, u8.byteOffset, n * 2);
+        for (let i = 0; i < n; i++) ch[i] = dv.getInt16(i * 2, true) / 32768;
+        const now = ctx.currentTime;
+        // Geride kaldıysak (sessizlik / takılma) 120 ms'lik tamponla yeniden başla; çok öne geçtiyse (gecikme birikti) parçayı at
+        if (!s.nextT || s.nextT < now + 0.02) s.nextT = now + 0.12;
+        else if (s.nextT - now > 0.7) return;
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start(s.nextT);
+        s.nextT += buf.duration;
+    } catch (e) {}
 }
 
 // H.264 veri kanalı: paketleri WebCodecs ile çöz, canvas'a çiz (her zaman en yeni kare gösterilir)
@@ -598,10 +651,11 @@ function viewerAttachChannel(s, ch) {
             try { const m = JSON.parse(ev.data); if (m && m.t === 'meta') makeDecoder(m); } catch (e) {}
             return;
         }
-        const dec = s.dec;
-        if (!dec || dec.state === 'closed') return;
         const u = new Uint8Array(ev.data);
         if (u.length < 6) return;
+        if (u[0] === 3) { playAudioChunk(s, u.subarray(5)); return; }
+        const dec = s.dec;
+        if (!dec || dec.state === 'closed') return;
         const key = u[0] === 2;
         if (!s.gotKey) { if (!key) return; s.gotKey = true; }
         // Çözücü geride kaldıysa: delta kareleri atla, yeni anahtar kare iste
@@ -679,6 +733,7 @@ function endSession(message, notifyRemote) {
     if (s.unsubDoc) { try { s.unsubDoc(); } catch (e) {} }
     if (s.unsubCand) { try { s.unsubCand(); } catch (e) {} }
     if (s.dec) { try { s.dec.close(); } catch (e) {} s.dec = null; }
+    if (s.actx) { try { s.actx.close(); } catch (e) {} s.actx = null; }
     if (s.dc) { try { s.dc.close(); } catch (e) {} }
     if (s.pc) { try { s.pc.close(); } catch (e) {} }
 
