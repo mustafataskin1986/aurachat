@@ -12,7 +12,7 @@ import { db } from "./firebase-init.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getCurrentUser, getCurrentChatId, selectChat, prewarmChatSession, showToast, openChatSearch, openStarredPanel, toggleBlockUser, wipeChat, setDisappearAfter } from "./chat-core.js";
 import { openChatThemePicker } from "./chat-theme.js";
-import { openSharedMedia, mediaCounts } from "./shared-media.js";
+import { openSharedMedia, mediaBlockHtml, refreshMediaBlock } from "./shared-media.js";
 import { getUserColor, getInitials, escapeHtml, getChatId } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { auraDialog, auraAccent } from "./aura-dialog.js";
@@ -166,12 +166,7 @@ function ensureEl() {
                 </div>
             </div>
             <div class="mt-6 border-t border-gray-800/60" id="ci-rows">
-                <button type="button" data-row="media" class="w-full px-5 py-4 flex items-center space-x-5 text-left active:bg-white/5 transition">
-                    <i class="fa-regular fa-image text-sky-300 text-lg w-6 text-center"></i>
-                    <span class="min-w-0 flex-1"><span class="block text-[16px] text-white">Medya, bağlantılar ve belgeler</span></span>
-                    <span id="ci-media-count" class="text-gray-400 text-[15px]">0</span>
-                    <i class="fa-solid fa-chevron-right text-gray-500 text-xs"></i>
-                </button>
+                ${mediaBlockHtml('ci-media-block')}
                 ${rowHtml('fav', 'fa-heart', 'text-pink-400', 'Favorilere ekle', '')}
                 ${rowHtml('starred', 'fa-star', 'text-amber-400', 'Yıldızlı mesajlar', '')}
                 ${rowHtml('mute', 'fa-bell-slash', 'text-amber-400', 'Sohbeti sessize al', '')}
@@ -256,7 +251,11 @@ async function onRow(id) {
         return;
     }
 
-    if (id === 'media') { openSharedMedia(cid); return; }
+    if (id === 'media') {
+        if (getCurrentChatId() !== cid && !(await ensureChat())) return;
+        setTimeout(() => openSharedMedia(cid), getCurrentChatId() === cid ? 0 : 150);
+        return;
+    }
 
     if (id === 'starred') { closeInfo(); openStarredPanel(); return; }
 
@@ -478,17 +477,14 @@ function refreshMediaCount() {
     const me = getCurrentUser();
     if (!me || !curUser || !infoEl) return;
     const cid = getChatId(me.uid, curUser.uid);
-    const put = () => {
-        const c = infoEl && infoEl.querySelector('#ci-media-count');
-        if (c) c.textContent = String(mediaCounts(cid).total);
-    };
-    put();
     if (getCurrentChatId() !== cid) {
         try { prewarmChatSession(cid, curUser.uid); } catch (e) {}
-        setTimeout(put, 800);
-        setTimeout(put, 2500);
     }
+    refreshMediaBlock(infoEl.querySelector('#ci-media-block'), cid);
 }
+
+// "Sohbette göster": kişi bilgisi sayfası da kapansın (Tüm medyalar önce kapanır)
+window.addEventListener('aura-show-in-chat', () => setTimeout(closeInfo, 0));
 
 export function openContactInfo(uid, beforeMessage) {
     const me = getCurrentUser();
