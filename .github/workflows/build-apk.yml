@@ -3236,8 +3236,9 @@ jobs:
           # Adaptive ikonun arka plan rengi: maskable ikonun köşe pikseli
           bg = mask.getpixel((4, 4))
           if bg[3] < 255:
-              bg = (0, 0, 0, 255)
-          bg_hex = "#%02x%02x%02x" % (bg[0], bg[1], bg[2])
+              bg_hex = "#00000000"   # köşe şeffafsa arka plan da şeffaf kalsın (siyaha boyama)
+          else:
+              bg_hex = "#%02x%02x%02x" % (bg[0], bg[1], bg[2])
 
           legacy = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
           fg = {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}
@@ -3317,8 +3318,10 @@ jobs:
               im = Image.open(src).convert("RGBA")
               bg = im.getpixel((4, 4))
               if bg[3] < 255:
-                  bg = (0, 0, 0, 255)
-              colors.append('    <color name="aura_alt_bg_%d">#%02x%02x%02x</color>' % (n, bg[0], bg[1], bg[2]))
+                  bg_hex = "#00000000"   # şeffaf ikon: arka plan şeffaf kalsın
+              else:
+                  bg_hex = "#%02x%02x%02x" % (bg[0], bg[1], bg[2])
+              colors.append('    <color name="aura_alt_bg_%d">%s</color>' % (n, bg_hex))
               for dens, size in legacy.items():
                   p = "%s/mipmap-%s" % (RES, dens)
                   os.makedirs(p, exist_ok=True)
@@ -3528,8 +3531,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk AuraChat.apk
-          gh release view apk-latest > /dev/null 2>&1 || gh release create apk-latest --title "AuraChat APK" --notes "En güncel Android uygulaması" --latest
-          gh release upload apk-latest AuraChat.apk --clobber
+          STAMP="Son derleme: $(TZ=Europe/Istanbul date '+%d.%m.%Y %H:%M') - commit ${GITHUB_SHA::7}"
+          # Sürümü her derlemede silip yeniden oluştur: sayfadaki tarih, etiket ve commit de güncellensin (indirme bağlantısı aynı kalır)
+          gh release delete apk-latest --cleanup-tag -y > /dev/null 2>&1 || true
+          if ! gh release create apk-latest AuraChat.apk --title "AuraChat APK" --notes "$STAMP" --target "$GITHUB_SHA" --latest; then
+            gh release view apk-latest > /dev/null 2>&1 || gh release create apk-latest --title "AuraChat APK" --notes "$STAMP" --latest
+            gh release upload apk-latest AuraChat.apk --clobber
+            gh release edit apk-latest --notes "$STAMP"
+          fi
 
       - name: Eski Çıktıları ve Kayıtları Temizle
         env:
