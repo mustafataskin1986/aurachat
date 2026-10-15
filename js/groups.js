@@ -17,6 +17,7 @@ import { auraDialog, auraAccent } from "./aura-dialog.js";
 import "./dark-toggle.js";
 import { openBackupMenu } from "./backup.js";
 import { openContactInfo } from "./contact-info.js";
+import { openSharedMedia, mediaBlockHtml, refreshMediaBlock } from "./shared-media.js";
 import { openScreenSharePicker } from "./screen-share.js";
 
 const sidebar = document.getElementById('sidebar');
@@ -362,6 +363,9 @@ function closeInfoPanelFromBack() {
     infoPanelOpen = false;
 }
 
+// "Sohbette göster": grup bilgisi de kapansın (Tüm medyalar önce kapanır)
+window.addEventListener('aura-show-in-chat', () => setTimeout(() => closeInfoPanel(), 0));
+
 function closeInfoPanel() {
     if (!infoPanelOpen) return;
     closeInfoPanelFromBack();
@@ -393,6 +397,7 @@ function ensureInfoPanel() {
                 </div>
                 <p id="group-info-count" class="text-gray-400 text-xs mt-1"></p>
             </div>
+            ${mediaBlockHtml('group-media-block')}
          <button type="button" id="group-add-member-btn" class="w-full flex items-center px-4 py-3 border-b border-gray-800/30 hover:bg-[#202c33]/60 text-left">
                 <span class="w-11 h-11 rounded-full bg-emerald-600 flex items-center justify-center text-white flex-shrink-0"><i class="fa-solid fa-user-plus"></i></span>
                 <span class="text-white text-sm font-medium ml-3">Üye ekle</span>
@@ -409,6 +414,7 @@ function ensureInfoPanel() {
     document.body.appendChild(el);
   el.querySelector('#group-info-back').addEventListener('click', closeInfoPanel);
   el.querySelector('#group-add-member-btn').addEventListener('click', () => openAddPanel());
+    el.querySelector('#group-media-block').addEventListener('click', () => { if (infoGroupId) openSharedMedia(infoGroupId); });
     el.querySelector('#group-rename-btn').addEventListener('click', () => renameGroup());
     el.querySelector('#group-photo-btn').addEventListener('click', () => changeGroupPhoto());
     el.querySelector('#group-leave-btn').addEventListener('click', async () => {
@@ -448,6 +454,7 @@ async function openGroupInfo(groupId) {
     el.classList.add('flex');
     infoPanelOpen = true;
     if (!wasOpen) pushBackState(closeInfoPanelFromBack);
+    refreshMediaBlock(el.querySelector('#group-media-block'), groupId);
 
     try {
         const snap = await getDoc(doc(db, "groups", groupId));
