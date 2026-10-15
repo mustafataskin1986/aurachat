@@ -67,6 +67,7 @@ import { watchGroupCallForChat } from "./group-call.js";
 import "./image-viewer.js";
 import { setupComposer } from "./chat-composer.js";
 import { setupMentions, resetMentions, collectMentions, clearChosenMentions, highlightMentions } from "./chat-mentions.js";
+import { openImageCropper } from "./image-cropper.js";
 import { buildPollHtml, openPollCreator, nextVotes, pollSummary } from "./poll.js";
 import { mountGallery, openGallery, closeGallery, setGalleryExpanded, galleryAvailable, gallerySelectedCount } from "./chat-gallery.js";
 
@@ -128,9 +129,15 @@ function unsavedSenderPhone(msg) {
     return String(u.phone);
 }
 
+// Gönderenin güncel adı (profilinden değiştirdiyse eski mesajlarda da yeni ad görünür)
+function liveSenderName(msg) {
+    const u = window.__aurachatUsers && msg.senderUid ? window.__aurachatUsers.get(msg.senderUid) : null;
+    return (u && u.name) || msg.senderName || '';
+}
+
 function senderLineHtml(msg, isImage) {
     const phone = unsavedSenderPhone(msg);
-    return `<div class="flex items-baseline justify-between gap-3 mb-0.5 ${isImage ? 'px-2 pt-1' : ''}"><span class="text-[11px] font-bold truncate" style="color:${senderColor(msg)}">${phone ? '~ ' : ''}${escapeHtml(msg.senderName)}</span>${phone ? `<span class="text-[11px] flex-shrink-0 text-gray-400">${escapeHtml(phone)}</span>` : ''}</div>`;
+    return `<div class="flex items-baseline justify-between gap-3 mb-0.5 ${isImage ? 'px-2 pt-1' : ''}"><span class="text-[11px] font-bold truncate" style="color:${senderColor(msg)}">${phone ? '~ ' : ''}${escapeHtml(liveSenderName(msg))}</span>${phone ? `<span class="text-[11px] flex-shrink-0 text-gray-400">${escapeHtml(phone)}</span>` : ''}</div>`;
 }
 // ------------------------------------------
 // GRUPTA MESAJ YANINDA AVATAR
@@ -169,7 +176,7 @@ function groupAvatarHtml(msg, mode) {
     const um = window.__aurachatUsers;
     const u = um && msg.senderUid ? um.get(msg.senderUid) : null;
     const src = u && u.avatar ? groupAvatarSrc(msg.senderUid, u.avatar) : '';
-    const nm = String(msg.senderName || (u && u.name) || '?').trim();
+    const nm = String((u && u.name) || msg.senderName || '?').trim();
     const initial = escapeHtml((nm.charAt(0) || '?').toUpperCase());
     const inner = src
         ? `<img src="${src}" draggable="false" style="width:${GAV_SIZE}px;height:${GAV_SIZE}px;border-radius:9999px;object-fit:cover;display:block;">`
@@ -5916,6 +5923,25 @@ function openViewer(o) {
             if (it && it.id) setTimeout(() => scrollToOriginalMessage(it.id), 250);
         }
     }, {
+        label: 'Profil resmi yap',
+        fn: async (it) => {
+            const src = it && it.src ? String(it.src) : '';
+            if (!src.startsWith('data:') && !src.startsWith('blob:')) { showToast('Resim henüz hazır değil'); return; }
+            window.closeImageViewer();
+            try {
+                const blob = await (await fetch(src)).blob();
+                const file = new File([blob], 'profil.jpg', { type: blob.type || 'image/jpeg' });
+                await new Promise((r) => setTimeout(r, 250));
+                const cropped = await openImageCropper(file, { size: 400, quality: 0.75 });
+                if (!cropped || !currentUser) return;
+                await updateDoc(doc(db, 'users', currentUser.uid), { avatar: cropped });
+                const updated = { ...currentUser, avatar: cropped };
+                try { localStorage.setItem('aurachat_user', JSON.stringify(updated)); } catch (e) {}
+                setCurrentUser(updated);
+                showToast('Profil resmi güncellendi');
+            } catch (e) { showToast('Profil resmi yapılamadı'); }
+        }
+    }, {
         label: 'Düzenle',
         fn: (it) => {
             const src = it && it.src ? String(it.src) : '';
@@ -5953,7 +5979,7 @@ function makeViewerItem(entry, msgId, src) {
         id: msgId,
         src: src,
         time: d && d.createdAt ? d.createdAt.toMillis() : Date.now(),
-        senderName: mine ? 'Sen' : ((d && d.senderName) || currentChatName || '')
+        senderName: mine ? 'Sen' : (liveSenderName(d || {}) || currentChatName || '')
     };
 }
 
