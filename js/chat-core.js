@@ -798,7 +798,7 @@ async function deleteChatDiskCache(chatId) {
 // ------------------------------------------
 // SOHBET OTURUMLARI (canlı dinleyici havuzu)
 // ------------------------------------------
-const MAX_WARM_SESSIONS = 3;
+const MAX_WARM_SESSIONS = 8;
 const chatSessions = new Map();
 let sessionTick = 0;
 
@@ -1904,6 +1904,7 @@ export function previewLaunchChat(L) {
         const name = L.name || 'Sohbet';
         let av = L.avatar || '';
         if (!av) { try { av = localStorage.getItem('aura_av_' + L.uid) || ''; } catch (e) {} }
+        try { if (window.__auraApplyTheme) window.__auraApplyTheme(L.chatId); } catch (e) {}
         activeChatName.textContent = name;
         activeChatStatus.textContent = '';
         if (av) {
@@ -7679,6 +7680,7 @@ export async function paintLaunchFromDisk(L) {
         const name = L.name || 'Sohbet';
         let av = L.avatar || '';
         if (!av) { try { av = localStorage.getItem('aura_av_' + L.uid) || ''; } catch (e) {} }
+        try { if (window.__auraApplyTheme) window.__auraApplyTheme(L.chatId); } catch (e) {}
         activeChatName.textContent = name;
         activeChatStatus.textContent = '';
         if (av) {
