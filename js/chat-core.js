@@ -6481,7 +6481,7 @@ if (attachBtn && imageInput) {
         vv.addEventListener('resize', onResize);
         fallbackTimer = setTimeout(finish, 700);
     });
-    messageContainer.addEventListener('click', closeAttachMenu);
+    // Boş ekrana / mesaja dokunmak popup'ı kapatmaz (klavye gibi); +, geri tuşu ya da bir seçenek kapatır
 
     // Seçilen resimler hemen gitmez: kutunun üstünde önizleme olarak bekler, gönder tuşuyla gider
     imageInput.addEventListener('change', (e) => {
