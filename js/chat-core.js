@@ -5435,11 +5435,19 @@ function buildReplyQuoteHtml(replyTo, isMine) {
     if (!replyTo) return '';
     const qColor = senderColor({ senderUid: replyTo.senderUid, senderName: replyTo.senderName }, 78);
     const qBg = isMine ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.10)';
-    return `<div class="reply-quote rounded-md px-2 py-1.5 mb-1.5 cursor-pointer" style="background:${qBg};border-left:3px solid ${qColor}" onclick="jumpToReply('${replyTo.msgId}', event)">
+    const qClick = replyTo.isStatus ? `openStatusFromReply('${replyTo.msgId}', '${replyTo.senderUid || ''}', event)` : `jumpToReply('${replyTo.msgId}', event)`;
+    return `<div class="reply-quote rounded-md px-2 py-1.5 mb-1.5 cursor-pointer" style="background:${qBg};border-left:3px solid ${qColor}" onclick="${qClick}">
         <p class="text-[11px] font-semibold truncate" style="color:${qColor}">${escapeHtml(replyTo.senderName || '')}</p>
         <p class="text-gray-300 text-[11px] truncate">${escapeHtml(replyTo.previewText || '')}</p>
     </div>`;
 }
+
+// Durum cevabındaki alıntıya dokununca durumu aç (status.js)
+window.openStatusFromReply = function (statusId, ownerUid, ev) {
+    try { if (ev) { ev.stopPropagation(); ev.preventDefault(); } } catch (e) {}
+    if (window.__auraOpenStatusById && window.__auraOpenStatusById(statusId, ownerUid)) return;
+    showToast('Bu durum artık yok');
+};
 
 window.replyToMessage = function (msgId) {
     if (!currentChatId || !currentUser || selectionMode) return;
