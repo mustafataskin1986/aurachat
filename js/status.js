@@ -22,6 +22,7 @@ import { openContactInfo } from "./contact-info.js";
 import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { auraDialog } from "./aura-dialog.js";
+import { setTab } from "./tabs.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TEXT_MS = 5000;
@@ -280,30 +281,16 @@ async function deleteStatus(id) {
     if (panelOpen) renderPanel();
 }
 
-// ---------------- PANEL ----------------
+// ---------------- SAYFA (alt bardaki "Durum" sekmesi, #tab-status içinde) ----------------
 let panelEl = null;
-let panelOpen = false;
-
-function closePanelFromBack() {
-    if (panelEl) { panelEl.classList.add('hidden'); panelEl.classList.remove('flex'); }
-    panelOpen = false;
-}
-
-function closePanel() {
-    if (!panelOpen) return;
-    closePanelFromBack();
-    popBackState();
-}
+let panelOpen = false;   // sayfa kurulduysa true: veri değişince yeniden çizilir
 
 function ensurePanel() {
     if (panelEl) return panelEl;
-    const el = document.createElement('div');
-    el.className = 'fixed inset-0 z-50 bg-[#0b141a] hidden flex-col';
+    const el = document.getElementById('tab-status');
+    if (!el) return null;
     el.innerHTML = `
-        <div class="bg-[#202c33] px-4 py-3.5 flex items-center border-b border-gray-800 flex-shrink-0">
-            <button type="button" id="st-back" class="text-gray-400 hover:text-white transition text-lg px-1 mr-4"><i class="fa-solid fa-arrow-left"></i></button>
-            <h2 class="text-white font-medium text-base">Durum</h2>
-        </div>
+        <div class="bg-[#202c33] px-4 py-3.5 border-b border-gray-800 flex-shrink-0"><h2 class="text-white font-medium text-base">Durum</h2></div>
         <div id="st-list" class="flex-1 overflow-y-auto min-h-0 pb-28"></div>
         <div class="absolute right-5 bottom-6 flex flex-col items-center space-y-4">
             <button type="button" id="st-fab-text" class="w-11 h-11 rounded-full bg-[#202c33] text-gray-200 shadow-lg flex items-center justify-center"><i class="fa-solid fa-pen"></i></button>
@@ -312,8 +299,6 @@ function ensurePanel() {
         <input type="file" id="st-in-cam" accept="image/*" capture="environment" class="hidden">
         <input type="file" id="st-in-gal" accept="image/*" class="hidden">
     `;
-    document.body.appendChild(el);
-    el.querySelector('#st-back').addEventListener('click', closePanel);
     el.querySelector('#st-fab-text').addEventListener('click', () => openComposer({ mode: 'text' }));
     el.querySelector('#st-fab-cam').addEventListener('click', openAddSheet);
     const onFile = (inp) => async () => {
@@ -326,6 +311,7 @@ function ensurePanel() {
     cam.addEventListener('change', onFile(cam));
     gal.addEventListener('change', onFile(gal));
     panelEl = el;
+    panelOpen = true;
     return el;
 }
 
@@ -342,6 +328,7 @@ function rowHtml(uid, info, subtitle, ringClass, size) {
 
 function renderPanel() {
     const el = ensurePanel();
+    if (!el) return;
     const listEl = el.querySelector('#st-list');
     const mine = statusesOf(myUid);
     const u = me() || {};
@@ -389,17 +376,7 @@ function renderPanel() {
     });
 }
 
-function openPanel() {
-    if (!myUid) return;
-    const el = ensurePanel();
-    el.classList.remove('hidden');
-    el.classList.add('flex');
-    if (!panelOpen) {
-        panelOpen = true;
-        pushBackState(closePanelFromBack);
-    }
-    renderPanel();
-}
+function openPanel() { setTab(1); }
 
 // ---------------- Ekle sheet ----------------
 function openAddSheet() {
@@ -715,7 +692,6 @@ function openViewer(users, startUserIdx, startSIdx) {
         const uid = users[uIdx].uid;
         const info = userInfo(uid);
         close();
-        closePanel();
         try {
             await selectChat({ uid, name: info.name || '', avatar: info.avatar || '' });
             const chatId = getCurrentChatId();
@@ -885,11 +861,8 @@ export function initStatus() {
     startListening();
     cleanupMyExpired();
 
-    const nav = document.getElementById('nav-status');
-    if (nav && !nav.dataset.bound) {
-        nav.dataset.bound = '1';
-        nav.addEventListener('click', openPanel);
-    }
+    renderPanel();
+    window.addEventListener('aura-tab', (e) => { if (e.detail && e.detail.tab === 'status') renderPanel(); });
     // Liste yeniden çizildikçe çemberler tazelensin
     setInterval(refreshRings, 15000);
     refreshRings();
