@@ -6265,6 +6265,53 @@ async function sendMessage() {
     }
 }
 
+// Durum cevabı gibi, sohbeti açmadan doğrudan birebir mesaj gönderir (status.js kullanır)
+export async function sendDirectMessage(otherUid, otherName, text, replyTo) {
+    if (!currentUser || !otherUid || !text) return false;
+    const chatId = getChatId(currentUser.uid, otherUid);
+    try {
+        const sentRef = await addDoc(collection(db, "chats", chatId, "messages"), {
+            text: text,
+            senderUid: currentUser.uid,
+            senderName: currentUser.name,
+            createdAt: serverTimestamp(),
+            read: false,
+            ...(replyTo ? { replyTo } : {})
+        });
+        await setDoc(doc(db, "users", currentUser.uid, "chats", chatId), {
+            otherUid: otherUid,
+            otherName: otherName || '',
+            lastMessage: text,
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: currentUser.uid,
+            lastMessageRead: false,
+            unreadCount: 0,
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+        await setDoc(doc(db, "users", otherUid, "chats", chatId), {
+            otherUid: currentUser.uid,
+            otherName: currentUser.name,
+            lastMessage: text,
+            lastMessageTime: serverTimestamp(),
+            lastSenderUid: currentUser.uid,
+            lastMessageRead: false,
+            typing: false,
+            unreadCount: increment(1),
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+        sendPushToUser(otherUid, `${currentUser.name}`, text, {
+            chatId: chatId,
+            otherUid: currentUser.uid,
+            otherName: currentUser.name,
+            msgType: 'text'
+        });
+        return sentRef.id;
+    } catch (e) {
+        console.error("Doğrudan mesaj gönderilemedi:", e);
+        return false;
+    }
+}
+
 // Önce bekleyen resimler, sonra yazı gider
 async function sendFromComposer() {
     if (isCurrentChatBlocked()) return;
