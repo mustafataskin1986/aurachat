@@ -1294,7 +1294,27 @@ export async function sendPushToUser(receiverUid, title, body, extraData = {}) {
 // Hem sohbet içine bir mesaj yazar hem de iki tarafın liste
 // özetini (son mesaj) günceller.
 // ------------------------------------------
+// Aramalar sayfası için her iki kullanıcının users/{uid}/calls koleksiyonuna kayıt yazar.
+// Belge kimliği sohbet + dakika + sonuçtan türetilir: iki taraf aynı kaydı yazsa da tek satır olur.
+async function writeCallEntries(chatId, callerUid, calleeUid, callerName, calleeName, callType, result, duration) {
+    try {
+        const at = Date.now();
+        const cid = `${chatId}_${result}_${Math.floor(at / 60000)}`;
+        const names = window.__aurachatUsers;
+        const nameOf = (uid, fallback) => {
+            const u = names && names.get ? names.get(uid) : null;
+            return (u && u.name) || fallback || '';
+        };
+        const base = { callType, result, duration: duration || 0, at, fromUid: currentUser ? currentUser.uid : callerUid };
+        await Promise.allSettled([
+            setDoc(doc(db, "users", callerUid, "calls", cid), { ...base, otherUid: calleeUid, otherName: nameOf(calleeUid, calleeName), direction: 'out' }, { merge: true }),
+            setDoc(doc(db, "users", calleeUid, "calls", cid), { ...base, otherUid: callerUid, otherName: nameOf(callerUid, callerName), direction: 'in' }, { merge: true })
+        ]);
+    } catch (e) {}
+}
+
 export async function logMissedCall(chatId, callerUid, callerName, calleeUid, callType = 'video') {
+    writeCallEntries(chatId, callerUid, calleeUid, callerName, '', callType, 'missed', 0);
     const label = callType === 'audio' ? "📞 Cevapsız sesli arama" : "📹 Cevapsız görüntülü arama";
     try {
         await addDoc(collection(db, "chats", chatId, "messages"), {
@@ -1332,6 +1352,7 @@ export async function logMissedCall(chatId, callerUid, callerName, calleeUid, ca
 // REDDEDİLEN GÖRÜNTÜLÜ ARAMA KAYDI (video-call.js, decline anında çağırır)
 // ------------------------------------------
 export async function logDeclinedCall(chatId, callerUid, callerName, calleeUid, callType = 'video') {
+    writeCallEntries(chatId, callerUid, calleeUid, callerName, '', callType, 'declined', 0);
     const label = callType === 'audio' ? "📞 Reddedilen sesli arama" : "📹 Reddedilen görüntülü arama";
     try {
         await addDoc(collection(db, "chats", chatId, "messages"), {
@@ -1378,7 +1399,13 @@ function formatCallDuration(totalSec) {
     return rem ? `${m} dk ${rem} sn` : `${m} dk`;
 }
 
-export async function logCallDuration(chatId, myUid, myName, otherUid, callType = 'video', durationSec = 0) {
+export async function logCallDuration(chatId, myUid, myName, otherUid, callType = 'video', durationSec = 0, callerUid = null) {
+    {
+        const cUid = callerUid || myUid;
+        const eUid = cUid === myUid ? otherUid : myUid;
+        const cName = cUid === myUid ? myName : '';
+        writeCallEntries(chatId, cUid, eUid, cName, '', callType, 'answered', durationSec);
+    }
     const label = `${callType === 'audio' ? '📞 Sesli arama' : '📹 Görüntülü arama'} • ${formatCallDuration(durationSec)}`;
     try {
         await addDoc(collection(db, "chats", chatId, "messages"), {
