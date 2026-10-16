@@ -11,6 +11,7 @@ import { watchCallForChat } from "./video-call.js";
 import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
 import { loadContacts, initAdminPanel } from "./contacts.js";
+import { closeAllBackStates } from "./back-handler.js";
 import { initStatus } from "./status.js";
 
 // ÖLÇÜM: sayfa açılışından bu dosyanın çalışmaya başladığı ana kadar geçen süre (ms)
@@ -89,6 +90,8 @@ function showTempFromNotification(otherUser) {
 // Bildirime tıklanınca (Capacitor native veya PWA) çağrılır
 window.openChatFromNotification = async function (otherUser) {
     if (!otherUser || !otherUser.uid) return;
+    // Uygulama açıkken bildirime basılırsa: açık olan sayfa/pencere/durum ekranı kapansın, sohbet görünsün
+    try { closeAllBackStates(); } catch (e) {}
 
     // Grup mu kişi mi, ağ sorgusu OLMADAN bildirimdeki chatId'den anlaşılır:
     // grupta chatId = grup kimliği (= otherUid), 1'e 1 sohbette chatId ayrı bir değerdir.
