@@ -906,10 +906,17 @@ export async function loadContacts() {
                 : `<div class="w-12 h-12 rounded-full flex items-center justify-center text-white shadow" style="background-color:${getUserColor(displayName)};"><i class="fa-solid fa-user-group"></i></div>`;
         } else {
             renderAvatarInto(avatarSlot, chatData.otherUid, chatData.otherAvatar, chatData.otherName, 'w-12 h-12');
+            // Durum çemberi (status.js): yeni durum yeşil, görülmüş gri
+            avatarSlot.dataset.statusUid = chatData.otherUid || '';
+            if (window.__auraStatusRing) window.__auraStatusRing(avatarSlot);
             // Avatara basınca sohbet açılmaz, profil kartı (Mesaj / Sesli / Görüntülü / Kaydet) açılır
             avatarSlot.addEventListener('click', (e) => {
                 if (chatSelectionMode) return;
                 e.stopPropagation();
+                // Çember varsa (durum paylaşmış) profil kartı yerine durumu aç
+                if (avatarSlot.classList.contains('aura-st-new') || avatarSlot.classList.contains('aura-st-seen')) {
+                    if (window.__auraOpenUserStatus && window.__auraOpenUserStatus(chatData.otherUid)) return;
+                }
                 openMemberSheet(chatData.otherUid, chatData.otherName);
             });
         }
