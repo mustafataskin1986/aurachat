@@ -15,7 +15,10 @@ import { db } from "./firebase-init.js";
 import {
     collection, doc, query, where, onSnapshot, setDoc, updateDoc, deleteDoc, getDoc, getDocs, arrayUnion
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getCurrentUser, showToast } from "./chat-core.js";
+import { getCurrentUser, showToast, selectChat, getCurrentChatId, sendDirectMessage } from "./chat-core.js";
+import { startCall } from "./video-call.js";
+import { startVoiceCall } from "./voice-call.js";
+import { openContactInfo } from "./contact-info.js";
 import { getUserColor, getInitials, escapeHtml } from "./ui-helpers.js";
 import { pushBackState, popBackState } from "./back-handler.js";
 import { auraDialog } from "./aura-dialog.js";
@@ -529,11 +532,20 @@ function openViewer(users, startUserIdx) {
                     <div id="sv-name" style="color:#fff;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
                     <div id="sv-time" style="color:#d1d5db;font-size:12px;"></div>
                 </div>
-                <button type="button" id="sv-del" style="color:#fff;font-size:18px;padding:6px 10px;display:none;"><i class="fa-solid fa-trash"></i></button>
+                <button type="button" id="sv-more" style="color:#fff;font-size:18px;padding:6px 12px;"><i class="fa-solid fa-ellipsis-vertical"></i></button>
             </div>
         </div>
-        <div id="sv-cap" style="position:absolute;left:0;right:0;bottom:70px;text-align:center;color:#fff;font-size:16px;padding:10px 20px;background:rgba(0,0,0,.45);display:none;"></div>
-        <button type="button" id="sv-views" style="position:absolute;left:0;right:0;bottom:14px;margin:auto;width:max-content;color:#fff;font-size:14px;display:none;padding:8px 16px;"></button>`;
+        <div id="sv-cap" style="position:absolute;left:0;right:0;bottom:84px;text-align:center;color:#fff;font-size:16px;padding:10px 20px;background:rgba(0,0,0,.45);display:none;"></div>
+        <button type="button" id="sv-views" style="position:absolute;left:0;right:0;bottom:14px;margin:auto;width:max-content;color:#fff;font-size:14px;display:none;padding:8px 16px;"></button>
+        <div id="sv-bar" style="position:absolute;left:0;right:0;bottom:0;display:none;align-items:center;gap:8px;padding:10px 12px 14px;background:linear-gradient(transparent,rgba(0,0,0,.6));">
+            <div style="flex:1;min-width:0;display:flex;align-items:center;background:#1f2c34;border-radius:9999px;padding:0 8px 0 18px;">
+                <input id="sv-input" type="text" maxlength="500" placeholder="Cevapla" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:#fff;font-size:16px;padding:13px 0;">
+                <button type="button" id="sv-emo1" style="font-size:26px;padding:2px 8px;line-height:1;">😍</button>
+                <button type="button" id="sv-emo2" style="font-size:26px;padding:2px 8px;line-height:1;">😂</button>
+                <button type="button" id="sv-send" style="display:none;width:40px;height:40px;border-radius:50%;background:#22c55e;color:#fff;align-items:center;justify-content:center;"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+            <button type="button" id="sv-heart" style="width:50px;height:50px;border-radius:50%;background:#1f2c34;color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;"><i class="fa-regular fa-heart"></i></button>
+        </div>`;
     document.body.appendChild(ov);
 
     const stage = ov.querySelector('#sv-stage');
@@ -599,7 +611,9 @@ function openViewer(users, startUserIdx) {
             ensureUserInfo(uid).then((i) => { if (!closed && my === token) ov.querySelector('#sv-name').textContent = i.name || ''; });
         }
         ov.querySelector('#sv-time').textContent = timeLabel(s.createdAt);
-        ov.querySelector('#sv-del').style.display = uid === myUid ? 'block' : 'none';
+        ov.querySelector('#sv-bar').style.display = uid === myUid ? 'none' : 'flex';
+        const inp = ov.querySelector('#sv-input');
+        if (inp) { inp.value = ''; ov.querySelector('#sv-send').style.display = 'none'; ov.querySelector('#sv-emo1').style.display = ov.querySelector('#sv-emo2').style.display = ''; }
         const views = ov.querySelector('#sv-views');
         if (uid === myUid) {
             views.style.display = 'block';
@@ -680,7 +694,7 @@ function openViewer(users, startUserIdx) {
     pushBackState(() => close(true));
     ov.querySelector('#sv-close').addEventListener('click', () => close());
 
-    ov.querySelector('#sv-del').addEventListener('click', async () => {
+    async function deleteCurrent() {
         pause();
         const r = await auraDialog({ title: 'Bu durum silinsin mi?', buttons: [{ id: 'cancel', label: 'İptal' }, { id: 'ok', label: 'Sil' }] });
         if (r && r.id === 'ok') {
@@ -694,6 +708,95 @@ function openViewer(users, startUserIdx) {
         } else {
             resume();
         }
+    }
+
+    // Kişiye git (Mesaj / arama / kişi bilgisi): görüntüleyici ve panel kapanır
+    async function goToPerson(act) {
+        const uid = users[uIdx].uid;
+        const info = userInfo(uid);
+        close();
+        closePanel();
+        try {
+            await selectChat({ uid, name: info.name || '', avatar: info.avatar || '' });
+            const chatId = getCurrentChatId();
+            if (act === 'voice') startVoiceCall(chatId, uid);
+            else if (act === 'video') startCall(chatId, uid);
+            else if (act === 'info') openContactInfo(uid);
+        } catch (e) {
+            showToast('Açılamadı');
+        }
+    }
+
+    // Sağ üst üç nokta menüsü
+    let menuEl = null;
+    function closeMenu() {
+        if (!menuEl) return;
+        menuEl.remove();
+        menuEl = null;
+        resume();
+    }
+    ov.querySelector('#sv-more').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (menuEl) { closeMenu(); return; }
+        pause();
+        const mine = users[uIdx].uid === myUid;
+        const items = mine
+            ? [['del', 'Sil']]
+            : [['msg', 'Mesaj'], ['voice', 'Sesli arama'], ['video', 'Görüntülü arama'], ['info', 'Kişiyi görüntüle']];
+        menuEl = document.createElement('div');
+        menuEl.style.cssText = 'position:absolute;inset:0;z-index:5;';
+        menuEl.innerHTML = `<div style="position:absolute;top:96px;right:12px;min-width:210px;background:#111b21;border-radius:14px;padding:6px 0;box-shadow:0 8px 28px rgba(0,0,0,.6);animation:auraStFade .12s ease;">` +
+            items.map(([k, label]) => `<button type="button" data-k="${k}" style="display:block;width:100%;text-align:left;color:#fff;font-size:17px;padding:14px 22px;">${label}</button>`).join('') + `</div>`;
+        ov.appendChild(menuEl);
+        menuEl.addEventListener('click', (ev) => {
+            const b = ev.target.closest('button[data-k]');
+            if (!b) { closeMenu(); return; }
+            const k = b.dataset.k;
+            closeMenu();
+            if (k === 'del') deleteCurrent();
+            else goToPerson(k);
+        });
+    });
+
+    // Cevap / emoji / kalp: sohbeti açmadan karşı tarafa mesaj olarak gider
+    async function sendReply(text) {
+        text = (text || '').trim();
+        if (!text) return;
+        const s = cur();
+        const uid = users[uIdx].uid;
+        const info = userInfo(uid);
+        const preview = 'Durum: ' + (s.caption || s.text || (s.type === 'image' ? 'Fotoğraf' : ''));
+        const rid = await sendDirectMessage(uid, info.name || '', text, {
+            msgId: s.id, senderName: info.name || '', senderUid: uid, previewText: preview.slice(0, 80), isStatus: true
+        });
+        showToast(rid ? 'Cevap gönderildi' : 'Gönderilemedi');
+        return !!rid;
+    }
+    const inpEl = ov.querySelector('#sv-input');
+    const sendEl = ov.querySelector('#sv-send');
+    const emo1 = ov.querySelector('#sv-emo1');
+    const emo2 = ov.querySelector('#sv-emo2');
+    inpEl.addEventListener('focus', () => pause());
+    inpEl.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement !== inpEl) resume(); }, 50); });
+    inpEl.addEventListener('input', () => {
+        const has = inpEl.value.trim().length > 0;
+        sendEl.style.display = has ? 'flex' : 'none';
+        emo1.style.display = emo2.style.display = has ? 'none' : '';
+    });
+    inpEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendEl.click(); } });
+    sendEl.addEventListener('click', async () => {
+        const t = inpEl.value;
+        inpEl.value = '';
+        inpEl.dispatchEvent(new Event('input'));
+        inpEl.blur();
+        await sendReply(t);
+    });
+    emo1.addEventListener('click', () => sendReply('😍'));
+    emo2.addEventListener('click', () => sendReply('😂'));
+    ov.querySelector('#sv-heart').addEventListener('click', async (e) => {
+        const ic = e.currentTarget.querySelector('i');
+        if (ic) { ic.className = 'fa-solid fa-heart'; ic.style.color = '#ef4444'; }
+        await sendReply('❤️');
     });
 
     ov.querySelector('#sv-views').addEventListener('click', (e) => {
@@ -704,7 +807,8 @@ function openViewer(users, startUserIdx) {
     // Dokunma / basılı tut / aşağı çek
     let down = null;
     ov.addEventListener('pointerdown', (e) => {
-        if (e.target.closest('button')) return;
+        if (e.target.closest('button, input, #sv-bar')) return;
+        if (document.activeElement === inpEl) { inpEl.blur(); return; }
         down = { x: e.clientX, y: e.clientY, t: performance.now() };
         pause();
     });
