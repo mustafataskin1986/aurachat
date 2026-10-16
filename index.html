@@ -432,7 +432,7 @@ try {
        <div id="sidebar" class="w-full lg:w-[38%] bg-[#111b21] border-r border-gray-800 flex flex-col h-full absolute lg:relative inset-y-0 left-0 z-20 transition-transform duration-300">
 
             <!-- SABİT ÜST BAR (WhatsApp gibi sadece başlık) -->
-            <div class="bg-[#202c33] px-4 py-3.5 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
+            <div id="main-topbar" class="bg-[#202c33] px-4 py-3.5 flex justify-between items-center border-b border-gray-800 flex-shrink-0">
                 <div class="flex items-center space-x-3">
                                     <h1 id="app-title" class="text-emerald-500 font-bold text-xl tracking-wide select-none transition active:opacity-70">Aura<i id="dark-toggle-btn" class="fa-regular fa-moon"></i>hat</h1>
                 </div>
@@ -463,6 +463,9 @@ try {
                 </div>
             </div>
 
+<div id="tab-viewport" class="flex-1 min-h-0 overflow-hidden relative">
+            <div id="tab-track" class="flex h-full" style="width:400%">
+            <section id="tab-chats" class="w-1/4 h-full flex flex-col min-w-0 flex-shrink-0 overflow-hidden">
 <!-- KAYAR ÜST + LİSTE SARMALAYICI (arama barı ve filtre çipleri artık listeyle birlikte kayıyor) -->
             <div id="chat-scroll-wrapper" class="flex-1 overflow-y-auto min-h-0">
 
@@ -497,9 +500,16 @@ try {
                 </script>
             </div>
 
+            </section>
+            <section id="tab-status" class="w-1/4 h-full flex flex-col min-w-0 flex-shrink-0 overflow-hidden relative"></section>
+            <section id="tab-contacts" class="w-1/4 h-full flex flex-col min-w-0 flex-shrink-0 overflow-hidden"></section>
+            <section id="tab-calls" class="w-1/4 h-full flex flex-col min-w-0 flex-shrink-0 overflow-hidden"></section>
+            </div>
+            </div>
+
             <!-- SABİT ALT BAR -->
             <div class="bg-[#202c33] border-t border-gray-800 py-2.5 px-6 flex justify-between items-center text-gray-400 flex-shrink-0">
-                <div class="flex flex-col items-center cursor-pointer text-emerald-500 transition">
+                <div id="nav-chats" class="flex flex-col items-center cursor-pointer text-emerald-500 transition">
                     <i class="fa-solid fa-comment-dots text-lg"></i>
                     <span class="text-[10px] mt-0.5 font-medium">Sohbetler</span>
                 </div>
@@ -510,6 +520,10 @@ try {
            <div id="nav-contacts" class="flex flex-col items-center cursor-pointer hover:text-white transition">
                     <i class="fa-solid fa-users text-lg"></i>
                     <span class="text-[10px] mt-0.5">Kişiler</span>
+                </div>
+                <div id="nav-calls" class="flex flex-col items-center cursor-pointer hover:text-white transition">
+                    <i class="fa-solid fa-phone text-lg"></i>
+                    <span class="text-[10px] mt-0.5">Aramalar</span>
                 </div>
             </div>
         </div>
