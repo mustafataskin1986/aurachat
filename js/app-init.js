@@ -11,6 +11,7 @@ import { watchCallForChat } from "./video-call.js";
 import { watchVoiceCallForChat } from "./voice-call.js";
 import { watchGroupCallForChat } from "./group-call.js";
 import { loadContacts, initAdminPanel } from "./contacts.js";
+import { initStatus } from "./status.js";
 
 // ÖLÇÜM: sayfa açılışından bu dosyanın çalışmaya başladığı ana kadar geçen süre (ms)
 const T_MODULE = Math.round(performance.now());
@@ -305,6 +306,7 @@ window.initApp = async function () {
 
         await chatPromise;
         try { await loadContacts(); } catch (e) {}
+        try { initStatus(); } catch (e) {}
         refreshOpenChatAvatar(pendingTarget.uid, pendingTarget.chatId);
         if (window.initPushForUser) {
             window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
@@ -313,6 +315,7 @@ window.initApp = async function () {
     }
 
     try { await loadContacts(); } catch (e) {}
+    try { initStatus(); } catch (e) {}
     if (window.initPushForUser) {
         window.initPushForUser({ uid: currentUser.uid, email: currentUser.email });
     }
