@@ -4392,7 +4392,11 @@ function openAttachMenu() {
         kbHeight = Math.round(fullH - rowBottom);
     }
 
+    // Mesaja dokununca konan "odağı koru" süresi (basılı tutma koruması) popup geçişini bozmasın:
+    // yoksa blur() geri odaklanır, klavye açık kalır, yazı kutusu kapanır
+    window.__auraKeepFocusUntil = 0;
     messageInput.blur();
+    if (document.activeElement === messageInput) { try { messageInput.blur(); } catch (e) {} }
 
     if (hadFocus) {
         document.body.style.height = fullH + 'px';
