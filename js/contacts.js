@@ -697,15 +697,17 @@ export async function loadContacts() {
 
         permBanner.style.display = (ContactsPlugin && !contactsPermissionGranted) ? 'flex' : 'none';
 
+        // Çip sayıları okunmamış MESAJ sayısıdır (satır sayısı değil); okunmamış yoksa sayı görünmez
         let unreadChatsCount = 0;
         let favoritesCount = 0;
         let groupsCount = 0;
         myChats.forEach((chatData) => {
             const isLastMsgMine = chatData.lastSenderUid === currentUser.uid;
             const unreadCount = isLastMsgMine ? 0 : (chatData.unreadCount || 0);
-            if (unreadCount > 0) unreadChatsCount++;
-            if (chatData.archived) favoritesCount++;
-            if (chatData.isGroup && !isClearedChat(chatData)) groupsCount++;
+            if (unreadCount <= 0) return;
+            unreadChatsCount += unreadCount;
+            if (chatData.archived) favoritesCount += unreadCount;
+            if (chatData.isGroup && !isClearedChat(chatData)) groupsCount += unreadCount;
         });
         updateFilterChipLabels(unreadChatsCount, favoritesCount, groupsCount);
 
