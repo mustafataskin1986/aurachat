@@ -506,7 +506,7 @@ async function openComposer({ mode, file }) {
 }
 
 // ---------------- GÖRÜNTÜLEYİCİ ----------------
-function openViewer(users, startUserIdx) {
+function openViewer(users, startUserIdx, startSIdx) {
     let uIdx = startUserIdx;
     let sIdx = 0;
     let raf = 0;
@@ -835,7 +835,7 @@ function openViewer(users, startUserIdx) {
     // Başlangıç: ilk görülmemiş durum
     const startList = users[uIdx].list;
     const firstUnseen = startList.findIndex((s) => !(s.viewers || []).includes(myUid));
-    sIdx = users[uIdx].uid === myUid ? 0 : Math.max(0, firstUnseen);
+    sIdx = (typeof startSIdx === 'number') ? startSIdx : (users[uIdx].uid === myUid ? 0 : Math.max(0, firstUnseen));
     show();
 }
 
@@ -896,6 +896,18 @@ export function initStatus() {
 }
 
 export function openStatusPanel() { openPanel(); }
+
+// Sohbetteki "Durum: ..." alıntısına dokununca o durumu aç (süresi dolduysa false döner)
+window.__auraOpenStatusById = (statusId, ownerUid) => {
+    if (!myUid) return false;
+    const s = statuses.get(statusId);
+    if (!s || s.expiresAt <= Date.now()) return false;
+    const list = statusesOf(s.uid);
+    const idx = list.findIndex((x) => x.id === statusId);
+    if (idx < 0) return false;
+    openViewer([{ uid: s.uid, list }], 0, idx);
+    return true;
+};
 
 // Sohbet listesindeki avatara basınca: durumu varsa doğrudan göster (true döner)
 export function openUserStatus(uid) {
