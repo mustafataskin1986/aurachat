@@ -20,6 +20,7 @@ import {
     collection, onSnapshot, query, orderBy, doc, getDocs, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getUserColor, getInitials, formatAdminUser, formatTimestamp, getPhoneLast10, escapeHtml, getChatId } from "./ui-helpers.js";
+import { setTab } from "./tabs.js";
 import { selectChat, getCurrentUser, clearChatForMe, leaveGroup, prewarmChatSession, prewarmChatMedia, getCurrentChatId, showToast, openMemberSheet } from "./chat-core.js";
 import { auraDialog } from "./aura-dialog.js";
 import { pushBackState, popBackState } from "./back-handler.js";
@@ -492,32 +493,17 @@ export async function loadContacts() {
     // Rehberden okunan numaralarla eşleşen AuraChat kullanıcılarını gösterir.
     // Panel her açıldığında rehber telefondan yeniden okunur.
     // ------------------------------------------
-    function closeContactsPanelFromBack() {
-        if (contactsPanelEl) {
-            contactsPanelEl.classList.add('hidden');
-            contactsPanelEl.classList.remove('flex');
-        }
-        contactsPanelOpen = false;
-    }
-
-    function closeContactsPanel() {
-        if (!contactsPanelOpen) return;
-        closeContactsPanelFromBack();
-        popBackState();
-    }
+    // Kişiler artık alt sekmenin sayfası (#tab-contacts); ayrı tam ekran pencere yok
+    function closeContactsPanelFromBack() { contactsPanelOpen = false; }
+    function closeContactsPanel() { contactsPanelOpen = false; }
 
     function ensureContactsPanel() {
         if (contactsPanelEl) return contactsPanelEl;
-        const el = document.createElement('div');
-        el.className = 'fixed inset-0 z-50 bg-[#0b141a] hidden flex-col';
+        const el = document.getElementById('tab-contacts');
+        if (!el) return null;
         el.innerHTML = `
             <div class="bg-[#202c33] px-4 py-3.5 flex items-center justify-between border-b border-gray-800 flex-shrink-0">
-                <div class="flex items-center space-x-4">
-                    <button type="button" id="contacts-panel-back" class="text-gray-400 hover:text-white transition text-lg px-1">
-                        <i class="fa-solid fa-arrow-left"></i>
-                    </button>
-                    <h2 class="text-white font-medium text-base">Kişiler</h2>
-                </div>
+                <h2 class="text-white font-medium text-base">Kişiler</h2>
                 <button type="button" id="contacts-panel-refresh" class="text-gray-400 hover:text-white transition text-lg px-1">
                     <i class="fa-solid fa-rotate"></i>
                 </button>
@@ -525,8 +511,6 @@ export async function loadContacts() {
             <div id="contacts-panel-info" class="px-4 py-3 text-xs text-gray-400 border-b border-gray-800/40 flex-shrink-0"></div>
             <div id="contacts-panel-list" class="flex-1 overflow-y-auto min-h-0"></div>
         `;
-        document.body.appendChild(el);
-        el.querySelector('#contacts-panel-back').addEventListener('click', closeContactsPanel);
         el.querySelector('#contacts-panel-refresh').addEventListener('click', () => reloadContactsPanel());
         contactsPanelEl = el;
         return el;
@@ -607,13 +591,9 @@ export async function loadContacts() {
     }
 
     async function openContactsPanel() {
-        const el = ensureContactsPanel();
-        el.classList.remove('hidden');
-        el.classList.add('flex');
-        if (!contactsPanelOpen) {
-            contactsPanelOpen = true;
-            pushBackState(closeContactsPanelFromBack);
-        }
+        setTab(2);
+        ensureContactsPanel();
+        contactsPanelOpen = true;
         await reloadContactsPanel();
     }
 
