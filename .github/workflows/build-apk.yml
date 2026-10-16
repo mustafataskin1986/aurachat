@@ -81,16 +81,10 @@ jobs:
 
       - name: Web Dosyalarını Hazırla ve Konfigüre Et
         run: |
-          # Tailwind CSS dosyası depoda yok (Vercel derlemede üretiyor): APK'ya girmeden önce burada üret
-          npm install --no-save --legacy-peer-deps tailwindcss@3.4.17
-          npx tailwindcss -c tailwind.config.js -i css/tailwind-input.css -o css/tailwind.css --minify
-          ls -la css/tailwind.css
           rm -rf www
           mkdir -p www
           cp -r *.html *.js *.json *.css www/ 2>/dev/null || true
           cp -r js static assets css www/ 2>/dev/null || true
-          # Web dosyaları APK'nın içinden açılır (Vercel'den indirme yok): <base href> Vercel'e yönlendirdiği için silinir
-          sed -i '/<base href=/d' www/index.html
           cat << 'EOF' > capacitor.config.json
           {
             "appId": "com.aurachat.app",
@@ -99,7 +93,7 @@ jobs:
             "bundledWebRuntime": false,
             "backgroundColor": "#000000",
             "server": {
-              "androidScheme": "https",
+              "url": "https://aurachat-amber.vercel.app",
               "cleartext": true
             },
             "plugins": {
