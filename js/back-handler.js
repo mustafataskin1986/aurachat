@@ -134,6 +134,24 @@ export function pushBackState(closeFn) {
     }
 }
 
+// Açık TÜM ekranları/pencereleri kapatır (bildirimden sohbete geçerken üstte kalmasınlar)
+export function closeAllBackStates() {
+    const entries = stack.splice(0);
+    if (!entries.length) return;
+    handlingBack = true;
+    for (let i = entries.length - 1; i >= 0; i--) {
+        try { entries[i].fn(); } catch (e) { console.warn('geri kapatıcı hatası:', e); }
+    }
+    handlingBack = false;
+    if (!useNativeStack) {
+        const n = entries.filter((e) => e.pushed).length;
+        if (n) {
+            ignorePopstate++;
+            try { history.go(-n); } catch (e) { ignorePopstate--; }
+        }
+    }
+}
+
 export function popBackState() {
     // Geri tuşuyla zaten yığından çıkarılmış ve kapatıcı çalışıyorsa tekrar silme
     if (handlingBack) return;
