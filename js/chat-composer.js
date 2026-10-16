@@ -66,7 +66,8 @@ export function setupComposer() {
     padding: 5px !important;
     background: var(--aura-composer-bg,#202c33) !important;
     transition: background-color .2s, border-color .2s;
-    border: 1px solid rgba(255,255,255,0.12) !important; /* Varsayılan mat gri çerçeve */
+    border: 1px solid var(--aura-btn,#22c55e) !important; /* Kapalıyken de açıkken de aynı tema renginde çerçeve */
+    box-shadow: inset 0 0 0 1px var(--aura-btn,#22c55e) !important;
     border-radius: 10px !important;
     overflow: hidden;
     min-height: ${SINGLE_H}px;
